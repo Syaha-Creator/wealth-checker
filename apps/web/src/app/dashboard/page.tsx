@@ -86,7 +86,7 @@ export default function DashboardPage() {
     router.push("/");
   }
 
-  if (isPending || (!session && !isPending)) {
+  if (isPending || !session) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
@@ -109,7 +109,7 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-4">
             <span className="text-slate-400 text-sm hidden sm:block">
-              {session.user.name}
+              {session?.user.name}
             </span>
             <button
               onClick={handleLogout}
@@ -125,7 +125,7 @@ export default function DashboardPage() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold">
-            Halo, {session.user.name.split(" ")[0]} 👋
+            Halo, {session?.user.name.split(" ")[0]} 👋
           </h1>
           <p className="text-slate-400 text-sm mt-1">
             Berikut ringkasan kekayaan bersih kamu
