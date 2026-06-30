@@ -12,16 +12,19 @@ COPY packages/db/package.json ./packages/db/
 RUN bun install --frozen-lockfile
 
 # ---------------------------------------------------------------------------
-# build — bun workspace hoists semua ke root node_modules
+# build — WORKDIR tetap di root monorepo agar Next.js tahu workspace root
 # ---------------------------------------------------------------------------
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
+COPY package.json ./
 COPY apps/web ./apps/web
 COPY packages/db ./packages/db
+
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
-WORKDIR /app/apps/web
-RUN bun run build
+
+# Build dari root monorepo dengan filter workspace
+RUN bun run --filter='@wealth/web' build
 
 # ---------------------------------------------------------------------------
 # runtime — Next.js standalone
