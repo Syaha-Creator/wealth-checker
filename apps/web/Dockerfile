@@ -12,23 +12,21 @@ COPY packages/db/package.json ./packages/db/
 RUN bun install --frozen-lockfile
 
 # ---------------------------------------------------------------------------
-# build — disable Turbopack (Next.js 16 default), gunakan webpack
+# build — copy root node_modules (.bun store) + workspace symlinks
 # ---------------------------------------------------------------------------
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY package.json ./
 COPY apps/web ./apps/web
 COPY packages/db ./packages/db
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
-# Paksa webpack, bukan Turbopack, agar monorepo path resolution benar
-ENV TURBOPACK=0
-
 RUN bun run --filter='@wealth/web' build
 
 # ---------------------------------------------------------------------------
-# runtime — Next.js standalone
+# runtime — Next.js standalone (pakai Node, tidak butuh bun)
 # ---------------------------------------------------------------------------
 FROM node:22-alpine AS runtime
 WORKDIR /app

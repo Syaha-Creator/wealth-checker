@@ -2,7 +2,7 @@ FROM oven/bun:1.3-alpine AS base
 WORKDIR /app
 
 # ---------------------------------------------------------------------------
-# deps — install dengan semua workspace package.json
+# deps
 # ---------------------------------------------------------------------------
 FROM base AS deps
 COPY package.json bun.lock ./
@@ -12,11 +12,13 @@ COPY packages/db/package.json ./packages/db/
 RUN bun install --frozen-lockfile
 
 # ---------------------------------------------------------------------------
-# build — butuh root package.json agar bun tahu workspace @wealth/db
+# build — output di apps/api/dist agar module resolution benar saat runtime
 # ---------------------------------------------------------------------------
 FROM base AS build
-COPY package.json ./
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=deps /app/packages/db/node_modules ./packages/db/node_modules
+COPY package.json ./
 COPY apps/api ./apps/api
 COPY packages/db ./packages/db
 
@@ -30,14 +32,15 @@ RUN bun build src/index.ts \
       --external better-auth
 
 # ---------------------------------------------------------------------------
-# runtime — minimal image, bundle + native deps
+# runtime — WORKDIR di workspace agar node resolution temukan node_modules
 # ---------------------------------------------------------------------------
 FROM oven/bun:1.3-alpine AS runtime
-WORKDIR /app
+WORKDIR /app/apps/api
 
-COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/node_modules /app/node_modules
+COPY --from=deps /app/apps/api/node_modules ./node_modules
 COPY --from=build /app/apps/api/dist ./dist
-COPY --from=build /app/packages/db/migrations ./migrations
+COPY --from=build /app/packages/db/migrations /app/migrations
 
 ENV NODE_ENV=production
 EXPOSE 3011
