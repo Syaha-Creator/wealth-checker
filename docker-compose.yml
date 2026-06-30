@@ -94,6 +94,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      PORT: "3010"
       INTERNAL_API_URL: http://api:3011
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3011}
     ports:
