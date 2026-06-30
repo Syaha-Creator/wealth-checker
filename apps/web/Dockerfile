@@ -12,7 +12,7 @@ COPY packages/db/package.json ./packages/db/
 RUN bun install --frozen-lockfile
 
 # ---------------------------------------------------------------------------
-# build — WORKDIR tetap di root monorepo agar Next.js tahu workspace root
+# build — disable Turbopack (Next.js 16 default), gunakan webpack
 # ---------------------------------------------------------------------------
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
@@ -22,8 +22,9 @@ COPY packages/db ./packages/db
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+# Paksa webpack, bukan Turbopack, agar monorepo path resolution benar
+ENV TURBOPACK=0
 
-# Build dari root monorepo dengan filter workspace
 RUN bun run --filter='@wealth/web' build
 
 # ---------------------------------------------------------------------------
