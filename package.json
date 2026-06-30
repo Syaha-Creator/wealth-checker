@@ -4,7 +4,6 @@
   "private": true,
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev": "bun run --filter='*' dev",
     "dev:web": "bun run --filter='@wealth/web' dev",
     "dev:api": "bun run --filter='@wealth/api' dev",
     "build": "bun run --filter='@wealth/web' build",

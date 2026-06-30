@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { wealthRoutes } from "./routes/wealth";
+import { authRoutes } from "./routes/auth";
 import { accountRoutes } from "./routes/accounts";
 import { transactionRoutes } from "./routes/transactions";
-import { authRoutes } from "./routes/auth";
+import { wealthRoutes } from "./routes/wealth";
 
 const app = new Hono();
 
@@ -27,7 +27,4 @@ app.route("/api/wealth", wealthRoutes);
 const port = Number(process.env.PORT) || 3011;
 console.log(`🚀 Wealth Checker API running on port ${port}`);
 
-export default {
-  port,
-  fetch: app.fetch,
-};
+export default { port, fetch: app.fetch };

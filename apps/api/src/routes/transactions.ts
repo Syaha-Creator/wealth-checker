@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { db, transactions, accounts } from "@wealth/db";
-import { eq, and, desc } from "drizzle-orm";
+import { db, transactions } from "@wealth/db";
+import { eq, desc } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 
 export const transactionRoutes = new Hono();
@@ -37,27 +37,9 @@ const createSchema = z.object({
 transactionRoutes.post("/", zValidator("json", createSchema), async (c) => {
   const userId = c.get("userId") as string;
   const data = c.req.valid("json");
-
-  const [trx] = await db.transaction(async (tx) => {
-    const [inserted] = await tx
-      .insert(transactions)
-      .values({ ...data, userId, nominal: String(data.nominal) })
-      .returning();
-
-    if (data.accountId) {
-      const delta =
-        data.type === "pendapatan" || data.type === "penerimaan_piutang" || data.type === "pinjaman_utang"
-          ? data.nominal
-          : -data.nominal;
-
-      await tx
-        .update(accounts)
-        .set({ saldoCache: `saldo_cache + ${delta}` as unknown as string })
-        .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, userId)));
-    }
-
-    return [inserted];
-  });
-
+  const [trx] = await db
+    .insert(transactions)
+    .values({ ...data, userId, nominal: String(data.nominal) })
+    .returning();
   return c.json(trx, 201);
 });
