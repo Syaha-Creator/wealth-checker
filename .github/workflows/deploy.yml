@@ -1,0 +1,122 @@
+# =============================================================================
+# Wealth Checker — CI/CD Pipeline
+# Self-hosted runner di VPS velrox.cloud
+# =============================================================================
+
+name: Wealth Checker — Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+# ---------------------------------------------------------------------------
+# 1 — Quality Gate
+# ---------------------------------------------------------------------------
+jobs:
+  quality-gate:
+    name: 🔍 Quality Gate
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Build web
+        run: bun run build
+
+# ---------------------------------------------------------------------------
+# 2 — Deploy to Production (main branch only)
+# ---------------------------------------------------------------------------
+  deploy-production:
+    name: 🚀 Deploy to Production
+    needs: quality-gate
+    runs-on: self-hosted
+    timeout-minutes: 30
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Deploy
+        run: |
+          set -euo pipefail
+          PROJECT_DIR="/home/velrox/projects/wealth-checker"
+
+          echo "=== [1/6] Sync code ==="
+          mkdir -p "$PROJECT_DIR"
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='.env' \
+            --exclude='node_modules' \
+            --exclude='.next' \
+            "$GITHUB_WORKSPACE/" "$PROJECT_DIR/"
+
+          cd "$PROJECT_DIR"
+
+          echo "=== [2/6] Verify .env ==="
+          if [ ! -f ".env" ]; then
+            echo "⚠️  .env not found — copy it to $PROJECT_DIR/.env on the server first"
+            exit 1
+          fi
+          echo "✅ .env present"
+
+          echo "=== [3/6] Install dependencies ==="
+          bun install --frozen-lockfile
+
+          echo "=== [4/6] Build Docker images ==="
+          docker compose build --no-cache
+
+          echo "=== [5/6] Start services ==="
+          docker compose up -d postgres redis
+
+          echo "Waiting for PostgreSQL..."
+          for i in $(seq 1 30); do
+            docker compose exec -T postgres pg_isready -U wealth -d wealth_checker && break
+            [ $i -eq 30 ] && echo "PostgreSQL did not start" && exit 1
+            sleep 2
+          done
+
+          echo "=== [5b/6] Run migrations ==="
+          DB_PASS=$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)
+          DATABASE_URL="postgresql://wealth:${DB_PASS}@localhost:5433/wealth_checker" \
+            bun run db:migrate
+
+          docker compose up -d api web
+
+          echo "=== [6/6] Health check ==="
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3010 > /dev/null && break
+            [ $i -eq 30 ] && echo "Health check failed" && exit 1
+            sleep 2
+          done
+
+          echo ""
+          echo "✅ Deployment complete!"
+          docker compose ps
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "❌ Deployment failed. Check logs above."
