@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { signOut } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
+import { ConfirmModal } from "@/components/ConfirmModal";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -41,6 +42,7 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [fetchError, setFetchError] = useState("");
+  const [showResetWarning, setShowResetWarning] = useState(false);
 
   const [tanggalLahir, setTanggalLahir] = useState("");
   const [usiaPensiun, setUsiaPensiun] = useState("");
@@ -215,14 +217,24 @@ export default function ProfilePage() {
 
       {/* Quick links */}
       <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-50 mb-4">
-        <a
-          href="/onboarding"
-          className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors"
+        <button
+          onClick={() => setShowResetWarning(true)}
+          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors text-left"
         >
           <span className="text-sm font-medium text-gray-700">Setup ulang data keuangan</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-gray-400" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
-        </a>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-gray-400 shrink-0" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
       </div>
+
+      <ConfirmModal
+        open={showResetWarning}
+        title="Perhatian: Data Tidak Dihapus"
+        message="Setup ulang akan MENAMBAHKAN data baru di atas data yang sudah ada, bukan menggantikannya. Hapus rekening, aset, dan utang lama terlebih dahulu sebelum melakukan setup ulang."
+        confirmLabel="Lanjutkan Setup"
+        confirmVariant="warning"
+        onConfirm={() => { setShowResetWarning(false); router.push("/onboarding"); }}
+        onCancel={() => setShowResetWarning(false)}
+      />
 
       {/* Sign out */}
       <button

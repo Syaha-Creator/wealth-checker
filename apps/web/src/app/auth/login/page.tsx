@@ -41,7 +41,20 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
+    // Smart redirect: new users (no accounts yet) go to onboarding, others to dashboard
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/accounts`, {
+        credentials: "include",
+      });
+      const accounts = await res.json();
+      if (!Array.isArray(accounts) || accounts.length === 0) {
+        router.push("/onboarding");
+      } else {
+        router.push("/dashboard");
+      }
+    } catch {
+      router.push("/dashboard");
+    }
     router.refresh();
   }
 
