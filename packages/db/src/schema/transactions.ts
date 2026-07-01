@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, varchar, numeric, date, pgEnum, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, varchar, numeric, date, pgEnum, timestamp, index } from "drizzle-orm/pg-core";
 import { authUser } from "./auth";
 import { accounts } from "./accounts";
 
@@ -28,4 +28,8 @@ export const transactions = pgTable("transactions", {
   nominal: numeric("nominal", { precision: 20, scale: 2 }).notNull(),
   untungRugi: numeric("untung_rugi", { precision: 20, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  userTanggalIdx: index("idx_tx_user_tanggal").on(t.userId, t.tanggal),
+  userTypeIdx:    index("idx_tx_user_type").on(t.userId, t.type),
+  accountIdx:     index("idx_tx_account").on(t.accountId),
+}));

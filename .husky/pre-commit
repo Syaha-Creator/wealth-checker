@@ -7,3 +7,12 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 echo "✅ Lint passed."
+
+echo "🧪 Running unit tests before commit..."
+bun run test
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "❌ Tests failed. Please fix the failing tests above before committing."
+  exit 1
+fi
+echo "✅ Tests passed."

@@ -38,6 +38,9 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      - name: Test
+        run: bun run test
+
       - name: Build web
         run: bun run build
 

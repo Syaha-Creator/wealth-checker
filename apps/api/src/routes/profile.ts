@@ -30,6 +30,8 @@ const profileSchema = z.object({
   rencanaUsiaPensiun: z.number().int().min(30).max(99).nullable().optional(),
   rencanaUsiaWarisan: z.number().int().min(30).max(120).nullable().optional(),
   anggotaKeluargaDitanggung: z.number().int().min(1).max(20).optional(),
+  pemasukanBulananRataRata: z.number().nonnegative().nullable().optional(),
+  pengeluaranBulananRataRata: z.number().nonnegative().nullable().optional(),
 });
 
 profileRoutes.put("/", zValidator("json", profileSchema), async (c) => {

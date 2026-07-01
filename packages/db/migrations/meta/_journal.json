@@ -22,6 +22,13 @@
       "when": 1782865200000,
       "tag": "0002_schema_unify_user_id",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1751356800000,
+      "tag": "0003_indexes_seed_profile",
+      "breakpoints": true
     }
   ]
 }

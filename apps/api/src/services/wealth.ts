@@ -9,6 +9,7 @@ import {
   receivables,
   wealthLevelReference,
   transactions,
+  userProfile,
 } from "@wealth/db";
 
 export interface WealthSummary {
@@ -100,7 +101,8 @@ export interface MonthlyCashFlow {
     pengeluaran: number;
     sisaUangBulanan: number;
   };
-  hidupTanpaGajiBulan: number | null;  // (kas - utang) / rata-rata sisa, null jika tak cukup data
+  hidupTanpaGajiBulan: number | null;
+  usedProfileFallback: boolean; // true jika tidak ada data transaksi, pakai rencana dari profil
 }
 
 function startOfMonth(ym: string): string {
@@ -161,25 +163,54 @@ export async function calculateMonthlyCashFlow(
   const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const [lastYm, twoAgoYm] = prevMonths(currentYm, 2);
 
-  const [bulanIni, bulanLalu, duaBulanLalu] = await Promise.all([
-    fetchMonthSnapshot(db, userId, currentYm),
-    fetchMonthSnapshot(db, userId, lastYm),
-    fetchMonthSnapshot(db, userId, twoAgoYm),
+  const [[bulanIni, bulanLalu, duaBulanLalu], [profile]] = await Promise.all([
+    Promise.all([
+      fetchMonthSnapshot(db, userId, currentYm),
+      fetchMonthSnapshot(db, userId, lastYm),
+      fetchMonthSnapshot(db, userId, twoAgoYm),
+    ]),
+    db.select({
+      pemasukanRencana: userProfile.pemasukanBulananRataRata,
+      pengeluaranRencana: userProfile.pengeluaranBulananRataRata,
+    }).from(userProfile).where(eq(userProfile.id, userId)),
   ]);
 
-  const snapshots = [bulanIni, bulanLalu, duaBulanLalu];
-  const avgPemasukan = snapshots.reduce((s, x) => s + x.pemasukan, 0) / 3;
-  const avgPengeluaran = snapshots.reduce((s, x) => s + x.pengeluaran, 0) / 3;
-  const avgSisa = avgPemasukan - avgPengeluaran;
+  const hasTransactionData =
+    bulanIni.pemasukan > 0 || bulanIni.pengeluaran > 0 ||
+    bulanLalu.pemasukan > 0 || bulanLalu.pengeluaran > 0 ||
+    duaBulanLalu.pemasukan > 0 || duaBulanLalu.pengeluaran > 0;
 
+  // Fallback: jika belum ada data transaksi sama sekali, gunakan rencana dari profil
+  const profilePemasukan = Number(profile?.pemasukanRencana ?? 0);
+  const profilePengeluaran = Number(profile?.pengeluaranRencana ?? 0);
+  const usedProfileFallback = !hasTransactionData && (profilePemasukan > 0 || profilePengeluaran > 0);
+
+  let avgPemasukan: number;
+  let avgPengeluaran: number;
+
+  if (usedProfileFallback) {
+    avgPemasukan = profilePemasukan;
+    avgPengeluaran = profilePengeluaran;
+  } else {
+    const snapshots = [bulanIni, bulanLalu, duaBulanLalu];
+    avgPemasukan = snapshots.reduce((s, x) => s + x.pemasukan, 0) / 3;
+    avgPengeluaran = snapshots.reduce((s, x) => s + x.pengeluaran, 0) / 3;
+  }
+
+  const avgSisa = avgPemasukan - avgPengeluaran;
   const kasBersih = totalKas - totalUtang;
   const hidupTanpaGajiBulan =
     avgSisa > 0 && kasBersih > 0
       ? Math.round((kasBersih / avgSisa) * 10) / 10
       : null;
 
+  // Jika pakai fallback profil, tampilkan nilai rencana sebagai bulanIni
+  const effectiveBulanIni = usedProfileFallback
+    ? { bulan: currentYm, pemasukan: profilePemasukan, pengeluaran: profilePengeluaran, sisaUangBulanan: profilePemasukan - profilePengeluaran }
+    : bulanIni;
+
   return {
-    bulanIni,
+    bulanIni: effectiveBulanIni,
     bulanLalu,
     rataRata3Bulan: {
       pemasukan: Math.round(avgPemasukan),
@@ -187,6 +218,7 @@ export async function calculateMonthlyCashFlow(
       sisaUangBulanan: Math.round(avgSisa),
     },
     hidupTanpaGajiBulan,
+    usedProfileFallback,
   };
 }
 

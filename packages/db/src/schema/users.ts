@@ -1,4 +1,4 @@
-import { pgTable, text, integer, date, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, numeric, date, timestamp } from "drizzle-orm/pg-core";
 import { authUser } from "./auth";
 
 /**
@@ -13,6 +13,8 @@ export const userProfile = pgTable("user_profile", {
   rencanaUsiaPensiun: integer("rencana_usia_pensiun"),
   rencanaUsiaWarisan: integer("rencana_usia_warisan"),
   anggotaKeluargaDitanggung: integer("anggota_keluarga_ditanggung").default(1),
+  pemasukanBulananRataRata: numeric("pemasukan_bulanan_rata_rata", { precision: 20, scale: 2 }),
+  pengeluaranBulananRataRata: numeric("pengeluaran_bulanan_rata_rata", { precision: 20, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

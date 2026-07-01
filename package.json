@@ -12,6 +12,7 @@
     "build": "bun run --filter='@wealth/web' build",
     "build:api": "bun run --filter='@wealth/api' build",
     "lint": "bun run --filter='@wealth/web' lint",
+    "test": "bun run --filter='@wealth/api' test",
     "typecheck": "bun run --filter='*' typecheck",
     "db:generate": "bun run --filter='@wealth/db' generate",
     "db:migrate": "bun run --filter='@wealth/db' migrate",
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "husky": "9.1.7",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.9"
   }
 }
