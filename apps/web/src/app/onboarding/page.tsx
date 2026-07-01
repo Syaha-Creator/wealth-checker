@@ -113,6 +113,16 @@ function ListItem({ label, value, onRemove, removeLabel }: { label: string; valu
   );
 }
 
+function SavedBadge({ count, label }: { count: number; label: string }) {
+  if (count === 0) return null;
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round"/></svg>
+      {count} {label} sudah tersimpan
+    </div>
+  );
+}
+
 // ─── Success Screen ───────────────────────────────────────────────────────────
 
 function SuccessScreen({ onGoToDashboard }: { onGoToDashboard: () => void }) {
@@ -150,6 +160,13 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [completed, setCompleted] = useState(false);
+
+  // Track saved counts per step (for display after saving)
+  const [savedRekening, setSavedRekening] = useState(0);
+  const [savedLiquid, setSavedLiquid] = useState(0);
+  const [savedFixed, setSavedFixed] = useState(0);
+  const [savedUtang, setSavedUtang] = useState(0);
+  const [savedPiutang, setSavedPiutang] = useState(0);
 
   // Session guard
   useEffect(() => {
@@ -192,56 +209,74 @@ export default function OnboardingPage() {
   const [sisaPiutang, setSisaPiutang] = useState("");
   const [piutangList, setPiutangList] = useState<{ peminjam: string; sisa: string }[]>([]);
 
-  const goNext = () => setStep((s) => Math.min(6, s + 1) as Step);
-  const goBack = () => setStep((s) => Math.max(1, s - 1) as Step);
+  const goBack = () => { setError(""); setStep((s) => Math.max(1, s - 1) as Step); };
 
-  const handleSubmit = async () => {
+  // Save current step's data to DB, then advance to next step
+  const handleNext = async (skip = false) => {
     setLoading(true);
     setError("");
     try {
-      await apiFetch("/api/profile", "PUT", {
-        tanggalLahir: tanggalLahir || null,
-        rencanaUsiaPensiun: Number(usiaPensiun) || null,
-        rencanaUsiaWarisan: Number(usiaWarisan) || null,
-        anggotaKeluargaDitanggung: Number(anggotaKeluarga) || 1,
-      });
-
-      for (const r of rekeningList) {
-        await apiFetch("/api/accounts", "POST", { nama: r.nama, saldoAwal: parseRupiah(r.saldo) });
-      }
-
-      for (const a of liquidList) {
-        await apiFetch("/api/assets/liquid", "POST", {
-          namaAset: a.nama,
-          jumlah: Number(a.jumlah),
-          hargaBeliRataRata: parseRupiah(a.harga),
+      if (step === 1) {
+        // Always save profile even on skip (harmless upsert)
+        await apiFetch("/api/profile", "PUT", {
+          tanggalLahir: tanggalLahir || null,
+          rencanaUsiaPensiun: Number(usiaPensiun) || null,
+          rencanaUsiaWarisan: Number(usiaWarisan) || null,
+          anggotaKeluargaDitanggung: Number(anggotaKeluarga) || 1,
         });
+      } else if (step === 2 && !skip) {
+        for (const r of rekeningList) {
+          await apiFetch("/api/accounts", "POST", { nama: r.nama, saldoAwal: parseRupiah(r.saldo) });
+        }
+        setSavedRekening((n) => n + rekeningList.length);
+        setRekeningList([]);
+      } else if (step === 3 && !skip) {
+        for (const a of liquidList) {
+          await apiFetch("/api/assets/liquid", "POST", {
+            namaAset: a.nama,
+            jumlah: Number(a.jumlah),
+            hargaBeliRataRata: parseRupiah(a.harga),
+          });
+        }
+        setSavedLiquid((n) => n + liquidList.length);
+        setLiquidList([]);
+      } else if (step === 4 && !skip) {
+        for (const a of fixedList) {
+          await apiFetch("/api/assets/fixed", "POST", {
+            namaAset: a.nama,
+            jumlah: Number(a.jumlah),
+            hargaBeliRataRata: parseRupiah(a.harga),
+          });
+        }
+        setSavedFixed((n) => n + fixedList.length);
+        setFixedList([]);
+      } else if (step === 5 && !skip) {
+        for (const d of utangList) {
+          await apiFetch("/api/debts", "POST", {
+            pemberiUtang: d.pemberi,
+            tipe: d.tipe,
+            saldoAwal: parseRupiah(d.sisa),
+          });
+        }
+        setSavedUtang((n) => n + utangList.length);
+        setUtangList([]);
+      } else if (step === 6) {
+        // Final step: save piutang then complete
+        if (!skip) {
+          for (const p of piutangList) {
+            await apiFetch("/api/debts/receivables", "POST", {
+              peminjam: p.peminjam,
+              saldoAwal: parseRupiah(p.sisa),
+            });
+          }
+          setSavedPiutang((n) => n + piutangList.length);
+          setPiutangList([]);
+        }
+        setCompleted(true);
+        return;
       }
 
-      for (const a of fixedList) {
-        await apiFetch("/api/assets/fixed", "POST", {
-          namaAset: a.nama,
-          jumlah: Number(a.jumlah),
-          hargaBeliRataRata: parseRupiah(a.harga),
-        });
-      }
-
-      for (const d of utangList) {
-        await apiFetch("/api/debts", "POST", {
-          pemberiUtang: d.pemberi,
-          tipe: d.tipe,
-          saldoAwal: parseRupiah(d.sisa),
-        });
-      }
-
-      for (const p of piutangList) {
-        await apiFetch("/api/debts/receivables", "POST", {
-          peminjam: p.peminjam,
-          saldoAwal: parseRupiah(p.sisa),
-        });
-      }
-
-      setCompleted(true);
+      setStep((s) => Math.min(6, s + 1) as Step);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Terjadi kesalahan. Coba lagi.");
     } finally {
@@ -278,6 +313,7 @@ export default function OnboardingPage() {
               {isOptional && <span className="ml-1.5 text-xs text-gray-400">(opsional)</span>}
             </p>
           </div>
+          {/* "Ke Dashboard" saves current progress first */}
           <Link
             href="/dashboard"
             className="text-xs text-gray-400 hover:text-gray-600 transition-colors mt-1 whitespace-nowrap"
@@ -368,6 +404,7 @@ export default function OnboardingPage() {
                 <h2 className="text-base font-semibold text-gray-900">Rekening & Tabungan</h2>
                 <p className="text-sm text-gray-500 mt-1">Tambahkan semua rekening kas dan tabungan beserta saldo saat ini.</p>
               </div>
+              <SavedBadge count={savedRekening} label="rekening" />
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label htmlFor="nama-rekening" className="block text-sm font-medium text-gray-700 mb-1">Nama Rekening</label>
@@ -405,7 +442,7 @@ export default function OnboardingPage() {
                     onRemove={() => setRekeningList((p) => p.filter((_, j) => j !== i))}
                   />
                 ))}
-                {rekeningList.length === 0 && (
+                {rekeningList.length === 0 && savedRekening === 0 && (
                   <p className="text-xs text-gray-400 text-center py-3">Belum ada rekening ditambahkan</p>
                 )}
               </div>
@@ -419,6 +456,7 @@ export default function OnboardingPage() {
                 <h2 className="text-base font-semibold text-gray-900">Aset Setara Kas</h2>
                 <p className="text-sm text-gray-500 mt-1">Emas, saham, reksa dana, obligasi — aset yang bisa dicairkan.</p>
               </div>
+              <SavedBadge count={savedLiquid} label="aset" />
               <div>
                 <label htmlFor="nama-liquid" className="block text-sm font-medium text-gray-700 mb-1">Nama Aset</label>
                 <input
@@ -467,7 +505,7 @@ export default function OnboardingPage() {
                     onRemove={() => setLiquidList((p) => p.filter((_, j) => j !== i))}
                   />
                 ))}
-                {liquidList.length === 0 && (
+                {liquidList.length === 0 && savedLiquid === 0 && (
                   <p className="text-xs text-gray-400 text-center py-3">Kosongkan jika tidak ada</p>
                 )}
               </div>
@@ -481,6 +519,7 @@ export default function OnboardingPage() {
                 <h2 className="text-base font-semibold text-gray-900">Aset Tidak Lancar</h2>
                 <p className="text-sm text-gray-500 mt-1">Rumah, kendaraan, elektronik — aset yang tidak mudah dicairkan.</p>
               </div>
+              <SavedBadge count={savedFixed} label="aset" />
               <div>
                 <label htmlFor="nama-fixed" className="block text-sm font-medium text-gray-700 mb-1">Nama Aset</label>
                 <input
@@ -529,7 +568,7 @@ export default function OnboardingPage() {
                     onRemove={() => setFixedList((p) => p.filter((_, j) => j !== i))}
                   />
                 ))}
-                {fixedList.length === 0 && (
+                {fixedList.length === 0 && savedFixed === 0 && (
                   <p className="text-xs text-gray-400 text-center py-3">Kosongkan jika tidak ada</p>
                 )}
               </div>
@@ -543,6 +582,7 @@ export default function OnboardingPage() {
                 <h2 className="text-base font-semibold text-gray-900">Utang & Kartu Kredit</h2>
                 <p className="text-sm text-gray-500 mt-1">Semua kewajiban finansial yang belum lunas.</p>
               </div>
+              <SavedBadge count={savedUtang} label="utang" />
               <div>
                 <label htmlFor="tipe-utang" className="block text-sm font-medium text-gray-700 mb-1">Tipe</label>
                 <select
@@ -591,7 +631,7 @@ export default function OnboardingPage() {
                     onRemove={() => setUtangList((p) => p.filter((_, j) => j !== i))}
                   />
                 ))}
-                {utangList.length === 0 && (
+                {utangList.length === 0 && savedUtang === 0 && (
                   <p className="text-xs text-gray-400 text-center py-3">Kosongkan jika tidak ada utang</p>
                 )}
               </div>
@@ -605,6 +645,7 @@ export default function OnboardingPage() {
                 <h2 className="text-base font-semibold text-gray-900">Piutang</h2>
                 <p className="text-sm text-gray-500 mt-1">Uang yang dipinjamkan ke orang lain dan belum kembali.</p>
               </div>
+              <SavedBadge count={savedPiutang} label="piutang" />
               <div>
                 <label htmlFor="peminjam" className="block text-sm font-medium text-gray-700 mb-1">Nama Peminjam</label>
                 <input
@@ -639,7 +680,7 @@ export default function OnboardingPage() {
                     onRemove={() => setPiutangList((prev) => prev.filter((_, j) => j !== i))}
                   />
                 ))}
-                {piutangList.length === 0 && (
+                {piutangList.length === 0 && savedPiutang === 0 && (
                   <p className="text-xs text-gray-400 text-center py-3">Kosongkan jika tidak ada piutang</p>
                 )}
               </div>
@@ -653,21 +694,23 @@ export default function OnboardingPage() {
             {step > 1 && (
               <button
                 onClick={goBack}
-                className="flex-1 py-3 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-colors text-sm"
+                disabled={loading}
+                className="flex-1 py-3 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
               >
                 Kembali
               </button>
             )}
             {step < 6 ? (
               <button
-                onClick={goNext}
-                className="flex-1 py-3 bg-emerald-600 text-white font-medium rounded-xl hover:bg-emerald-700 transition-colors text-sm"
+                onClick={() => handleNext(false)}
+                disabled={loading}
+                className="flex-1 py-3 bg-emerald-600 text-white font-medium rounded-xl hover:bg-emerald-700 transition-colors text-sm disabled:opacity-60"
               >
-                Lanjut
+                {loading ? "Menyimpan..." : "Lanjut"}
               </button>
             ) : (
               <button
-                onClick={handleSubmit}
+                onClick={() => handleNext(false)}
                 disabled={loading}
                 className="flex-1 py-3 bg-emerald-600 text-white font-medium rounded-xl hover:bg-emerald-700 transition-colors text-sm disabled:opacity-60"
               >
@@ -679,7 +722,7 @@ export default function OnboardingPage() {
           {/* Skip button for optional steps */}
           {isOptional && (
             <button
-              onClick={step < 6 ? goNext : handleSubmit}
+              onClick={() => handleNext(true)}
               disabled={loading}
               className="w-full py-2 text-sm text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
             >
