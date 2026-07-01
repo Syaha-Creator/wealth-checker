@@ -45,11 +45,71 @@ jobs:
         run: bun run build
 
 # ---------------------------------------------------------------------------
-# 2 — Deploy to Production (main branch only)
+# 2 — E2E Tests (main branch only)
+# ---------------------------------------------------------------------------
+  e2e-test:
+    name: 🧪 E2E Tests
+    needs: quality-gate
+    runs-on: self-hosted
+    timeout-minutes: 20
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Start E2E services
+        run: |
+          docker compose -f docker-compose.e2e.yml up -d --build
+
+          echo "Waiting for postgres-e2e..."
+          for i in $(seq 1 30); do
+            docker compose -f docker-compose.e2e.yml exec -T postgres-e2e \
+              pg_isready -U wealth -d wealth_checker_e2e && break
+            [ $i -eq 30 ] && echo "postgres-e2e did not start" && exit 1
+            sleep 2
+          done
+
+          echo "Running migrations on test DB..."
+          DATABASE_URL=postgresql://wealth:wealth_e2e_pass@localhost:5440/wealth_checker_e2e \
+            bun run db:migrate
+
+          echo "Waiting for web-e2e..."
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4000 > /dev/null && break
+            [ $i -eq 30 ] && echo "web-e2e did not respond" && exit 1
+            sleep 3
+          done
+
+      - name: Install Playwright browsers
+        working-directory: apps/web
+        run: bunx playwright install chromium --with-deps
+
+      - name: Run Playwright E2E
+        working-directory: apps/web
+        env:
+          CI: "true"
+          PLAYWRIGHT_BASE_URL: http://localhost:4000
+        run: bunx playwright test --reporter=list
+
+      - name: Teardown E2E services
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v
+
+# ---------------------------------------------------------------------------
+# 3 — Deploy to Production (main branch only)
 # ---------------------------------------------------------------------------
   deploy-production:
     name: 🚀 Deploy to Production
-    needs: quality-gate
+    needs: [quality-gate, e2e-test]
     runs-on: self-hosted
     timeout-minutes: 30
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'

@@ -2,13 +2,17 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { db, transactions, accounts } from "@wealth/db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, isNotNull } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import type { AppEnv } from "../types";
 
 export const transactionRoutes = new Hono<AppEnv>();
 
 transactionRoutes.use("*", requireAuth);
+
+// Default categories (shared between route and type-safe autocomplete)
+const KATEGORI_PENDAPATAN_DEFAULT = ["Gaji", "Proyek", "Dividen", "Bonus", "Hadiah", "Lainnya"];
+const KATEGORI_PENGELUARAN_DEFAULT = ["Makanan", "Transportasi", "Utilitas", "Belanja", "Kesehatan", "Hiburan", "Pendidikan", "Lainnya"];
 
 transactionRoutes.get("/", async (c) => {
   const userId = c.get("userId") as string;
@@ -22,6 +26,27 @@ transactionRoutes.get("/", async (c) => {
     .limit(limit)
     .offset(offset);
   return c.json(rows);
+});
+
+// Return distinct categories from user's transaction history, merged with defaults
+transactionRoutes.get("/categories", async (c) => {
+  const userId = c.get("userId") as string;
+  const rows = await db
+    .selectDistinct({ type: transactions.type, kategori: transactions.kategori })
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), isNotNull(transactions.kategori)));
+
+  const historyPendapatan = rows
+    .filter((r) => r.type === "pendapatan" && r.kategori)
+    .map((r) => r.kategori!);
+  const historyPengeluaran = rows
+    .filter((r) => r.type === "pengeluaran" && r.kategori)
+    .map((r) => r.kategori!);
+
+  return c.json({
+    pendapatan: [...new Set([...KATEGORI_PENDAPATAN_DEFAULT, ...historyPendapatan])],
+    pengeluaran: [...new Set([...KATEGORI_PENGELUARAN_DEFAULT, ...historyPengeluaran])],
+  });
 });
 
 const createSchema = z.object({

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 type Account = { id: string; nama: string; saldoCache: string };
+type Categories = { pendapatan: string[]; pengeluaran: string[] };
 
 type TxType = "pendapatan" | "pengeluaran" | "transfer";
 
@@ -17,8 +18,9 @@ const TX_TYPES: { value: TxType; label: string; color: string }[] = [
 
 const DEBIT_TYPES = new Set(["pengeluaran", "transfer"]);
 
-const KATEGORI_PENDAPATAN = ["Gaji", "Proyek", "Dividen", "Bonus", "Hadiah", "Lainnya"];
-const KATEGORI_PENGELUARAN = ["Makanan", "Transportasi", "Utilitas", "Belanja", "Kesehatan", "Hiburan", "Pendidikan", "Lainnya"];
+// Fallback defaults in case API call fails
+const KATEGORI_PENDAPATAN_FALLBACK = ["Gaji", "Proyek", "Dividen", "Bonus", "Hadiah", "Lainnya"];
+const KATEGORI_PENGELUARAN_FALLBACK = ["Makanan", "Transportasi", "Utilitas", "Belanja", "Kesehatan", "Hiburan", "Pendidikan", "Lainnya"];
 
 function formatRupiah(val: string) {
   const num = val.replace(/\D/g, "");
@@ -64,6 +66,10 @@ function NewTransactionForm() {
   })();
 
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [categories, setCategories] = useState<Categories>({
+    pendapatan: KATEGORI_PENDAPATAN_FALLBACK,
+    pengeluaran: KATEGORI_PENGELUARAN_FALLBACK,
+  });
   const [type, setType] = useState<TxType>(initialType);
   const [tanggal, setTanggal] = useState(new Date().toISOString().split("T")[0]);
   const [nominal, setNominal] = useState("");
@@ -75,8 +81,12 @@ function NewTransactionForm() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    apiFetch("/api/accounts", "GET")
+    let cancelled = false;
+    // Fetch accounts
+    fetch(`${API}/api/accounts`, { credentials: "include" })
+      .then((r) => r.json())
       .then((data) => {
+        if (cancelled) return;
         const active = data.filter((a: Account & { isActive: boolean }) => a.isActive);
         setAccounts(active);
         if (active.length > 0) {
@@ -85,6 +95,15 @@ function NewTransactionForm() {
         }
       })
       .catch(() => {});
+    // Fetch categories from API (includes user history)
+    fetch(`${API}/api/transactions/categories`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data: Categories) => {
+        if (cancelled) return;
+        setCategories(data);
+      })
+      .catch(() => {}); // silently fall back to defaults
+    return () => { cancelled = true; };
   }, []);
 
   const selectedAccount = accounts.find((a) => a.id === accountId);
@@ -93,7 +112,7 @@ function NewTransactionForm() {
   const isDebit = DEBIT_TYPES.has(type);
   const isOverBalance = isDebit && nominalParsed > 0 && nominalParsed > saldoTersedia;
 
-  const kategoriOptions = type === "pendapatan" ? KATEGORI_PENDAPATAN : KATEGORI_PENGELUARAN;
+  const kategoriOptions = type === "pendapatan" ? categories.pendapatan : categories.pengeluaran;
   const transferAccounts = accounts.filter((a) => a.id !== accountId);
   const canTransfer = accounts.length >= 2;
 
@@ -290,21 +309,26 @@ function NewTransactionForm() {
             </div>
           )}
 
-          {/* Kategori */}
+          {/* Kategori — datalist autocomplete (pilih dari histori atau ketik bebas) */}
           {type !== "transfer" && (
             <div className="flex items-center px-5 py-3">
               <label htmlFor="kategori" className="text-sm text-gray-500 w-28">Kategori</label>
               <div className="flex-1 flex items-center gap-1 justify-end">
-                <select
+                <input
                   id="kategori"
-                  className="text-sm text-gray-900 bg-transparent focus:outline-none text-right appearance-none"
+                  list="kategori-options"
+                  type="text"
+                  className="flex-1 text-sm text-gray-900 bg-transparent focus:outline-none text-right min-w-0"
+                  placeholder="Pilih atau ketik..."
                   value={kategori}
                   onChange={(e) => setKategori(e.target.value)}
-                >
-                  <option value="">Pilih kategori</option>
-                  {kategoriOptions.map((k) => <option key={k} value={k}>{k}</option>)}
-                </select>
-                <ChevronDown />
+                  autoComplete="off"
+                />
+                <datalist id="kategori-options">
+                  {kategoriOptions.map((k) => (
+                    <option key={k} value={k} />
+                  ))}
+                </datalist>
               </div>
             </div>
           )}
