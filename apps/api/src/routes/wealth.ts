@@ -2,8 +2,9 @@ import { Hono } from "hono";
 import { db } from "@wealth/db";
 import { requireAuth } from "../middleware/auth";
 import { calculateWealthSummary } from "../services/wealth";
+import type { AppEnv } from "../types";
 
-export const wealthRoutes = new Hono();
+export const wealthRoutes = new Hono<AppEnv>();
 
 wealthRoutes.use("*", requireAuth);
 

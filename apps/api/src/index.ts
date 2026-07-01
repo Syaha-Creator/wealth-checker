@@ -1,10 +1,14 @@
 import { Hono } from "hono";
+import type { AppEnv } from "./types";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { authRoutes } from "./routes/auth";
 import { accountRoutes } from "./routes/accounts";
 import { transactionRoutes } from "./routes/transactions";
 import { wealthRoutes } from "./routes/wealth";
+import { assetRoutes } from "./routes/assets";
+import { debtRoutes } from "./routes/debts";
+import { profileRoutes } from "./routes/profile";
 
 const ALLOWED_ORIGINS = [
   "https://wealth.velrox.cloud",
@@ -12,7 +16,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:3000",
 ];
 
-const app = new Hono();
+const app = new Hono<AppEnv>();
 
 app.use("*", logger());
 
@@ -40,6 +44,9 @@ app.route("/api/auth", authRoutes);
 app.route("/api/accounts", accountRoutes);
 app.route("/api/transactions", transactionRoutes);
 app.route("/api/wealth", wealthRoutes);
+app.route("/api/assets", assetRoutes);
+app.route("/api/debts", debtRoutes);
+app.route("/api/profile", profileRoutes);
 
 // 404 handler
 app.notFound((c) => c.json({ error: "Not found" }, 404));
