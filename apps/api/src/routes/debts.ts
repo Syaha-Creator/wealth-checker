@@ -10,6 +10,9 @@ export const debtRoutes = new Hono<AppEnv>();
 
 debtRoutes.use("*", requireAuth);
 
+// FIX #14: Reusable UUID param schema
+const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
+
 // ─── Debts (Utang) ─────────────────────────────────────────────────────────
 
 const debtSchema = z.object({
@@ -40,9 +43,9 @@ debtRoutes.post("/", zValidator("json", debtSchema), async (c) => {
   return c.json(row, 201);
 });
 
-debtRoutes.patch("/:id", zValidator("json", debtSchema.partial()), async (c) => {
+debtRoutes.patch("/:id", zValidator("param", idParam), zValidator("json", debtSchema.partial()), async (c) => {
   const userId = c.get("userId") as string;
-  const id = c.req.param("id");
+  const { id } = c.req.valid("param");
   const data = c.req.valid("json");
   const [row] = await db
     .update(debts)
@@ -58,9 +61,9 @@ debtRoutes.patch("/:id", zValidator("json", debtSchema.partial()), async (c) => 
   return c.json(row);
 });
 
-debtRoutes.delete("/:id", async (c) => {
+debtRoutes.delete("/:id", zValidator("param", idParam), async (c) => {
   const userId = c.get("userId") as string;
-  const id = c.req.param("id");
+  const { id } = c.req.valid("param");
   await db.delete(debts).where(and(eq(debts.id, id), eq(debts.userId, userId)));
   return c.body(null, 204);
 });
@@ -93,9 +96,9 @@ debtRoutes.post("/receivables", zValidator("json", receivableSchema), async (c) 
   return c.json(row, 201);
 });
 
-debtRoutes.patch("/receivables/:id", zValidator("json", receivableSchema.partial()), async (c) => {
+debtRoutes.patch("/receivables/:id", zValidator("param", idParam), zValidator("json", receivableSchema.partial()), async (c) => {
   const userId = c.get("userId") as string;
-  const id = c.req.param("id");
+  const { id } = c.req.valid("param");
   const data = c.req.valid("json");
   const [row] = await db
     .update(receivables)
@@ -110,9 +113,9 @@ debtRoutes.patch("/receivables/:id", zValidator("json", receivableSchema.partial
   return c.json(row);
 });
 
-debtRoutes.delete("/receivables/:id", async (c) => {
+debtRoutes.delete("/receivables/:id", zValidator("param", idParam), async (c) => {
   const userId = c.get("userId") as string;
-  const id = c.req.param("id");
+  const { id } = c.req.valid("param");
   await db.delete(receivables).where(and(eq(receivables.id, id), eq(receivables.userId, userId)));
   return c.body(null, 204);
 });

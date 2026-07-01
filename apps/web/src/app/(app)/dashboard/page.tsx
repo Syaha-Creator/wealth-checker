@@ -134,11 +134,13 @@ export default function DashboardPage() {
     );
   }
 
-  const level = summary?.wealthLevel ?? 0;
-  const levelCfg = LEVEL_CONFIG[level] ?? LEVEL_CONFIG[0];
+  const level = summary?.wealthLevel ?? -1;
+  // FIX #11: level -1 = "no data yet" — show neutral state, not "Pailit"
+  const isNoData = level === -1;
+  const levelCfg = isNoData ? null : (LEVEL_CONFIG[level] ?? LEVEL_CONFIG[0]);
   const kn = summary?.kekayaanBersih ?? 0;
 
-  const isNewUser = !summary || (summary.totalAset === 0 && summary.totalUtang === 0);
+  const isNewUser = !summary || isNoData;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
@@ -175,15 +177,17 @@ export default function DashboardPage() {
       )}
 
       {/* Kekayaan Bersih */}
-      <div className={`rounded-2xl p-5 mb-4 ${kn >= 0 ? "bg-emerald-600" : "bg-red-500"}`}>
+      <div className={`rounded-2xl p-5 mb-4 ${isNoData ? "bg-gray-400" : kn >= 0 ? "bg-emerald-600" : "bg-red-500"}`}>
         <p className="text-sm text-white/70">Kekayaan Bersih</p>
-        <p className="text-3xl font-bold text-white mt-1">{formatRp(kn)}</p>
-        <p className="text-sm text-white/80 mt-0.5">{formatRpFull(kn)}</p>
-        <div className="mt-4 flex items-center gap-2">
-          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${levelCfg.color}`}>
-            Level {level} · {levelCfg.label}
-          </span>
-        </div>
+        <p className="text-3xl font-bold text-white mt-1">{isNoData ? "—" : formatRp(kn)}</p>
+        {!isNoData && <p className="text-sm text-white/80 mt-0.5">{formatRpFull(kn)}</p>}
+        {levelCfg && (
+          <div className="mt-4 flex items-center gap-2">
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${levelCfg.color}`}>
+              Level {level} · {levelCfg.label}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Breakdown: Aset vs Utang */}
@@ -217,19 +221,19 @@ export default function DashboardPage() {
             <p className="text-xs text-gray-500">Total Utang</p>
             <p className="text-lg font-bold text-red-600 mt-1">{formatRp(summary.totalUtang)}</p>
             <div className="mt-2 pt-2 border-t border-gray-50">
-              <p className="text-xs text-gray-400">{levelCfg.desc}</p>
+              <p className="text-xs text-gray-400">{levelCfg ? levelCfg.desc : "Lengkapi data untuk melihat level"}</p>
             </div>
             {/* Level progress bar */}
             <div className="mt-3">
-              <div className="flex gap-0.5 mt-1" role="progressbar" aria-valuenow={level} aria-valuemin={0} aria-valuemax={6} aria-label={`Level kebebasan finansial: ${level} dari 6`}>
+              <div className="flex gap-0.5 mt-1" role="progressbar" aria-valuenow={Math.max(0, level)} aria-valuemin={0} aria-valuemax={6} aria-label={`Level kebebasan finansial: ${isNoData ? "belum ada data" : `${level} dari 6`}`}>
                 {[0, 1, 2, 3, 4, 5, 6].map((l) => (
                   <div
                     key={l}
-                    className={`h-1.5 flex-1 rounded-full ${l <= level ? "bg-emerald-500" : "bg-gray-100"}`}
+                    className={`h-1.5 flex-1 rounded-full ${!isNoData && l <= level ? "bg-emerald-500" : "bg-gray-100"}`}
                   />
                 ))}
               </div>
-              <p className="text-xs text-gray-400 mt-1">Level {level} dari 6</p>
+              <p className="text-xs text-gray-400 mt-1">{isNoData ? "Belum ada data" : `Level ${level} dari 6`}</p>
             </div>
           </div>
         </div>

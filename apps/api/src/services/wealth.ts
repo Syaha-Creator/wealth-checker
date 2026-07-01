@@ -199,9 +199,12 @@ export async function calculateMonthlyCashFlow(
 
   const avgSisa = avgPemasukan - avgPengeluaran;
   const kasBersih = totalKas - totalUtang;
+
+  // FIX #10: Use avgPengeluaran (not avgSisa) so runway shows even when spending > income
+  // — that's exactly when knowing the runway matters most
   const hidupTanpaGajiBulan =
-    avgSisa > 0 && kasBersih > 0
-      ? Math.round((kasBersih / avgSisa) * 10) / 10
+    avgPengeluaran > 0 && kasBersih > 0
+      ? Math.round((kasBersih / avgPengeluaran) * 10) / 10
       : null;
 
   // Jika pakai fallback profil, tampilkan nilai rencana sebagai bulanIni
@@ -233,7 +236,8 @@ export function calculateWealthLevel({
   uang: number;
   totalAset: number;
 }): number {
-  if (totalAset === 0 && totalUtang === 0) return 0;   // belum ada data
+  // FIX #11: -1 = no data yet (distinct from level 0 "pailit")
+  if (totalAset === 0 && totalUtang === 0) return -1;
   if (totalAset < totalUtang) return 0;                 // pailit
   if (totalUtang > kekayaanBersih) return 1;            // terjerat utang
   if (uang < totalUtang) return 2;                      // terlihat kaya

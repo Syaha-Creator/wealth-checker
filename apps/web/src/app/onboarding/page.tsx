@@ -225,52 +225,59 @@ export default function OnboardingPage() {
           anggotaKeluargaDitanggung: Number(anggotaKeluarga) || 1,
         });
       } else if (step === 2 && !skip) {
-        for (const r of rekeningList) {
+        // FIX #6: Remove each item from the list right after it saves
+        // so a partial failure only retries the un-saved items
+        const pending = [...rekeningList];
+        for (const r of pending) {
           await apiFetch("/api/accounts", "POST", { nama: r.nama, saldoAwal: parseRupiah(r.saldo) });
+          setSavedRekening((n) => n + 1);
+          setRekeningList((prev) => prev.slice(1));
         }
-        setSavedRekening((n) => n + rekeningList.length);
-        setRekeningList([]);
       } else if (step === 3 && !skip) {
-        for (const a of liquidList) {
+        const pending = [...liquidList];
+        for (const a of pending) {
           await apiFetch("/api/assets/liquid", "POST", {
             namaAset: a.nama,
             jumlah: Number(a.jumlah),
             hargaBeliRataRata: parseRupiah(a.harga),
           });
+          setSavedLiquid((n) => n + 1);
+          setLiquidList((prev) => prev.slice(1));
         }
-        setSavedLiquid((n) => n + liquidList.length);
-        setLiquidList([]);
       } else if (step === 4 && !skip) {
-        for (const a of fixedList) {
+        const pending = [...fixedList];
+        for (const a of pending) {
           await apiFetch("/api/assets/fixed", "POST", {
             namaAset: a.nama,
             jumlah: Number(a.jumlah),
             hargaBeliRataRata: parseRupiah(a.harga),
           });
+          setSavedFixed((n) => n + 1);
+          setFixedList((prev) => prev.slice(1));
         }
-        setSavedFixed((n) => n + fixedList.length);
-        setFixedList([]);
       } else if (step === 5 && !skip) {
-        for (const d of utangList) {
+        const pending = [...utangList];
+        for (const d of pending) {
           await apiFetch("/api/debts", "POST", {
             pemberiUtang: d.pemberi,
             tipe: d.tipe,
             saldoAwal: parseRupiah(d.sisa),
           });
+          setSavedUtang((n) => n + 1);
+          setUtangList((prev) => prev.slice(1));
         }
-        setSavedUtang((n) => n + utangList.length);
-        setUtangList([]);
       } else if (step === 6) {
         // Final step: save piutang then complete
         if (!skip) {
-          for (const p of piutangList) {
+          const pending = [...piutangList];
+          for (const p of pending) {
             await apiFetch("/api/debts/receivables", "POST", {
               peminjam: p.peminjam,
               saldoAwal: parseRupiah(p.sisa),
             });
+            setSavedPiutang((n) => n + 1);
+            setPiutangList((prev) => prev.slice(1));
           }
-          setSavedPiutang((n) => n + piutangList.length);
-          setPiutangList([]);
         }
         setCompleted(true);
         return;

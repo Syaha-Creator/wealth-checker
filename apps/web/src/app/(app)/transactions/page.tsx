@@ -192,6 +192,12 @@ export default function TransactionsPage() {
           <h1 className="text-xl font-bold text-gray-900">Riwayat Transaksi</h1>
           <p className="text-sm text-gray-500 mt-0.5">
             {isFiltering ? `${filtered.length} dari ${transactions.length}` : `${transactions.length}`} transaksi
+            {/* FIX #9: Warn user when the list is truncated at the fetch limit */}
+            {transactions.length >= 200 && (
+              <span className="ml-1 text-amber-600 font-medium" title="Hanya 200 transaksi terbaru yang ditampilkan">
+                · ⚠ maks 200
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">

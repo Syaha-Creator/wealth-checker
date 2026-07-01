@@ -10,6 +10,9 @@ export const assetRoutes = new Hono<AppEnv>();
 
 assetRoutes.use("*", requireAuth);
 
+// FIX #14: Reusable UUID param schema
+const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
+
 const assetSchema = z.object({
   namaAset: z.string().min(1),
   jumlah: z.number().positive(),
@@ -33,9 +36,9 @@ assetRoutes.post("/liquid", zValidator("json", assetSchema), async (c) => {
   return c.json(row, 201);
 });
 
-assetRoutes.patch("/liquid/:id", zValidator("json", assetSchema.partial()), async (c) => {
+assetRoutes.patch("/liquid/:id", zValidator("param", idParam), zValidator("json", assetSchema.partial()), async (c) => {
   const userId = c.get("userId") as string;
-  const id = c.req.param("id");
+  const { id } = c.req.valid("param");
   const data = c.req.valid("json");
   const [row] = await db
     .update(liquidAssets)
@@ -51,9 +54,9 @@ assetRoutes.patch("/liquid/:id", zValidator("json", assetSchema.partial()), asyn
   return c.json(row);
 });
 
-assetRoutes.delete("/liquid/:id", async (c) => {
+assetRoutes.delete("/liquid/:id", zValidator("param", idParam), async (c) => {
   const userId = c.get("userId") as string;
-  const id = c.req.param("id");
+  const { id } = c.req.valid("param");
   await db.delete(liquidAssets).where(and(eq(liquidAssets.id, id), eq(liquidAssets.userId, userId)));
   return c.body(null, 204);
 });
@@ -75,9 +78,9 @@ assetRoutes.post("/fixed", zValidator("json", assetSchema), async (c) => {
   return c.json(row, 201);
 });
 
-assetRoutes.patch("/fixed/:id", zValidator("json", assetSchema.partial()), async (c) => {
+assetRoutes.patch("/fixed/:id", zValidator("param", idParam), zValidator("json", assetSchema.partial()), async (c) => {
   const userId = c.get("userId") as string;
-  const id = c.req.param("id");
+  const { id } = c.req.valid("param");
   const data = c.req.valid("json");
   const [row] = await db
     .update(fixedAssets)
@@ -93,9 +96,9 @@ assetRoutes.patch("/fixed/:id", zValidator("json", assetSchema.partial()), async
   return c.json(row);
 });
 
-assetRoutes.delete("/fixed/:id", async (c) => {
+assetRoutes.delete("/fixed/:id", zValidator("param", idParam), async (c) => {
   const userId = c.get("userId") as string;
-  const id = c.req.param("id");
+  const { id } = c.req.valid("param");
   await db.delete(fixedAssets).where(and(eq(fixedAssets.id, id), eq(fixedAssets.userId, userId)));
   return c.body(null, 204);
 });

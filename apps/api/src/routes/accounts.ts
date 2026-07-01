@@ -10,6 +10,9 @@ export const accountRoutes = new Hono<AppEnv>();
 
 accountRoutes.use("*", requireAuth);
 
+// FIX #14: Reusable UUID param schema
+const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
+
 accountRoutes.get("/", async (c) => {
   const userId = c.get("userId") as string;
   const rows = await db.select().from(accounts).where(eq(accounts.userId, userId));
@@ -33,10 +36,11 @@ accountRoutes.post("/", zValidator("json", createSchema), async (c) => {
 
 accountRoutes.patch(
   "/:id",
+  zValidator("param", idParam),
   zValidator("json", z.object({ nama: z.string().min(1).optional(), isActive: z.boolean().optional() })),
   async (c) => {
     const userId = c.get("userId") as string;
-    const id = c.req.param("id");
+    const { id } = c.req.valid("param");
     const data = c.req.valid("json");
     const [account] = await db
       .update(accounts)
@@ -48,9 +52,9 @@ accountRoutes.patch(
   }
 );
 
-accountRoutes.delete("/:id", async (c) => {
+accountRoutes.delete("/:id", zValidator("param", idParam), async (c) => {
   const userId = c.get("userId") as string;
-  const id = c.req.param("id");
+  const { id } = c.req.valid("param");
 
   // check no transactions linked
   const [{ total }] = await db

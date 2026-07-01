@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { db, transactions, accounts } from "@wealth/db";
+import { db, transactions, accounts, debts, receivables } from "@wealth/db";
 import { eq, and, desc, sql, isNotNull } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import type { AppEnv } from "../types";
@@ -10,14 +10,37 @@ export const transactionRoutes = new Hono<AppEnv>();
 
 transactionRoutes.use("*", requireAuth);
 
-// Default categories (shared between route and type-safe autocomplete)
+// Default categories
 const KATEGORI_PENDAPATAN_DEFAULT = ["Gaji", "Proyek", "Dividen", "Bonus", "Hadiah", "Lainnya"];
 const KATEGORI_PENGELUARAN_DEFAULT = ["Makanan", "Transportasi", "Utilitas", "Belanja", "Kesehatan", "Hiburan", "Pendidikan", "Lainnya"];
 
-transactionRoutes.get("/", async (c) => {
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+// Types that deduct from source account
+const DEBIT_TYPES = new Set([
+  "pengeluaran", "bayar_utang", "pemberian_piutang",
+  "beli_barang", "beli_investasi", "transfer",
+]);
+
+// Types that add to source account (FIX #5: include jual_barang/jual_investasi)
+const CREDIT_TYPES = new Set([
+  "pendapatan", "pinjaman_utang", "penerimaan_piutang",
+  "jual_barang", "jual_investasi",
+]);
+
+// UUID regex for param validation (FIX #14)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// ─── GET / ────────────────────────────────────────────────────────────────────
+
+const listQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+});
+
+transactionRoutes.get("/", zValidator("query", listQuerySchema), async (c) => {
   const userId = c.get("userId") as string;
-  const limit = Math.min(Number(c.req.query("limit") ?? 50), 200);
-  const offset = Number(c.req.query("offset") ?? 0);
+  const { limit, offset } = c.req.valid("query");
   const rows = await db
     .select()
     .from(transactions)
@@ -28,7 +51,8 @@ transactionRoutes.get("/", async (c) => {
   return c.json(rows);
 });
 
-// Return distinct categories from user's transaction history, merged with defaults
+// ─── GET /categories ──────────────────────────────────────────────────────────
+
 transactionRoutes.get("/categories", async (c) => {
   const userId = c.get("userId") as string;
   const rows = await db
@@ -49,6 +73,8 @@ transactionRoutes.get("/categories", async (c) => {
   });
 });
 
+// ─── POST / ───────────────────────────────────────────────────────────────────
+
 const createSchema = z.object({
   tanggal: z.string().date(),
   type: z.enum([
@@ -58,92 +84,158 @@ const createSchema = z.object({
   ]),
   kategori: z.string().optional(),
   rincian: z.string().optional(),
+  // FIX #1: accountId required for all debit/credit types; toAccountId required for transfer
   accountId: z.string().uuid().optional(),
-  // untuk transfer: rekening tujuan; untuk utang/piutang: id entitas terkait
   toAccountId: z.string().uuid().optional(),
+  // relatedDebtId / relatedReceivableId for bayar_utang / penerimaan_piutang linkage
+  relatedDebtId: z.string().uuid().optional(),
+  relatedReceivableId: z.string().uuid().optional(),
   nominal: z.number().positive(),
+}).superRefine((val, ctx) => {
+  // FIX #1: transfer must have both accountId and toAccountId, and they must differ
+  if (val.type === "transfer") {
+    if (!val.accountId) {
+      ctx.addIssue({ code: "custom", message: "accountId diperlukan untuk transfer", path: ["accountId"] });
+    }
+    if (!val.toAccountId) {
+      ctx.addIssue({ code: "custom", message: "toAccountId diperlukan untuk transfer", path: ["toAccountId"] });
+    }
+    if (val.accountId && val.toAccountId && val.accountId === val.toAccountId) {
+      ctx.addIssue({ code: "custom", message: "Rekening asal dan tujuan tidak boleh sama", path: ["toAccountId"] });
+    }
+  }
+  // FIX #1: debit types must have an accountId to actually deduct from
+  if (DEBIT_TYPES.has(val.type) && val.type !== "transfer" && !val.accountId) {
+    ctx.addIssue({ code: "custom", message: "accountId diperlukan untuk tipe transaksi ini", path: ["accountId"] });
+  }
 });
-
-// Transaction types that deduct from the source account
-const DEBIT_TYPES = new Set([
-  "pengeluaran", "bayar_utang", "pemberian_piutang",
-  "beli_barang", "beli_investasi", "transfer",
-]);
 
 transactionRoutes.post("/", zValidator("json", createSchema), async (c) => {
   const userId = c.get("userId") as string;
-  const { toAccountId, ...data } = c.req.valid("json");
+  const { toAccountId, relatedDebtId, relatedReceivableId, ...data } = c.req.valid("json");
 
-  // Validate sufficient balance before deducting
-  if (data.accountId && DEBIT_TYPES.has(data.type)) {
-    const [sourceAccount] = await db
-      .select({ saldoCache: accounts.saldoCache })
-      .from(accounts)
-      .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, userId)));
+  try {
+    const [trx] = await db.transaction(async (tx) => {
+      // ── FIX #2+#16: Validate account ownership before any mutation ────────
+      if (data.accountId) {
+        const [srcAcc] = await tx
+          .select({ id: accounts.id, saldoCache: accounts.saldoCache })
+          .from(accounts)
+          .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, userId)));
 
-    if (!sourceAccount) {
-      return c.json({ error: "Rekening tidak ditemukan" }, 404);
-    }
+        if (!srcAcc) {
+          throw Object.assign(new Error("Rekening asal tidak ditemukan"), { status: 404 });
+        }
 
-    const currentBalance = Number(sourceAccount.saldoCache);
-    if (currentBalance < data.nominal) {
-      const shortfall = data.nominal - currentBalance;
-      return c.json({
-        error: `Saldo tidak mencukupi. Saldo tersedia: Rp ${currentBalance.toLocaleString("id-ID")}, dibutuhkan: Rp ${data.nominal.toLocaleString("id-ID")} (kurang Rp ${shortfall.toLocaleString("id-ID")})`,
-        code: "INSUFFICIENT_BALANCE",
-        saldoTersedia: currentBalance,
-        nominal: data.nominal,
-      }, 422);
-    }
-  }
+        // ── FIX #3: Balance check INSIDE transaction (atomic) ───────────────
+        if (DEBIT_TYPES.has(data.type)) {
+          // Use conditional UPDATE — atomically debit only if balance is sufficient
+          const deducted = await tx
+            .update(accounts)
+            .set({ saldoCache: sql`saldo_cache - ${String(data.nominal)}` })
+            .where(and(
+              eq(accounts.id, data.accountId),
+              eq(accounts.userId, userId),
+              sql`saldo_cache::numeric >= ${String(data.nominal)}`,
+            ))
+            .returning({ id: accounts.id, saldoCache: accounts.saldoCache });
 
-  const [trx] = await db.transaction(async (tx) => {
-    const [inserted] = await tx
-      .insert(transactions)
-      .values({
-        userId,
-        tanggal: data.tanggal,
-        type: data.type,
-        kategori: data.kategori,
-        rincian: data.rincian,
-        accountId: data.accountId,
-        relatedEntityId: toAccountId,
-        nominal: String(data.nominal),
-      })
-      .returning();
+          if (deducted.length === 0) {
+            const shortfall = data.nominal - Number(srcAcc.saldoCache);
+            throw Object.assign(new Error(
+              `Saldo tidak mencukupi. Saldo tersedia: Rp ${Number(srcAcc.saldoCache).toLocaleString("id-ID")}, dibutuhkan: Rp ${data.nominal.toLocaleString("id-ID")} (kurang Rp ${shortfall.toLocaleString("id-ID")})`,
+            ), {
+              status: 422,
+              code: "INSUFFICIENT_BALANCE",
+              saldoTersedia: Number(srcAcc.saldoCache),
+              nominal: data.nominal,
+            });
+          }
+        } else if (CREDIT_TYPES.has(data.type)) {
+          // FIX #5: credit types (incl. jual_barang/jual_investasi) add to balance
+          await tx
+            .update(accounts)
+            .set({ saldoCache: sql`saldo_cache + ${String(data.nominal)}` })
+            .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, userId)));
+        }
+      }
 
-    // Update account balance cache
-    if (data.accountId) {
-      if (data.type === "pendapatan" || data.type === "pinjaman_utang" || data.type === "penerimaan_piutang") {
-        await tx
+      // ── FIX #2: Validate toAccountId ownership for transfer ───────────────
+      if (data.type === "transfer" && toAccountId) {
+        const credited = await tx
           .update(accounts)
           .set({ saldoCache: sql`saldo_cache + ${String(data.nominal)}` })
-          .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, userId)));
-      } else if (DEBIT_TYPES.has(data.type)) {
-        await tx
-          .update(accounts)
-          .set({ saldoCache: sql`saldo_cache - ${String(data.nominal)}` })
-          .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, userId)));
+          .where(and(eq(accounts.id, toAccountId), eq(accounts.userId, userId)))
+          .returning({ id: accounts.id });
+
+        if (credited.length === 0) {
+          throw Object.assign(
+            new Error("Rekening tujuan tidak ditemukan"),
+            { status: 404 },
+          );
+        }
       }
+
+      // ── FIX #4: Auto-update debt/receivable sisaSaldo ─────────────────────
+      if (data.type === "bayar_utang" && relatedDebtId) {
+        await tx
+          .update(debts)
+          .set({ sisaSaldo: sql`GREATEST(0, sisa_saldo::numeric - ${String(data.nominal)})` })
+          .where(and(eq(debts.id, relatedDebtId), eq(debts.userId, userId)));
+      }
+
+      if (data.type === "penerimaan_piutang" && relatedReceivableId) {
+        await tx
+          .update(receivables)
+          .set({ sisaSaldo: sql`GREATEST(0, sisa_saldo::numeric - ${String(data.nominal)})` })
+          .where(and(eq(receivables.id, relatedReceivableId), eq(receivables.userId, userId)));
+      }
+
+      // ── Insert transaction row ─────────────────────────────────────────────
+      const [inserted] = await tx
+        .insert(transactions)
+        .values({
+          userId,
+          tanggal: data.tanggal,
+          type: data.type,
+          kategori: data.kategori,
+          rincian: data.rincian,
+          accountId: data.accountId,
+          // Store toAccountId for transfer; debt/receivable id for utang/piutang
+          relatedEntityId: toAccountId ?? relatedDebtId ?? relatedReceivableId,
+          nominal: String(data.nominal),
+        })
+        .returning();
+
+      return [inserted];
+    });
+
+    return c.json(trx, 201);
+  } catch (err: unknown) {
+    const e = err as { status?: number; code?: string; message?: string; saldoTersedia?: number; nominal?: number };
+    if (e.status === 422) {
+      return c.json({
+        error: e.message,
+        code: e.code ?? "VALIDATION_ERROR",
+        saldoTersedia: e.saldoTersedia,
+        nominal: e.nominal,
+      }, 422);
     }
-
-    // For transfer: add to destination account
-    if (data.type === "transfer" && toAccountId) {
-      await tx
-        .update(accounts)
-        .set({ saldoCache: sql`saldo_cache + ${String(data.nominal)}` })
-        .where(and(eq(accounts.id, toAccountId), eq(accounts.userId, userId)));
+    if (e.status === 404) {
+      return c.json({ error: e.message ?? "Not found" }, 404);
     }
-
-    return [inserted];
-  });
-
-  return c.json(trx, 201);
+    throw err; // re-throw unexpected errors as 500
+  }
 });
+
+// ─── DELETE /:id ──────────────────────────────────────────────────────────────
 
 transactionRoutes.delete("/:id", async (c) => {
   const userId = c.get("userId") as string;
   const id = c.req.param("id");
+
+  // FIX #14: Validate UUID format
+  if (!UUID_RE.test(id)) return c.json({ error: "ID tidak valid" }, 400);
 
   const [trx] = await db
     .select()
@@ -153,21 +245,16 @@ transactionRoutes.delete("/:id", async (c) => {
   if (!trx) return c.json({ error: "Not found" }, 404);
 
   await db.transaction(async (tx) => {
-    // Reverse the balance update
+    // ── Reverse account balance ───────────────────────────────────────────
     if (trx.accountId) {
-      if (
-        trx.type === "pendapatan" || trx.type === "pinjaman_utang" ||
-        trx.type === "penerimaan_piutang"
-      ) {
+      if (CREDIT_TYPES.has(trx.type)) {
+        // Reverse a credit: subtract
         await tx
           .update(accounts)
           .set({ saldoCache: sql`saldo_cache - ${trx.nominal}` })
           .where(and(eq(accounts.id, trx.accountId), eq(accounts.userId, userId)));
-      } else if (
-        trx.type === "pengeluaran" || trx.type === "bayar_utang" ||
-        trx.type === "pemberian_piutang" || trx.type === "beli_barang" ||
-        trx.type === "beli_investasi" || trx.type === "transfer"
-      ) {
+      } else if (DEBIT_TYPES.has(trx.type)) {
+        // Reverse a debit: add back
         await tx
           .update(accounts)
           .set({ saldoCache: sql`saldo_cache + ${trx.nominal}` })
@@ -175,12 +262,27 @@ transactionRoutes.delete("/:id", async (c) => {
       }
     }
 
-    // Reverse transfer destination
+    // ── Reverse transfer destination ──────────────────────────────────────
     if (trx.type === "transfer" && trx.relatedEntityId) {
       await tx
         .update(accounts)
         .set({ saldoCache: sql`saldo_cache - ${trx.nominal}` })
         .where(and(eq(accounts.id, trx.relatedEntityId), eq(accounts.userId, userId)));
+    }
+
+    // ── FIX #4: Reverse debt/receivable sisaSaldo on delete ───────────────
+    if (trx.type === "bayar_utang" && trx.relatedEntityId) {
+      await tx
+        .update(debts)
+        .set({ sisaSaldo: sql`sisa_saldo::numeric + ${trx.nominal}` })
+        .where(and(eq(debts.id, trx.relatedEntityId), eq(debts.userId, userId)));
+    }
+
+    if (trx.type === "penerimaan_piutang" && trx.relatedEntityId) {
+      await tx
+        .update(receivables)
+        .set({ sisaSaldo: sql`sisa_saldo::numeric + ${trx.nominal}` })
+        .where(and(eq(receivables.id, trx.relatedEntityId), eq(receivables.userId, userId)));
     }
 
     await tx.delete(transactions).where(eq(transactions.id, id));

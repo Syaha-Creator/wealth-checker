@@ -19,7 +19,8 @@ describe("calculateWealthLevel", () => {
   // ── Level 0: Pailit / Belum ada data ──────────────────────────────────────
 
   it("level 0: belum ada data sama sekali (totalAset=0, totalUtang=0)", () => {
-    expect(calculateWealthLevel(params({ totalAset: 0, totalUtang: 0 }))).toBe(0);
+    // FIX #11: returns -1 (no data sentinel) so dashboard doesn't show "Pailit"
+    expect(calculateWealthLevel(params({ totalAset: 0, totalUtang: 0 }))).toBe(-1);
   });
 
   it("level 0: totalAset < totalUtang (pailit)", () => {
