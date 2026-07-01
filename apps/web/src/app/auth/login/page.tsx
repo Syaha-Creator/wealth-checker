@@ -1,16 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { signIn } from "@/lib/auth-client";
+import { signIn, useSession } from "@/lib/auth-client";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { data: session, isPending } = useSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Sudah login? langsung redirect ke dashboard
+  useEffect(() => {
+    if (!isPending && session) {
+      router.replace("/dashboard");
+    }
+  }, [session, isPending, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -27,7 +35,7 @@ export default function LoginPage() {
       setError(
         err.code === "INVALID_EMAIL_OR_PASSWORD"
           ? "Email atau password salah."
-          : err.message ?? "Gagal masuk. Coba lagi."
+          : (err.message ?? "Gagal masuk. Coba lagi.")
       );
       setLoading(false);
       return;
@@ -37,10 +45,17 @@ export default function LoginPage() {
     router.refresh();
   }
 
+  if (isPending || session) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-linear-to-br from-slate-950 via-slate-900 to-emerald-950 flex items-center justify-center p-6">
       <div className="w-full max-w-sm">
-        {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 justify-center">
             <div className="w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center text-slate-950 font-bold text-lg">
@@ -51,7 +66,6 @@ export default function LoginPage() {
           <p className="mt-2 text-slate-400 text-sm">Masuk ke akun kamu</p>
         </div>
 
-        {/* Card */}
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {error && (
@@ -78,11 +92,9 @@ export default function LoginPage() {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <label htmlFor="password" className="text-sm font-medium text-slate-300">
-                  Password
-                </label>
-              </div>
+              <label htmlFor="password" className="text-sm font-medium text-slate-300">
+                Password
+              </label>
               <input
                 id="password"
                 type="password"

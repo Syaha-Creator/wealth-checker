@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { signUp } from "@/lib/auth-client";
+import { signUp, useSession } from "@/lib/auth-client";
 
 function PasswordStrength({ password }: { password: string }) {
   const checks = [
@@ -13,7 +13,6 @@ function PasswordStrength({ password }: { password: string }) {
   ];
   const score = checks.filter((c) => c.ok).length;
   const colors = ["", "bg-red-500", "bg-yellow-500", "bg-emerald-500"];
-  const labels = ["", "Lemah", "Cukup", "Kuat"];
 
   if (!password) return null;
   return (
@@ -28,20 +27,12 @@ function PasswordStrength({ password }: { password: string }) {
           />
         ))}
       </div>
-      <div className="flex items-center gap-3">
-        {score > 0 && (
-          <span className="text-xs text-slate-400">{labels[score]}</span>
-        )}
-        <div className="flex gap-2">
-          {checks.map((c) => (
-            <span
-              key={c.label}
-              className={`text-xs ${c.ok ? "text-emerald-400" : "text-slate-600"}`}
-            >
-              {c.ok ? "✓" : "·"} {c.label}
-            </span>
-          ))}
-        </div>
+      <div className="flex flex-wrap gap-2">
+        {checks.map((c) => (
+          <span key={c.label} className={`text-xs ${c.ok ? "text-emerald-400" : "text-slate-600"}`}>
+            {c.ok ? "✓" : "·"} {c.label}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -49,11 +40,19 @@ function PasswordStrength({ password }: { password: string }) {
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { data: session, isPending } = useSession();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Sudah login? langsung redirect
+  useEffect(() => {
+    if (!isPending && session) {
+      router.replace("/dashboard");
+    }
+  }, [session, isPending, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -87,10 +86,17 @@ export default function RegisterPage() {
     router.refresh();
   }
 
+  if (isPending || session) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-linear-to-br from-slate-950 via-slate-900 to-emerald-950 flex items-center justify-center p-6">
       <div className="w-full max-w-sm">
-        {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 justify-center">
             <div className="w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center text-slate-950 font-bold text-lg">
@@ -101,7 +107,6 @@ export default function RegisterPage() {
           <p className="mt-2 text-slate-400 text-sm">Buat akun baru — gratis selamanya</p>
         </div>
 
-        {/* Card */}
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {error && (
