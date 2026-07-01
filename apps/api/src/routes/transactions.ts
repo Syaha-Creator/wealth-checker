@@ -39,9 +39,38 @@ const createSchema = z.object({
   nominal: z.number().positive(),
 });
 
+// Transaction types that deduct from the source account
+const DEBIT_TYPES = new Set([
+  "pengeluaran", "bayar_utang", "pemberian_piutang",
+  "beli_barang", "beli_investasi", "transfer",
+]);
+
 transactionRoutes.post("/", zValidator("json", createSchema), async (c) => {
   const userId = c.get("userId") as string;
   const { toAccountId, ...data } = c.req.valid("json");
+
+  // Validate sufficient balance before deducting
+  if (data.accountId && DEBIT_TYPES.has(data.type)) {
+    const [sourceAccount] = await db
+      .select({ saldoCache: accounts.saldoCache })
+      .from(accounts)
+      .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, userId)));
+
+    if (!sourceAccount) {
+      return c.json({ error: "Rekening tidak ditemukan" }, 404);
+    }
+
+    const currentBalance = Number(sourceAccount.saldoCache);
+    if (currentBalance < data.nominal) {
+      const shortfall = data.nominal - currentBalance;
+      return c.json({
+        error: `Saldo tidak mencukupi. Saldo tersedia: Rp ${currentBalance.toLocaleString("id-ID")}, dibutuhkan: Rp ${data.nominal.toLocaleString("id-ID")} (kurang Rp ${shortfall.toLocaleString("id-ID")})`,
+        code: "INSUFFICIENT_BALANCE",
+        saldoTersedia: currentBalance,
+        nominal: data.nominal,
+      }, 422);
+    }
+  }
 
   const [trx] = await db.transaction(async (tx) => {
     const [inserted] = await tx
@@ -65,11 +94,7 @@ transactionRoutes.post("/", zValidator("json", createSchema), async (c) => {
           .update(accounts)
           .set({ saldoCache: sql`saldo_cache + ${String(data.nominal)}` })
           .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, userId)));
-      } else if (
-        data.type === "pengeluaran" || data.type === "bayar_utang" ||
-        data.type === "pemberian_piutang" || data.type === "beli_barang" ||
-        data.type === "beli_investasi" || data.type === "transfer"
-      ) {
+      } else if (DEBIT_TYPES.has(data.type)) {
         await tx
           .update(accounts)
           .set({ saldoCache: sql`saldo_cache - ${String(data.nominal)}` })

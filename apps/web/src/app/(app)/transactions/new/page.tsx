@@ -15,12 +15,18 @@ const TX_TYPES: { value: TxType; label: string; color: string }[] = [
   { value: "transfer", label: "Transfer", color: "blue" },
 ];
 
+const DEBIT_TYPES = new Set(["pengeluaran", "transfer"]);
+
 const KATEGORI_PENDAPATAN = ["Gaji", "Proyek", "Dividen", "Bonus", "Hadiah", "Lainnya"];
 const KATEGORI_PENGELUARAN = ["Makanan", "Transportasi", "Utilitas", "Belanja", "Kesehatan", "Hiburan", "Pendidikan", "Lainnya"];
 
 function formatRupiah(val: string) {
   const num = val.replace(/\D/g, "");
   return num ? Number(num).toLocaleString("id-ID") : "";
+}
+
+function formatRp(val: number) {
+  return val.toLocaleString("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 }
 
 function parseRupiah(val: string) {
@@ -81,14 +87,24 @@ function NewTransactionForm() {
       .catch(() => {});
   }, []);
 
+  const selectedAccount = accounts.find((a) => a.id === accountId);
+  const saldoTersedia = selectedAccount ? Number(selectedAccount.saldoCache) : 0;
+  const nominalParsed = parseRupiah(nominal);
+  const isDebit = DEBIT_TYPES.has(type);
+  const isOverBalance = isDebit && nominalParsed > 0 && nominalParsed > saldoTersedia;
+
   const kategoriOptions = type === "pendapatan" ? KATEGORI_PENDAPATAN : KATEGORI_PENGELUARAN;
   const transferAccounts = accounts.filter((a) => a.id !== accountId);
   const canTransfer = accounts.length >= 2;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nominal || parseRupiah(nominal) === 0) {
+    if (!nominal || nominalParsed === 0) {
       setError("Masukkan nominal transaksi");
+      return;
+    }
+    if (isOverBalance) {
+      setError(`Saldo tidak mencukupi. Saldo tersedia ${formatRp(saldoTersedia)}`);
       return;
     }
     if (type === "transfer" && !canTransfer) {
@@ -109,7 +125,7 @@ function NewTransactionForm() {
         rincian: rincian || undefined,
         accountId: accountId || undefined,
         toAccountId: type === "transfer" ? toAccountId : undefined,
-        nominal: parseRupiah(nominal),
+        nominal: nominalParsed,
       });
       router.push("/transactions");
     } catch (err: unknown) {
@@ -155,7 +171,7 @@ function NewTransactionForm() {
         ))}
       </div>
 
-      {/* Transfer warning */}
+      {/* Transfer warning — not enough accounts */}
       {type === "transfer" && !canTransfer && (
         <div className="mb-4 p-3 bg-amber-50 border border-amber-100 rounded-xl flex items-start gap-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-amber-500 shrink-0 mt-0.5" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -174,18 +190,24 @@ function NewTransactionForm() {
         )}
 
         {/* Nominal */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-100">
+        <div className={`bg-white rounded-2xl p-5 border transition-colors ${
+          isOverBalance ? "border-red-300 bg-red-50/30" : "border-gray-100"
+        }`}>
           <label htmlFor="nominal" className="block text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Nominal</label>
           <div className="flex items-center gap-2">
             <span className={`text-2xl font-light ${
-              type === "pendapatan" ? "text-emerald-600" : type === "pengeluaran" ? "text-red-500" : "text-blue-600"
+              isOverBalance ? "text-red-500" :
+              type === "pendapatan" ? "text-emerald-600" :
+              type === "pengeluaran" ? "text-red-500" : "text-blue-600"
             }`} aria-hidden="true">Rp</span>
             <input
               id="nominal"
               type="text"
               inputMode="numeric"
               className={`flex-1 text-3xl font-bold bg-transparent focus:outline-none ${
-                type === "pendapatan" ? "text-emerald-700" : type === "pengeluaran" ? "text-red-600" : "text-blue-700"
+                isOverBalance ? "text-red-600" :
+                type === "pendapatan" ? "text-emerald-700" :
+                type === "pengeluaran" ? "text-red-600" : "text-blue-700"
               }`}
               placeholder="0"
               value={nominal}
@@ -193,6 +215,23 @@ function NewTransactionForm() {
               required
             />
           </div>
+
+          {/* Saldo indicator for debit types */}
+          {isDebit && selectedAccount && (
+            <div className={`mt-3 pt-3 border-t flex items-center justify-between ${
+              isOverBalance ? "border-red-200" : "border-gray-100"
+            }`}>
+              <span className="text-xs text-gray-400">Saldo {selectedAccount.nama}</span>
+              <span className={`text-xs font-semibold ${isOverBalance ? "text-red-600" : "text-gray-600"}`}>
+                {formatRp(saldoTersedia)}
+                {isOverBalance && (
+                  <span className="ml-1.5 text-red-500">
+                    (kurang {formatRp(nominalParsed - saldoTersedia)})
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-50">
@@ -219,7 +258,7 @@ function NewTransactionForm() {
                 id="account"
                 className="text-sm text-gray-900 bg-transparent focus:outline-none text-right appearance-none"
                 value={accountId}
-                onChange={(e) => setAccountId(e.target.value)}
+                onChange={(e) => { setAccountId(e.target.value); setError(""); }}
               >
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>{a.nama}</option>
@@ -286,7 +325,7 @@ function NewTransactionForm() {
 
         <button
           type="submit"
-          disabled={loading || accounts.length === 0 || (type === "transfer" && !canTransfer)}
+          disabled={loading || accounts.length === 0 || (type === "transfer" && !canTransfer) || isOverBalance}
           className={`w-full py-4 font-semibold text-white rounded-2xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
             type === "pendapatan"
               ? "bg-emerald-600 hover:bg-emerald-700"
@@ -297,6 +336,8 @@ function NewTransactionForm() {
         >
           {loading
             ? "Menyimpan..."
+            : isOverBalance
+            ? "Saldo Tidak Mencukupi"
             : `Simpan ${type === "pendapatan" ? "Pemasukan" : type === "pengeluaran" ? "Pengeluaran" : "Transfer"}`}
         </button>
       </form>
