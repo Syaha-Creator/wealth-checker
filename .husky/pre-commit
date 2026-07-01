@@ -1,0 +1,9 @@
+#!/bin/sh
+echo "🔍 Running lint check before commit..."
+bun run lint
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "❌ Lint failed. Please fix the errors above before committing."
+  exit 1
+fi
+echo "✅ Lint passed."

@@ -104,9 +104,25 @@ export default function TransactionsPage() {
     }
   }, []);
 
+  // Initial load: inline fetch to avoid calling setState via callback inside effect
   useEffect(() => {
-    refetch();
-  }, [refetch]);
+    let cancelled = false;
+    fetch(`${API}/api/transactions?limit=200`, { credentials: "include" })
+      .then((res) => {
+        if (!res.ok) throw new Error("Gagal memuat transaksi");
+        return res.json();
+      })
+      .then((data: Transaction[]) => {
+        if (!cancelled) setTransactions(data);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setFetchError(err instanceof Error ? err.message : "Gagal memuat transaksi");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const monthOptions = useMemo(() => getMonthOptions(transactions), [transactions]);
 

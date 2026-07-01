@@ -2,7 +2,10 @@
   "name": "wealth-checker",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev:web": "bun run --filter='@wealth/web' dev",
     "dev:api": "bun run --filter='@wealth/api' dev",
@@ -12,9 +15,11 @@
     "typecheck": "bun run --filter='*' typecheck",
     "db:generate": "bun run --filter='@wealth/db' generate",
     "db:migrate": "bun run --filter='@wealth/db' migrate",
-    "db:studio": "bun run --filter='@wealth/db' studio"
+    "db:studio": "bun run --filter='@wealth/db' studio",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "husky": "9.1.7",
     "typescript": "^5"
   }
 }
