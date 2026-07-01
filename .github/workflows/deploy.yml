@@ -66,6 +66,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Cleanup leftover E2E services
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v --remove-orphans 2>/dev/null || true
+
       - name: Start E2E services
         run: |
           docker compose -f docker-compose.e2e.yml up -d --build
