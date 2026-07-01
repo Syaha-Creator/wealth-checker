@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and, gte, lt } from "drizzle-orm";
 import type { DB } from "@wealth/db";
 import {
   authUser,
@@ -8,6 +8,7 @@ import {
   debts,
   receivables,
   wealthLevelReference,
+  transactions,
 } from "@wealth/db";
 
 export interface WealthSummary {
@@ -81,6 +82,111 @@ export async function calculateWealthSummary(db: DB, userId: string): Promise<We
     kekayaanBersih,
     wealthLevel,
     wealthLevelName: levelRef?.namaLevel ?? "",
+  };
+}
+
+export interface MonthlySnapshot {
+  bulan: string;          // "YYYY-MM"
+  pemasukan: number;
+  pengeluaran: number;
+  sisaUangBulanan: number;
+}
+
+export interface MonthlyCashFlow {
+  bulanIni: MonthlySnapshot;
+  bulanLalu: MonthlySnapshot;
+  rataRata3Bulan: {
+    pemasukan: number;
+    pengeluaran: number;
+    sisaUangBulanan: number;
+  };
+  hidupTanpaGajiBulan: number | null;  // (kas - utang) / rata-rata sisa, null jika tak cukup data
+}
+
+function startOfMonth(ym: string): string {
+  return `${ym}-01`;
+}
+function nextMonth(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m, 1); // bulan berikutnya (m sudah 1-based, jadi ini +1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function prevMonths(ym: string, n: number): string[] {
+  const months: string[] = [];
+  let [y, m] = ym.split("-").map(Number);
+  for (let i = 0; i < n; i++) {
+    m--;
+    if (m === 0) { m = 12; y--; }
+    months.push(`${y}-${String(m).padStart(2, "0")}`);
+  }
+  return months;
+}
+
+async function fetchMonthSnapshot(db: DB, userId: string, ym: string): Promise<MonthlySnapshot> {
+  const from = startOfMonth(ym);
+  const to = startOfMonth(nextMonth(ym));
+
+  const [{ pemasukan }] = await db
+    .select({ pemasukan: sql<string>`coalesce(sum(nominal::numeric), 0)` })
+    .from(transactions)
+    .where(and(
+      eq(transactions.userId, userId),
+      eq(transactions.type, "pendapatan"),
+      gte(transactions.tanggal, from),
+      lt(transactions.tanggal, to),
+    ));
+
+  const [{ pengeluaran }] = await db
+    .select({ pengeluaran: sql<string>`coalesce(sum(nominal::numeric), 0)` })
+    .from(transactions)
+    .where(and(
+      eq(transactions.userId, userId),
+      eq(transactions.type, "pengeluaran"),
+      gte(transactions.tanggal, from),
+      lt(transactions.tanggal, to),
+    ));
+
+  const p = Number(pemasukan);
+  const k = Number(pengeluaran);
+  return { bulan: ym, pemasukan: p, pengeluaran: k, sisaUangBulanan: p - k };
+}
+
+export async function calculateMonthlyCashFlow(
+  db: DB,
+  userId: string,
+  totalKas: number,
+  totalUtang: number,
+): Promise<MonthlyCashFlow> {
+  const now = new Date();
+  const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const [lastYm, twoAgoYm] = prevMonths(currentYm, 2);
+
+  const [bulanIni, bulanLalu, duaBulanLalu] = await Promise.all([
+    fetchMonthSnapshot(db, userId, currentYm),
+    fetchMonthSnapshot(db, userId, lastYm),
+    fetchMonthSnapshot(db, userId, twoAgoYm),
+  ]);
+
+  const snapshots = [bulanIni, bulanLalu, duaBulanLalu];
+  const avgPemasukan = snapshots.reduce((s, x) => s + x.pemasukan, 0) / 3;
+  const avgPengeluaran = snapshots.reduce((s, x) => s + x.pengeluaran, 0) / 3;
+  const avgSisa = avgPemasukan - avgPengeluaran;
+
+  const kasBersih = totalKas - totalUtang;
+  const hidupTanpaGajiBulan =
+    avgSisa > 0 && kasBersih > 0
+      ? Math.round((kasBersih / avgSisa) * 10) / 10
+      : null;
+
+  return {
+    bulanIni,
+    bulanLalu,
+    rataRata3Bulan: {
+      pemasukan: Math.round(avgPemasukan),
+      pengeluaran: Math.round(avgPengeluaran),
+      sisaUangBulanan: Math.round(avgSisa),
+    },
+    hidupTanpaGajiBulan,
   };
 }
 

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "@wealth/db";
 import { requireAuth } from "../middleware/auth";
-import { calculateWealthSummary } from "../services/wealth";
+import { calculateWealthSummary, calculateMonthlyCashFlow } from "../services/wealth";
 import type { AppEnv } from "../types";
 
 export const wealthRoutes = new Hono<AppEnv>();
@@ -12,4 +12,11 @@ wealthRoutes.get("/summary", async (c) => {
   const userId = c.get("userId") as string;
   const summary = await calculateWealthSummary(db, userId);
   return c.json(summary);
+});
+
+wealthRoutes.get("/monthly-cash-flow", async (c) => {
+  const userId = c.get("userId") as string;
+  const summary = await calculateWealthSummary(db, userId);
+  const cashFlow = await calculateMonthlyCashFlow(db, userId, summary.totalKas, summary.totalUtang);
+  return c.json(cashFlow);
 });

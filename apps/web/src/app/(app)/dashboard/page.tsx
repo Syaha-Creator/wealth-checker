@@ -19,6 +19,20 @@ type WealthSummary = {
   wealthLevelName: string;
 };
 
+type MonthlySnapshot = {
+  bulan: string;
+  pemasukan: number;
+  pengeluaran: number;
+  sisaUangBulanan: number;
+};
+
+type MonthlyCashFlow = {
+  bulanIni: MonthlySnapshot;
+  bulanLalu: MonthlySnapshot;
+  rataRata3Bulan: { pemasukan: number; pengeluaran: number; sisaUangBulanan: number };
+  hidupTanpaGajiBulan: number | null;
+};
+
 const LEVEL_CONFIG = [
   { label: "Pailit", desc: "Utang melebihi aset", color: "bg-red-100 text-red-700" },
   { label: "Terjerat Utang", desc: "Utang lebih besar dari kekayaan", color: "bg-orange-100 text-orange-700" },
@@ -42,10 +56,18 @@ function formatRpFull(val: number) {
 
 type Account = { id: string; nama: string; saldoCache: string };
 
+function formatMonthLabel(ym: string) {
+  const [year, month] = ym.split("-");
+  return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString("id-ID", {
+    month: "long", year: "numeric",
+  });
+}
+
 export default function DashboardPage() {
   const { data: session } = useSession();
   const router = useRouter();
   const [summary, setSummary] = useState<WealthSummary | null>(null);
+  const [cashFlow, setCashFlow] = useState<MonthlyCashFlow | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -61,10 +83,15 @@ export default function DashboardPage() {
         if (!r.ok) throw new Error("Gagal memuat rekening");
         return r.json();
       }),
+      fetch(`${API}/api/wealth/monthly-cash-flow`, { credentials: "include" }).then((r) => {
+        if (!r.ok) return null;
+        return r.json();
+      }),
     ])
-      .then(([w, a]) => {
+      .then(([w, a, cf]) => {
         setSummary(w);
         setAccounts(Array.isArray(a) ? a.filter((acc: Account & { isActive: boolean }) => acc.isActive) : []);
+        if (cf) setCashFlow(cf);
       })
       .catch((err: Error) => {
         setError(err.message ?? "Gagal memuat data. Coba muat ulang halaman.");
@@ -225,6 +252,70 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Arus Kas Bulan Ini */}
+      {cashFlow && (cashFlow.bulanIni.pemasukan > 0 || cashFlow.bulanIni.pengeluaran > 0) && (
+        <div className="mb-4 bg-white rounded-2xl border border-gray-100 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-700">Arus Kas Bulan Ini</h2>
+            <span className="text-xs text-gray-400">{formatMonthLabel(cashFlow.bulanIni.bulan)}</span>
+          </div>
+
+          {/* Pemasukan vs Pengeluaran bar */}
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="bg-emerald-50 rounded-xl p-3">
+              <p className="text-xs text-emerald-600 font-medium mb-1">Pemasukan</p>
+              <p className="text-sm font-bold text-emerald-700">{formatRp(cashFlow.bulanIni.pemasukan)}</p>
+            </div>
+            <div className="bg-red-50 rounded-xl p-3">
+              <p className="text-xs text-red-500 font-medium mb-1">Pengeluaran</p>
+              <p className="text-sm font-bold text-red-600">{formatRp(cashFlow.bulanIni.pengeluaran)}</p>
+            </div>
+          </div>
+
+          {/* Sisa */}
+          <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl ${
+            cashFlow.bulanIni.sisaUangBulanan >= 0 ? "bg-emerald-600" : "bg-red-500"
+          }`}>
+            <p className="text-xs font-medium text-white/80">Sisa Uang Bulan Ini</p>
+            <p className="text-sm font-bold text-white">
+              {cashFlow.bulanIni.sisaUangBulanan >= 0 ? "+" : ""}
+              {formatRp(cashFlow.bulanIni.sisaUangBulanan)}
+            </p>
+          </div>
+
+          {/* Rata-rata 3 bulan & hidup tanpa gaji */}
+          <div className="mt-3 pt-3 border-t border-gray-50 space-y-1.5">
+            <div className="flex justify-between text-xs text-gray-400">
+              <span>Rata-rata sisa 3 bln</span>
+              <span className={cashFlow.rataRata3Bulan.sisaUangBulanan >= 0 ? "text-emerald-600 font-medium" : "text-red-500 font-medium"}>
+                {cashFlow.rataRata3Bulan.sisaUangBulanan >= 0 ? "+" : ""}
+                {formatRp(cashFlow.rataRata3Bulan.sisaUangBulanan)}
+              </span>
+            </div>
+            {cashFlow.hidupTanpaGajiBulan !== null && (
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>Hidup tanpa gaji</span>
+                <span className="text-gray-700 font-medium">{cashFlow.hidupTanpaGajiBulan} bulan</span>
+              </div>
+            )}
+          </div>
+
+          {/* Bulan lalu perbandingan */}
+          {(cashFlow.bulanLalu.pemasukan > 0 || cashFlow.bulanLalu.pengeluaran > 0) && (
+            <div className="mt-3 pt-3 border-t border-gray-50">
+              <p className="text-xs text-gray-400 mb-1.5">{formatMonthLabel(cashFlow.bulanLalu.bulan)}</p>
+              <div className="flex justify-between text-xs">
+                <span className="text-emerald-600">+{formatRp(cashFlow.bulanLalu.pemasukan)}</span>
+                <span className="text-red-500">-{formatRp(cashFlow.bulanLalu.pengeluaran)}</span>
+                <span className={`font-semibold ${cashFlow.bulanLalu.sisaUangBulanan >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                  {cashFlow.bulanLalu.sisaUangBulanan >= 0 ? "+" : ""}{formatRp(cashFlow.bulanLalu.sisaUangBulanan)}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
