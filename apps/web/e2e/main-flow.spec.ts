@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -6,130 +6,107 @@ function uniqueEmail() {
   return `e2e+${Date.now()}@wealthchecker.test`;
 }
 
-async function fillRupiah(page: Page, locator: string, amount: string) {
-  await page.fill(locator, amount);
-}
+// ─── Single end-to-end flow (one browser context = cookies shared) ────────────
+//
+// Using test.step() inside a single test keeps the browser context alive
+// across all steps, so session cookies persist from register through to the
+// final balance check.  Individual test() calls each get a fresh context, which
+// would require re-logging-in for every step.
 
-async function waitForRedirect(page: Page, path: string) {
-  await page.waitForURL((url) => url.pathname === path, { timeout: 15_000 });
-}
-
-// ─── Main flow ───────────────────────────────────────────────────────────────
-
-test.describe("Main user flow", () => {
+test("Full user flow: register → onboarding → dashboard → transaksi → verifikasi saldo", async ({ page }) => {
   const email = uniqueEmail();
   const password = "TestPassword123!";
   const name = "E2E Tester";
 
-  // ── 1. Register ─────────────────────────────────────────────────────────
-  test("1. Register a new account", async ({ page }) => {
+  // ── Step 1: Register ─────────────────────────────────────────────────────
+  await test.step("Register akun baru", async () => {
     await page.goto("/auth/register");
-    await expect(page.locator("h1, h2").first()).toBeVisible();
 
-    await page.fill('input[type="text"], input[name="name"]', name);
-    await page.fill('input[type="email"]', email);
-    await page.fill('input[type="password"]', password);
+    // Wait for the form to be ready — the page shows a spinner while checking
+    // session, then renders the form once it knows the user is not logged in.
+    await expect(page.locator('button[type="submit"]')).toBeVisible({ timeout: 15_000 });
+
+    await page.fill("#name", name);
+    await page.fill("#email", email);
+    await page.fill("#password", password);
     await page.click('button[type="submit"]');
 
-    // New user should be redirected to onboarding
-    await waitForRedirect(page, "/onboarding");
-    await expect(page).toHaveURL(/\/onboarding/);
+    // New user → redirect to /onboarding
+    await page.waitForURL(/\/onboarding/, { timeout: 20_000 });
   });
 
-  // ── 2. Login with same account (verify session works) ───────────────────
-  test("2. Login with registered account", async ({ page }) => {
-    await page.goto("/auth/login");
-    await page.fill('input[type="email"]', email);
-    await page.fill('input[type="password"]', password);
-    await page.click('button[type="submit"]');
+  // ── Step 2: Onboarding — isi profil & rekening ───────────────────────────
+  await test.step("Onboarding step 1: simpan profil", async () => {
+    // Verify we landed on onboarding
+    await expect(page.locator("text=Setup Keuangan Awal")).toBeVisible({ timeout: 10_000 });
 
-    // After login, existing user with no onboarding data goes to /onboarding,
-    // or directly /dashboard if session carries over from previous test.
-    await page.waitForURL((url) => ["/dashboard", "/onboarding"].includes(url.pathname), {
-      timeout: 15_000,
-    });
-    expect(["/dashboard", "/onboarding"]).toContain(new URL(page.url()).pathname);
+    // Step 1 is Profil — just click Lanjut (fields have defaults)
+    await page.click('button:has-text("Lanjut")');
+
+    // Should move to step 2 (Rekening)
+    await expect(page.locator("text=Rekening & Tabungan")).toBeVisible({ timeout: 10_000 });
   });
 
-  // ── 3. Onboarding: add BCA account with Rp 1.000.000 ───────────────────
-  test("3. Complete onboarding — add BCA account", async ({ page }) => {
-    await page.goto("/auth/login");
-    await page.fill('input[type="email"]', email);
-    await page.fill('input[type="password"]', password);
-    await page.click('button[type="submit"]');
-    await waitForRedirect(page, "/onboarding");
-
-    // Expect step 1 to be visible (add first account)
-    await expect(page.locator("text=rekening").first()).toBeVisible({ timeout: 10_000 });
-
+  await test.step("Onboarding step 2: tambah rekening BCA 1.000.000", async () => {
     // Fill in account name
-    const accountInput = page.locator('input[placeholder*="BCA"], input[name*="nama"], input[placeholder*="Nama"]').first();
-    await accountInput.fill("BCA Tabungan");
+    await page.fill("#nama-rekening", "BCA Tabungan");
 
-    // Fill in opening balance
-    await fillRupiah(page, 'input[inputmode="numeric"]', "1000000");
+    // Fill opening balance — InputRupiah component uses input#saldo-rekening
+    // We type the raw number, the component formats it on change
+    await page.fill("#saldo-rekening", "1000000");
 
-    // Submit the account form
-    const submitBtn = page.locator('button[type="submit"]').first();
-    await submitBtn.click();
+    // Add the account to the local list
+    await page.click('button:has-text("+ Tambah Rekening")');
 
-    // After the first required step the user can skip remaining optional steps
-    const skipBtn = page.locator("text=Lewati").first();
-    if (await skipBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    // Verify the item appeared in the list
+    await expect(page.locator("text=BCA Tabungan")).toBeVisible();
+
+    // Click Lanjut — this saves to DB and advances to step 3
+    await page.click('button:has-text("Lanjut")');
+  });
+
+  await test.step("Onboarding steps 3-6: lewati langkah opsional", async () => {
+    // Steps 3-5 are optional (Aset Likuid, Aset Fisik, Utang)
+    for (let i = 3; i <= 5; i++) {
+      const skipBtn = page.locator('button:has-text("Lewati langkah ini")');
       await skipBtn.click();
-    }
-  });
-
-  // ── 4. Finish onboarding and arrive at success / dashboard ─────────────
-  test("4. Finish onboarding — reach dashboard", async ({ page }) => {
-    await page.goto("/onboarding");
-
-    // Skip all remaining optional steps until we reach success or dashboard
-    for (let i = 0; i < 8; i++) {
-      const skipBtn = page.locator("text=Lewati").first();
-      const dashboardBtn = page.locator("text=Ke Dashboard, text=Dashboard").first();
-      const isDashboard = page.url().includes("/dashboard");
-
-      if (isDashboard) break;
-
-      if (await dashboardBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
-        await dashboardBtn.click();
-        break;
-      }
-
-      if (await skipBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
-        await skipBtn.click();
-      } else {
-        break;
-      }
+      // Brief wait for step transition animation
+      await page.waitForTimeout(300);
     }
 
-    await page.waitForURL((url) => url.pathname === "/dashboard", { timeout: 20_000 });
-    await expect(page).toHaveURL(/\/dashboard/);
+    // Step 6 (Piutang) — skip and finish
+    await page.click('button:has-text("Lewati & Selesai")');
   });
 
-  // ── 5. Dashboard shows net worth ────────────────────────────────────────
-  test("5. Dashboard shows kekayaan bersih", async ({ page }) => {
-    await page.goto("/dashboard");
-    // The dashboard should render some wealth/balance figure
-    await expect(page.locator("text=Kekayaan, text=Bersih, text=Rp").first()).toBeVisible({
-      timeout: 15_000,
-    });
+  await test.step("Success screen tampil, klik ke Dashboard", async () => {
+    await expect(page.locator("text=Setup Selesai!")).toBeVisible({ timeout: 15_000 });
+    await page.click('button:has-text("Lihat Dashboard")');
+    await page.waitForURL(/\/dashboard/, { timeout: 15_000 });
   });
 
-  // ── 6. Add a pengeluaran transaction ───────────────────────────────────
-  test("6. Add pengeluaran Rp 50.000 — Makanan", async ({ page }) => {
+  // ── Step 3: Dashboard — verifikasi kekayaan bersih ───────────────────────
+  await test.step("Dashboard menampilkan Kekayaan Bersih", async () => {
+    // Kekayaan Bersih card always present
+    await expect(page.locator("text=Kekayaan Bersih")).toBeVisible({ timeout: 15_000 });
+
+    // With 1.000.000 in cash and no debt, formatRp(1000000) → "Rp 1.0jt"
+    await expect(page.locator("text=1.0jt")).toBeVisible({ timeout: 10_000 });
+
+    // Account list should show BCA Tabungan
+    await expect(page.locator("text=BCA Tabungan")).toBeVisible();
+  });
+
+  // ── Step 4: Catat pengeluaran Rp 50.000 ─────────────────────────────────
+  await test.step("Tambah pengeluaran Rp 50.000 - Makanan", async () => {
     await page.goto("/transactions/new?type=pengeluaran");
+    await expect(page.locator("h1")).toContainText("Catat Transaksi", { timeout: 10_000 });
 
-    // Verify we are on the right page
-    await expect(page.locator("h1")).toContainText("Transaksi");
+    // Nominal — main input uses inputMode="numeric"
+    const nominalInput = page.locator("#nominal");
+    await nominalInput.fill("50000");
 
-    // Nominal
-    await page.fill('input[inputmode="numeric"]', "50000");
-
-    // Category via datalist — type into the kategori input
-    const kategoriInput = page.locator("#kategori");
-    await kategoriInput.fill("Makanan");
+    // Kategori — HTML5 datalist autocomplete via #kategori
+    await page.fill("#kategori", "Makanan");
 
     // Rincian
     await page.fill("#rincian", "Makan siang e2e");
@@ -138,24 +115,27 @@ test.describe("Main user flow", () => {
     await page.click('button[type="submit"]');
 
     // Should redirect to transaction list
-    await waitForRedirect(page, "/transactions");
-    await expect(page).toHaveURL(/\/transactions/);
+    await page.waitForURL(/\/transactions$/, { timeout: 15_000 });
   });
 
-  // ── 7. Transaction appears in the list ─────────────────────────────────
-  test("7. Transaction appears in riwayat", async ({ page }) => {
-    await page.goto("/transactions");
-    await expect(page.locator("text=Makanan, text=Makan siang").first()).toBeVisible({
-      timeout: 10_000,
-    });
-    await expect(page.locator("text=50.000, text=50,000").first()).toBeVisible({ timeout: 5_000 });
+  // ── Step 5: Verifikasi transaksi muncul di riwayat ───────────────────────
+  await test.step("Transaksi muncul di riwayat", async () => {
+    // Transaction list loaded
+    await expect(page.locator("text=Riwayat Transaksi")).toBeVisible({ timeout: 10_000 });
+
+    // The pengeluaran row — nominal 50.000, category Makanan
+    await expect(page.locator("text=Makanan").first()).toBeVisible({ timeout: 10_000 });
+
+    // Amount shown as "50.000" (toLocaleString id-ID formatting)
+    await expect(page.locator("text=50.000").first()).toBeVisible();
   });
 
-  // ── 8. Dashboard reflects updated balance ──────────────────────────────
-  test("8. Dashboard reflects reduced balance after expense", async ({ page }) => {
+  // ── Step 6: Dashboard saldo berubah jadi 950.000 ─────────────────────────
+  await test.step("Dashboard: saldo rekening berkurang ke Rp 950rb", async () => {
     await page.goto("/dashboard");
-    // Balance should be 950.000 (1.000.000 − 50.000)
-    // We just verify a number in the 900.000 range appears somewhere on the page
-    await expect(page.locator("text=950, text=Rp 950").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("text=Kekayaan Bersih")).toBeVisible({ timeout: 15_000 });
+
+    // 1.000.000 - 50.000 = 950.000 → formatRp(950000) = "Rp 950rb"
+    await expect(page.locator("text=950rb").first()).toBeVisible({ timeout: 10_000 });
   });
 });
