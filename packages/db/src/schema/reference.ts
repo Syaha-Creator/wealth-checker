@@ -1,5 +1,5 @@
-import { pgTable, integer, varchar, text, numeric, uuid, date, timestamp } from "drizzle-orm/pg-core";
-import { users } from "./users";
+import { pgTable, integer, uuid, text, varchar, numeric, date, timestamp } from "drizzle-orm/pg-core";
+import { authUser } from "./auth";
 
 export const wealthLevelReference = pgTable("wealth_level_reference", {
   level: integer("level").primaryKey(),
@@ -26,7 +26,7 @@ export const budgetAllocationReference = pgTable("budget_allocation_reference", 
 
 export const wealthSnapshots = pgTable("wealth_snapshots", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   tanggal: date("tanggal").notNull(),
   totalAset: numeric("total_aset", { precision: 20, scale: 2 }).notNull(),
   totalUtang: numeric("total_utang", { precision: 20, scale: 2 }).notNull(),
@@ -36,7 +36,7 @@ export const wealthSnapshots = pgTable("wealth_snapshots", {
 
 export const dreamGoals = pgTable("dream_goals", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   namaGoal: varchar("nama_goal", { length: 255 }).notNull(),
   accountId: uuid("account_id"),
   targetNominal: numeric("target_nominal", { precision: 20, scale: 2 }).notNull(),
@@ -45,7 +45,7 @@ export const dreamGoals = pgTable("dream_goals", {
 
 export const budgetPlans = pgTable("budget_plans", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   rencanaPemasukanBulanan: numeric("rencana_pemasukan_bulanan", { precision: 20, scale: 2 }).notNull(),
   bulanTahun: varchar("bulan_tahun", { length: 7 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

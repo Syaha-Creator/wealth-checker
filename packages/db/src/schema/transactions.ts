@@ -1,5 +1,5 @@
-import { pgTable, uuid, varchar, numeric, date, pgEnum, timestamp, text } from "drizzle-orm/pg-core";
-import { users } from "./users";
+import { pgTable, uuid, text, varchar, numeric, date, pgEnum, timestamp } from "drizzle-orm/pg-core";
+import { authUser } from "./auth";
 import { accounts } from "./accounts";
 
 export const transactionTypeEnum = pgEnum("transaction_type", [
@@ -18,7 +18,7 @@ export const transactionTypeEnum = pgEnum("transaction_type", [
 
 export const transactions = pgTable("transactions", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   tanggal: date("tanggal").notNull(),
   type: transactionTypeEnum("type").notNull(),
   kategori: varchar("kategori", { length: 255 }),

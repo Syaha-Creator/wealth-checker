@@ -1,12 +1,18 @@
-import { pgTable, uuid, varchar, integer, date, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, date, timestamp } from "drizzle-orm/pg-core";
+import { authUser } from "./auth";
 
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  email: varchar("email", { length: 255 }).notNull().unique(),
-  nama: varchar("nama", { length: 255 }).notNull(),
+/**
+ * Profil tambahan user — extend dari Better Auth's user table.
+ * id = sama dengan authUser.id (text, nanoid format)
+ */
+export const userProfile = pgTable("user_profile", {
+  id: text("id")
+    .primaryKey()
+    .references(() => authUser.id, { onDelete: "cascade" }),
   tanggalLahir: date("tanggal_lahir"),
   rencanaUsiaPensiun: integer("rencana_usia_pensiun"),
   rencanaUsiaWarisan: integer("rencana_usia_warisan"),
   anggotaKeluargaDitanggung: integer("anggota_keluarga_ditanggung").default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
