@@ -38,6 +38,9 @@ services:
       DATABASE_URL: postgresql://wealth:wealth_e2e_pass@postgres-e2e:5432/wealth_checker_e2e
       BETTER_AUTH_SECRET: e2e-test-secret-minimum-32-characters!!
       BETTER_AUTH_URL: http://localhost:4001
+      # web-e2e's browser-facing origin — required so better-auth's trustedOrigins
+      # and the API's CORS allow-list accept requests from the E2E web app
+      ADDITIONAL_TRUSTED_ORIGINS: http://localhost:4000
     ports:
       - "4001:4001"
     depends_on:

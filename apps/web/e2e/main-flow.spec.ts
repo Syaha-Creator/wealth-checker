@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -6,11 +6,33 @@ function uniqueEmail() {
   return `e2e+${Date.now()}@wealthchecker.test`;
 }
 
+/**
+ * Fails fast with a readable message if the page shows an error alert
+ * (role="alert") instead of navigating. Without this, a rejected API call
+ * (e.g. CORS/auth misconfiguration) just looks like a generic waitForURL
+ * timeout with no indication of the real cause.
+ */
+async function assertNoErrorAlert(page: Page) {
+  const alert = page.locator('[role="alert"]').first();
+  if (await alert.isVisible().catch(() => false)) {
+    const message = await alert.innerText().catch(() => "(tidak bisa membaca pesan error)");
+    throw new Error(`Form menampilkan error, navigasi dibatalkan: "${message.trim()}"`);
+  }
+}
+
+async function clickAndWaitForUrl(page: Page, selector: string, urlPattern: RegExp, timeout = 20_000) {
+  await page.click(selector);
+  // Give the async submit handler a moment to resolve/reject before checking for an alert.
+  await page.waitForTimeout(700);
+  await assertNoErrorAlert(page);
+  await page.waitForURL(urlPattern, { timeout, waitUntil: "commit" });
+}
+
 // ─── Single end-to-end flow (one browser context = cookies shared) ────────────
 //
 // Using test.step() inside a single test keeps the browser context alive
 // across all steps, so session cookies persist from register through to the
-// final balance check.  Individual test() calls each get a fresh context, which
+// final balance check. Individual test() calls each get a fresh context, which
 // would require re-logging-in for every step.
 
 test("Full user flow: register → onboarding → dashboard → transaksi → verifikasi saldo", async ({ page }) => {
@@ -29,10 +51,9 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
     await page.fill("#name", name);
     await page.fill("#email", email);
     await page.fill("#password", password);
-    await page.click('button[type="submit"]');
 
     // New user → redirect to /onboarding
-    await page.waitForURL(/\/onboarding/, { timeout: 20_000 });
+    await clickAndWaitForUrl(page, 'button[type="submit"]', /\/onboarding/, 20_000);
   });
 
   // ── Step 2: Onboarding — isi profil & rekening ───────────────────────────
@@ -42,6 +63,8 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
 
     // Step 1 is Profil — just click Lanjut (fields have defaults)
     await page.click('button:has-text("Lanjut")');
+    await page.waitForTimeout(500);
+    await assertNoErrorAlert(page);
 
     // Should move to step 2 (Rekening)
     await expect(page.locator("text=Rekening & Tabungan")).toBeVisible({ timeout: 10_000 });
@@ -63,25 +86,29 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
 
     // Click Lanjut — this saves to DB and advances to step 3
     await page.click('button:has-text("Lanjut")');
+    await page.waitForTimeout(500);
+    await assertNoErrorAlert(page);
+    await expect(page.locator("text=Aset Setara Kas")).toBeVisible({ timeout: 10_000 });
   });
 
   await test.step("Onboarding steps 3-6: lewati langkah opsional", async () => {
     // Steps 3-5 are optional (Aset Likuid, Aset Fisik, Utang)
     for (let i = 3; i <= 5; i++) {
-      const skipBtn = page.locator('button:has-text("Lewati langkah ini")');
-      await skipBtn.click();
-      // Brief wait for step transition animation
+      await page.click('button:has-text("Lewati langkah ini")');
       await page.waitForTimeout(300);
+      await assertNoErrorAlert(page);
     }
 
     // Step 6 (Piutang) — skip and finish
     await page.click('button:has-text("Lewati & Selesai")');
+    await page.waitForTimeout(500);
+    await assertNoErrorAlert(page);
   });
 
   await test.step("Success screen tampil, klik ke Dashboard", async () => {
     await expect(page.locator("text=Setup Selesai!")).toBeVisible({ timeout: 15_000 });
     await page.click('button:has-text("Lihat Dashboard")');
-    await page.waitForURL(/\/dashboard/, { timeout: 15_000 });
+    await page.waitForURL(/\/dashboard/, { timeout: 15_000, waitUntil: "commit" });
   });
 
   // ── Step 3: Dashboard — verifikasi kekayaan bersih ───────────────────────
@@ -102,8 +129,7 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
     await expect(page.locator("h1")).toContainText("Catat Transaksi", { timeout: 10_000 });
 
     // Nominal — main input uses inputMode="numeric"
-    const nominalInput = page.locator("#nominal");
-    await nominalInput.fill("50000");
+    await page.fill("#nominal", "50000");
 
     // Kategori — HTML5 datalist autocomplete via #kategori
     await page.fill("#kategori", "Makanan");
@@ -111,11 +137,8 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
     // Rincian
     await page.fill("#rincian", "Makan siang e2e");
 
-    // Submit
-    await page.click('button[type="submit"]');
-
     // Should redirect to transaction list
-    await page.waitForURL(/\/transactions$/, { timeout: 15_000 });
+    await clickAndWaitForUrl(page, 'button[type="submit"]', /\/transactions$/, 15_000);
   });
 
   // ── Step 5: Verifikasi transaksi muncul di riwayat ───────────────────────

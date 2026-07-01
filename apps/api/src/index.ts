@@ -14,6 +14,11 @@ const ALLOWED_ORIGINS = [
   "https://wealth.velrox.cloud",
   "http://localhost:3010",
   "http://localhost:3000",
+  // Additional origins (e.g. E2E/staging) injected via env var, comma-separated
+  ...(process.env.ADDITIONAL_TRUSTED_ORIGINS ?? "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean),
 ];
 
 const app = new Hono<AppEnv>();

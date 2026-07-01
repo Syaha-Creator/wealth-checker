@@ -82,10 +82,17 @@ jobs:
           DATABASE_URL=postgresql://wealth:wealth_e2e_pass@localhost:5440/wealth_checker_e2e \
             bun run db:migrate
 
+          echo "Waiting for api-e2e..."
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4001/health > /dev/null && break
+            [ $i -eq 30 ] && echo "api-e2e did not respond" && docker compose -f docker-compose.e2e.yml logs api-e2e && exit 1
+            sleep 2
+          done
+
           echo "Waiting for web-e2e..."
           for i in $(seq 1 30); do
             curl -sf http://localhost:4000 > /dev/null && break
-            [ $i -eq 30 ] && echo "web-e2e did not respond" && exit 1
+            [ $i -eq 30 ] && echo "web-e2e did not respond" && docker compose -f docker-compose.e2e.yml logs web-e2e && exit 1
             sleep 3
           done
 

@@ -5,6 +5,13 @@ import { db, authUser, authSession, authAccount, authVerification } from "@wealt
 const productionOrigin = "https://wealth.velrox.cloud";
 const devOrigin = "http://localhost:3010";
 
+// Additional origins (e.g. E2E/staging) can be injected via env var,
+// comma-separated — avoids hardcoding every environment into source.
+const extraOrigins = (process.env.ADDITIONAL_TRUSTED_ORIGINS ?? "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "pg",
@@ -36,7 +43,7 @@ export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL ?? devOrigin,
 
   // Origin yang diizinkan untuk cross-origin requests
-  trustedOrigins: [productionOrigin, devOrigin],
+  trustedOrigins: [productionOrigin, devOrigin, ...extraOrigins],
 
   secret: process.env.BETTER_AUTH_SECRET!,
 });
