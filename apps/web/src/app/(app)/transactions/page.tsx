@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -33,9 +33,9 @@ function formatRp(val: string) {
   return Number(val).toLocaleString("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 }
 
-function groupByDate(transactions: Transaction[]) {
+function groupByDate(txs: Transaction[]) {
   const groups: Record<string, Transaction[]> = {};
-  for (const t of transactions) {
+  for (const t of txs) {
     if (!groups[t.tanggal]) groups[t.tanggal] = [];
     groups[t.tanggal].push(t);
   }
@@ -43,36 +43,42 @@ function groupByDate(transactions: Transaction[]) {
 }
 
 function formatDate(d: string) {
-  return new Date(d + "T00:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-}
-
-async function apiFetch(path: string) {
-  const res = await fetch(`${API}${path}`, { credentials: "include" });
-  if (!res.ok) throw new Error("Gagal memuat");
-  return res.json();
+  return new Date(d + "T00:00:00").toLocaleDateString("id-ID", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  });
 }
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  // Start as true — initial fetch is in progress; no need to setLoading(true) in effect
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
+  // refetch: called from event handlers only, not from useEffect
+  const refetch = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiFetch("/api/transactions?limit=100");
+      const res = await fetch(`${API}/api/transactions?limit=100`, { credentials: "include" });
+      const data = await res.json();
       setTransactions(data);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  // Initial fetch: setState only inside async .then()/.finally()
+  useEffect(() => {
+    fetch(`${API}/api/transactions?limit=100`, { credentials: "include" })
+      .then((res) => res.json())
+      .then((data: Transaction[]) => setTransactions(data))
+      .catch(() => setTransactions([]))
+      .finally(() => setLoading(false));
+  }, []);
 
   const handleDelete = async (id: string) => {
     if (!confirm("Hapus transaksi ini? Saldo rekening akan dibalik.")) return;
     try {
       await fetch(`${API}/api/transactions/${id}`, { method: "DELETE", credentials: "include" });
-      await load();
+      await refetch();
     } catch {
       alert("Gagal menghapus");
     }

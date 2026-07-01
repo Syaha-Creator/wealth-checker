@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -42,6 +42,7 @@ async function apiFetch(path: string, method: string, body?: unknown) {
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  // Start as true so the initial fetch shows loading without calling setLoading in useEffect
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [nama, setNama] = useState("");
@@ -49,7 +50,8 @@ export default function AccountsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const load = async () => {
+  // refetch is used from event handlers only (not from useEffect directly)
+  const refetch = useCallback(async () => {
     setLoading(true);
     try {
       const data = await apiFetch("/api/accounts", "GET");
@@ -57,9 +59,15 @@ export default function AccountsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  // Initial fetch: setState only inside async .then()/.finally() — not synchronously in effect body
+  useEffect(() => {
+    apiFetch("/api/accounts", "GET")
+      .then((data: Account[]) => setAccounts(data))
+      .catch(() => setAccounts([]))
+      .finally(() => setLoading(false));
+  }, []);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,7 +76,7 @@ export default function AccountsPage() {
     try {
       await apiFetch("/api/accounts", "POST", { nama, saldoAwal: parseRupiah(saldo) });
       setNama(""); setSaldo(""); setShowForm(false);
-      await load();
+      await refetch();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Gagal menyimpan");
     } finally {
@@ -80,7 +88,7 @@ export default function AccountsPage() {
     if (!confirm("Nonaktifkan rekening ini?")) return;
     try {
       await apiFetch(`/api/accounts/${id}`, "PATCH", { isActive: false });
-      await load();
+      await refetch();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Gagal");
     }
@@ -90,7 +98,7 @@ export default function AccountsPage() {
     if (!confirm("Hapus rekening? Ini hanya bisa dilakukan jika belum ada transaksi.")) return;
     try {
       await apiFetch(`/api/accounts/${id}`, "DELETE");
-      await load();
+      await refetch();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Gagal menghapus — pastikan tidak ada transaksi terkait.");
     }
