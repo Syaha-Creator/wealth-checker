@@ -48,16 +48,28 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<WealthSummary | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!session) return;
     Promise.all([
-      fetch(`${API}/api/wealth/summary`, { credentials: "include" }).then((r) => r.json()),
-      fetch(`${API}/api/accounts`, { credentials: "include" }).then((r) => r.json()),
-    ]).then(([w, a]) => {
-      setSummary(w);
-      setAccounts(Array.isArray(a) ? a.filter((acc: Account & { isActive: boolean }) => acc.isActive) : []);
-    }).finally(() => setLoading(false));
+      fetch(`${API}/api/wealth/summary`, { credentials: "include" }).then((r) => {
+        if (!r.ok) throw new Error("Gagal memuat ringkasan kekayaan");
+        return r.json();
+      }),
+      fetch(`${API}/api/accounts`, { credentials: "include" }).then((r) => {
+        if (!r.ok) throw new Error("Gagal memuat rekening");
+        return r.json();
+      }),
+    ])
+      .then(([w, a]) => {
+        setSummary(w);
+        setAccounts(Array.isArray(a) ? a.filter((acc: Account & { isActive: boolean }) => acc.isActive) : []);
+      })
+      .catch((err: Error) => {
+        setError(err.message ?? "Gagal memuat data. Coba muat ulang halaman.");
+      })
+      .finally(() => setLoading(false));
   }, [session]);
 
   const handleSignOut = async () => {
@@ -68,7 +80,29 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-8 h-8 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" aria-label="Memuat..." />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-6">
+        <div className="rounded-2xl bg-red-50 border border-red-100 p-6 text-center">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="mx-auto mb-3 text-red-400" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <p className="text-sm font-medium text-red-700 mb-1">Gagal memuat dashboard</p>
+          <p className="text-xs text-red-500 mb-4">{error}</p>
+          <button
+            onClick={() => { setError(""); setLoading(true); }}
+            className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Coba Lagi
+          </button>
+        </div>
       </div>
     );
   }
@@ -89,9 +123,10 @@ export default function DashboardPage() {
         </div>
         <button
           onClick={handleSignOut}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg"
+          aria-label="Keluar dari akun"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg transition-colors"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           Keluar
         </button>
       </div>
@@ -105,7 +140,7 @@ export default function DashboardPage() {
           </p>
           <Link
             href="/onboarding"
-            className="mt-3 inline-block px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700"
+            className="mt-3 inline-block px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
           >
             Mulai Setup →
           </Link>
@@ -159,7 +194,7 @@ export default function DashboardPage() {
             </div>
             {/* Level progress bar */}
             <div className="mt-3">
-              <div className="flex gap-0.5 mt-1">
+              <div className="flex gap-0.5 mt-1" role="progressbar" aria-valuenow={level} aria-valuemin={0} aria-valuemax={6} aria-label={`Level kebebasan finansial: ${level} dari 6`}>
                 {[0, 1, 2, 3, 4, 5, 6].map((l) => (
                   <div
                     key={l}
@@ -167,7 +202,7 @@ export default function DashboardPage() {
                   />
                 ))}
               </div>
-              <p className="text-xs text-gray-400 mt-1">Level {level}/6</p>
+              <p className="text-xs text-gray-400 mt-1">Level {level} dari 6</p>
             </div>
           </div>
         </div>
@@ -178,7 +213,7 @@ export default function DashboardPage() {
         <div className="mb-4">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-gray-700">Rekening</h2>
-            <Link href="/accounts" className="text-xs text-emerald-600 font-medium">Lihat semua</Link>
+            <Link href="/accounts" className="text-xs text-emerald-600 font-medium hover:text-emerald-700 transition-colors">Lihat semua</Link>
           </div>
           <div className="grid grid-cols-2 gap-2">
             {accounts.slice(0, 4).map((acc) => (
@@ -198,15 +233,15 @@ export default function DashboardPage() {
         <h2 className="text-sm font-semibold text-gray-700 mb-3">Catat Cepat</h2>
         <div className="grid grid-cols-3 gap-2">
           <Link href="/transactions/new?type=pendapatan" className="flex flex-col items-center gap-2 p-3 bg-emerald-50 rounded-xl hover:bg-emerald-100 transition-colors">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-emerald-600" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 5 5 12"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-emerald-600" strokeLinecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 5 5 12"/></svg>
             <span className="text-xs font-medium text-emerald-700">Pemasukan</span>
           </Link>
           <Link href="/transactions/new?type=pengeluaran" className="flex flex-col items-center gap-2 p-3 bg-red-50 rounded-xl hover:bg-red-100 transition-colors">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-red-500" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="5 12 12 19 19 12"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-red-500" strokeLinecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="5 12 12 19 19 12"/></svg>
             <span className="text-xs font-medium text-red-600">Pengeluaran</span>
           </Link>
           <Link href="/transactions/new?type=transfer" className="flex flex-col items-center gap-2 p-3 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-blue-500" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-blue-500" strokeLinecap="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
             <span className="text-xs font-medium text-blue-600">Transfer</span>
           </Link>
         </div>

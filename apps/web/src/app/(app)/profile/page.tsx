@@ -25,7 +25,10 @@ async function apiFetch(path: string, method = "GET", body?: unknown) {
     credentials: "include",
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error("Gagal");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error ?? "Gagal");
+  }
   if (res.status === 204) return null;
   return res.json();
 }
@@ -36,6 +39,8 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [fetchError, setFetchError] = useState("");
 
   const [tanggalLahir, setTanggalLahir] = useState("");
   const [usiaPensiun, setUsiaPensiun] = useState("");
@@ -53,6 +58,9 @@ export default function ProfilePage() {
           setAnggota(String(data.profile.anggotaKeluargaDitanggung ?? "1"));
         }
       })
+      .catch((err: unknown) => {
+        setFetchError(err instanceof Error ? err.message : "Gagal memuat profil");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -60,6 +68,7 @@ export default function ProfilePage() {
     e.preventDefault();
     setSaving(true);
     setSaved(false);
+    setSaveError("");
     try {
       await apiFetch("/api/profile", "PUT", {
         tanggalLahir: tanggalLahir || null,
@@ -69,6 +78,8 @@ export default function ProfilePage() {
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : "Gagal menyimpan perubahan");
     } finally {
       setSaving(false);
     }
@@ -82,7 +93,29 @@ export default function ProfilePage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+        <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" aria-label="Memuat..." />
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-6">
+        <div className="rounded-2xl bg-red-50 border border-red-100 p-6 text-center">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="mx-auto mb-3 text-red-400" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <p className="text-sm font-medium text-red-700 mb-1">Gagal memuat profil</p>
+          <p className="text-xs text-red-500 mb-4">{fetchError}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Coba Lagi
+          </button>
+        </div>
       </div>
     );
   }
@@ -94,7 +127,7 @@ export default function ProfilePage() {
       {/* User info */}
       <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-4">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center" aria-hidden="true">
             <span className="text-emerald-700 font-bold text-lg">
               {(profile?.name ?? "U")[0].toUpperCase()}
             </span>
@@ -109,49 +142,63 @@ export default function ProfilePage() {
       {/* Profile form */}
       <form onSubmit={handleSave} className="bg-white rounded-2xl border border-gray-100 p-5 mb-4">
         <h2 className="text-base font-semibold text-gray-900 mb-4">Data Keuangan</h2>
+
         {saved && (
-          <div className="mb-4 p-3 bg-emerald-50 text-emerald-700 text-sm rounded-lg">
+          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-100 text-emerald-700 text-sm rounded-xl flex items-center gap-2" role="status">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
             Profil berhasil disimpan
           </div>
         )}
+
+        {saveError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-100 text-red-700 text-sm rounded-xl flex items-start gap-2" role="alert">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="shrink-0 mt-0.5" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            {saveError}
+          </div>
+        )}
+
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal Lahir</label>
+            <label htmlFor="tanggal-lahir" className="block text-sm font-medium text-gray-700 mb-1">Tanggal Lahir</label>
             <input
+              id="tanggal-lahir"
               type="date"
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 transition-shadow"
               value={tanggalLahir}
               onChange={(e) => setTanggalLahir(e.target.value)}
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Rencana Pensiun (usia)</label>
+              <label htmlFor="usia-pensiun" className="block text-sm font-medium text-gray-700 mb-1">Rencana Pensiun (usia)</label>
               <input
+                id="usia-pensiun"
                 type="number"
                 min={30} max={99}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 transition-shadow"
                 value={usiaPensiun}
                 onChange={(e) => setUsiaPensiun(e.target.value)}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Rencana Warisan (usia)</label>
+              <label htmlFor="usia-warisan" className="block text-sm font-medium text-gray-700 mb-1">Rencana Warisan (usia)</label>
               <input
+                id="usia-warisan"
                 type="number"
                 min={30} max={120}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 transition-shadow"
                 value={usiaWarisan}
                 onChange={(e) => setUsiaWarisan(e.target.value)}
               />
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Anggota keluarga ditanggung</label>
+            <label htmlFor="anggota-keluarga" className="block text-sm font-medium text-gray-700 mb-1">Anggota keluarga ditanggung</label>
             <input
+              id="anggota-keluarga"
               type="number"
               min={1} max={20}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 transition-shadow"
               value={anggota}
               onChange={(e) => setAnggota(e.target.value)}
             />
@@ -173,7 +220,7 @@ export default function ProfilePage() {
           className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors"
         >
           <span className="text-sm font-medium text-gray-700">Setup ulang data keuangan</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-gray-400"><polyline points="9 18 15 12 9 6"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-gray-400" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
         </a>
       </div>
 
