@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { RequiredMark } from "@/components/ui/Input";
 import { Skeleton, SkeletonHero } from "@/components/ui/Skeleton";
 import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/format";
+import { SEMUA_REKENING } from "@/lib/institutions";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -207,12 +208,19 @@ export default function AccountsPage() {
                 <label htmlFor="acc-nama" className="block text-sm font-medium text-text-secondary mb-1">Nama Rekening<RequiredMark /></label>
                 <input
                   id="acc-nama"
+                  list="rekening-options"
                   className="w-full px-3 py-2.5 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand/30"
-                  placeholder="Cth: BCA, Gopay, Tunai"
+                  placeholder="Cth: BCA, GoPay, atau ketik nama lain"
                   value={nama}
                   onChange={(e) => setNama(e.target.value)}
+                  autoComplete="off"
                   required
                 />
+                <datalist id="rekening-options">
+                  {SEMUA_REKENING.map((r) => (
+                    <option key={r} value={r} />
+                  ))}
+                </datalist>
               </div>
               <div>
                 <label htmlFor="acc-saldo" className="block text-sm font-medium text-text-secondary mb-1">Saldo Awal</label>

@@ -7,6 +7,7 @@ import { InputRupiah, RequiredMark } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { parseRupiahInput } from "@/lib/format";
+import { SEMUA_REKENING, SEMUA_KARTU_KREDIT_PAYLATER } from "@/lib/institutions";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -432,11 +433,18 @@ export default function OnboardingPage() {
                   <input
                     id="nama-rekening"
                     type="text"
+                    list="rekening-options"
                     className="w-full px-3 py-2.5 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand/30"
-                    placeholder="Cth: BCA, Tunai"
+                    placeholder="Cth: BCA, GoPay, atau ketik nama lain"
                     value={namaRekening}
                     onChange={(e) => setNamaRekening(e.target.value)}
+                    autoComplete="off"
                   />
+                  <datalist id="rekening-options">
+                    {SEMUA_REKENING.map((r) => (
+                      <option key={r} value={r} />
+                    ))}
+                  </datalist>
                 </div>
                 <InputRupiah id="saldo-rekening" label="Saldo Saat Ini" value={saldoRekening} onChange={setSaldoRekening} />
               </div>
@@ -624,11 +632,20 @@ export default function OnboardingPage() {
                 <input
                   id="pemberi-utang"
                   type="text"
+                  list={tipeUtang === "kartu_kredit" ? "kartu-kredit-options" : undefined}
                   className="w-full px-3 py-2.5 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand/30"
-                  placeholder={tipeUtang === "kartu_kredit" ? "Cth: BCA Platinum" : "Cth: Bank BRI, Pak Budi"}
+                  placeholder={tipeUtang === "kartu_kredit" ? "Cth: BCA, Kredivo, atau ketik nama lain" : "Cth: Bank BRI, Pak Budi"}
                   value={pemberiUtang}
                   onChange={(e) => setPemberiUtang(e.target.value)}
+                  autoComplete="off"
                 />
+                {tipeUtang === "kartu_kredit" && (
+                  <datalist id="kartu-kredit-options">
+                    {SEMUA_KARTU_KREDIT_PAYLATER.map((k) => (
+                      <option key={k} value={k} />
+                    ))}
+                  </datalist>
+                )}
               </div>
               <InputRupiah id="sisa-utang" label="Sisa Tagihan / Utang" value={sisaUtang} onChange={setSisaUtang} />
               <button
