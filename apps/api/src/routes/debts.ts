@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db, debts, receivables } from "@wealth/db";
 import { eq, and } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
+import { calculateDebtSummary, calculateReceivableSummary } from "../services/debtReceivable";
 import type { AppEnv } from "../types";
 
 export const debtRoutes = new Hono<AppEnv>();
@@ -12,6 +13,16 @@ debtRoutes.use("*", requireAuth);
 
 // Reusable UUID param schema
 const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
+
+// ─── GET /summary — ringkasan "Pemberi Utang vs Sisa Utang" (Sprint 8) ──────
+// PENTING: didaftarkan sebelum "/:id" implisit dari route lain agar path literal
+// "/summary" tidak pernah ditangkap sebagai parameter id.
+
+debtRoutes.get("/summary", async (c) => {
+  const userId = c.get("userId") as string;
+  const rows = await db.select().from(debts).where(eq(debts.userId, userId));
+  return c.json(calculateDebtSummary(rows));
+});
 
 // ─── Debts (Utang) ─────────────────────────────────────────────────────────
 
@@ -79,6 +90,14 @@ const receivableSchema = z.object({
 debtRoutes.get("/receivables", async (c) => {
   const userId = c.get("userId") as string;
   return c.json(await db.select().from(receivables).where(eq(receivables.userId, userId)));
+});
+
+// ─── GET /receivables/summary — ringkasan "Peminjam vs Sisa Piutang" (Sprint 9) ──
+
+debtRoutes.get("/receivables/summary", async (c) => {
+  const userId = c.get("userId") as string;
+  const rows = await db.select().from(receivables).where(eq(receivables.userId, userId));
+  return c.json(calculateReceivableSummary(rows));
 });
 
 debtRoutes.post("/receivables", zValidator("json", receivableSchema), async (c) => {
