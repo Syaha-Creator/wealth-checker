@@ -4,6 +4,8 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { RequiredMark } from "@/components/ui/Input";
 import { formatRupiahInput, parseRupiahInput, formatCurrency } from "@/lib/format";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -45,6 +47,13 @@ const ChevronDown = () => (
   </svg>
 );
 
+const AccountIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+    <rect x="2" y="5" width="20" height="14" rx="2" />
+    <line x1="2" y1="10" x2="22" y2="10" />
+  </svg>
+);
+
 function NewTransactionForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -69,6 +78,7 @@ function NewTransactionForm() {
   const [toAccountId, setToAccountId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,7 +93,8 @@ function NewTransactionForm() {
           if (active.length > 1) setToAccountId(active[1].id);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setAccountsLoaded(true); });
     // Categories endpoint includes user history, not just the defaults
     fetch(`${API}/api/transactions/categories`, { credentials: "include" })
       .then((r) => r.json())
@@ -150,6 +161,24 @@ function NewTransactionForm() {
     : saldoTersedia - nominalParsed;
   const toBalanceAfter = toAccount ? Number(toAccount.saldoCache) + nominalParsed : 0;
 
+  // Blocked before the user can even try: without a rekening there is nowhere
+  // to record the transaction against, so show a clear way out instead of a
+  // silently-disabled submit button.
+  if (accountsLoaded && accounts.length === 0) {
+    return (
+      <div className="max-w-4xl">
+        <PageHeader title="Catat Transaksi" onBack={() => router.back()} />
+        <EmptyState
+          icon={<AccountIcon />}
+          title="Belum ada rekening"
+          description="Anda perlu membuat rekening terlebih dahulu sebelum bisa mencatat transaksi apa pun."
+          action={<Button href="/accounts">Tambah Rekening Pertama</Button>}
+          className="bg-surface rounded-2xl border border-border"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl">
       <PageHeader title="Catat Transaksi" onBack={() => router.back()} />
@@ -196,7 +225,7 @@ function NewTransactionForm() {
         <div className={`bg-surface rounded-2xl p-5 border transition-colors ${
           isOverBalance ? "border-danger bg-danger-soft/40" : "border-border"
         }`}>
-          <label htmlFor="nominal" className="block text-xs font-medium text-text-muted mb-2 uppercase tracking-wide">Nominal</label>
+          <label htmlFor="nominal" className="block text-xs font-medium text-text-muted mb-2 uppercase tracking-wide">Nominal<RequiredMark /></label>
           <div className="flex items-center gap-2">
             <span className={`text-2xl font-light ${
               isOverBalance ? "text-danger" :
@@ -240,7 +269,7 @@ function NewTransactionForm() {
         <div className="bg-surface rounded-2xl border border-border divide-y divide-border">
           {/* Tanggal */}
           <div className="flex items-center px-5 py-3">
-            <label htmlFor="tanggal" className="text-sm text-text-muted w-28">Tanggal</label>
+            <label htmlFor="tanggal" className="text-sm text-text-muted w-28">Tanggal<RequiredMark /></label>
             <input
               id="tanggal"
               type="date"
@@ -254,7 +283,7 @@ function NewTransactionForm() {
           {/* Rekening asal */}
           <div className="flex items-center px-5 py-3">
             <label htmlFor="account" className="text-sm text-text-muted w-28">
-              {type === "transfer" ? "Dari Rekening" : "Rekening"}
+              {type === "transfer" ? "Dari Rekening" : "Rekening"}<RequiredMark />
             </label>
             <div className="flex-1 flex items-center gap-1 justify-end">
               <select
@@ -275,7 +304,7 @@ function NewTransactionForm() {
           {/* Rekening tujuan (transfer) */}
           {type === "transfer" && (
             <div className="flex items-center px-5 py-3">
-              <label htmlFor="to-account" className="text-sm text-text-muted w-28">Ke Rekening</label>
+              <label htmlFor="to-account" className="text-sm text-text-muted w-28">Ke Rekening<RequiredMark /></label>
               <div className="flex-1 flex items-center gap-1 justify-end">
                 <select
                   id="to-account"

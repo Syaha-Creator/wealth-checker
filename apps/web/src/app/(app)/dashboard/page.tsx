@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonCard, SkeletonHero } from "@/components/ui/Skeleton";
 import { formatCurrency, formatCurrencyShort, formatMonthLabel } from "@/lib/format";
 
@@ -52,6 +53,15 @@ const LEVEL_CONFIG: { label: string; desc: string; variant: "danger" | "warning"
 
 function SignOutIcon() {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>;
+}
+
+function AccountIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <line x1="2" y1="10" x2="22" y2="10" />
+    </svg>
+  );
 }
 
 function DashboardSkeleton() {
@@ -166,17 +176,21 @@ export default function DashboardPage() {
         }
       />
 
-      {/* Onboarding prompt */}
+      {/* New-user guidance — only shown when there is truly no wealth data yet
+          (wealthLevel -1), never for users who already have data */}
       {isNewUser && (
-        <Card className="bg-brand-soft border-brand-soft-border">
-          <p className="text-sm font-semibold text-brand">Mulai setup keuangan Anda</p>
-          <p className="text-sm text-text-secondary mt-1">
-            Isi data awal untuk menghitung kekayaan bersih dan level kebebasan finansial Anda.
-          </p>
-          <Button href="/onboarding" size="sm" className="mt-3">
-            Mulai Setup →
-          </Button>
-        </Card>
+        <EmptyState
+          icon={<AccountIcon />}
+          title="Mulai lacak kekayaanmu"
+          description="Tambahkan rekening pertama untuk mulai menghitung kekayaan bersih dan level kebebasan finansialmu."
+          action={
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button href="/accounts" size="sm">Tambah Rekening</Button>
+              <Button href="/onboarding" variant="secondary" size="sm">Setup Lengkap →</Button>
+            </div>
+          }
+          className="bg-brand-soft border border-brand-soft-border rounded-2xl"
+        />
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -200,8 +214,9 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Breakdown: Aset vs Utang */}
-          {summary && (
+          {/* Breakdown: Aset vs Utang — skip when there's no data yet, the
+              empty state above already covers guidance for that case */}
+          {summary && !isNoData && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Card>
                 <p className="text-xs text-text-muted">Total Aset</p>

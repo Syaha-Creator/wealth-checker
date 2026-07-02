@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { RequiredMark } from "@/components/ui/Input";
 import { Skeleton, SkeletonHero } from "@/components/ui/Skeleton";
 import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/format";
 
@@ -203,7 +204,7 @@ export default function AccountsPage() {
             {error && <p className="text-sm text-danger-text mb-3">{error}</p>}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label htmlFor="acc-nama" className="block text-sm font-medium text-text-secondary mb-1">Nama Rekening</label>
+                <label htmlFor="acc-nama" className="block text-sm font-medium text-text-secondary mb-1">Nama Rekening<RequiredMark /></label>
                 <input
                   id="acc-nama"
                   className="w-full px-3 py-2.5 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand/30"

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
-import { InputRupiah } from "@/components/ui/Input";
+import { InputRupiah, RequiredMark } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { parseRupiahInput } from "@/lib/format";
@@ -428,7 +428,7 @@ export default function OnboardingPage() {
               <SavedBadge count={savedRekening} label="rekening" />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="nama-rekening" className="block text-sm font-medium text-text-secondary mb-1">Nama Rekening</label>
+                  <label htmlFor="nama-rekening" className="block text-sm font-medium text-text-secondary mb-1">Nama Rekening<RequiredMark /></label>
                   <input
                     id="nama-rekening"
                     type="text"
@@ -479,7 +479,7 @@ export default function OnboardingPage() {
               </div>
               <SavedBadge count={savedLiquid} label="aset" />
               <div>
-                <label htmlFor="nama-liquid" className="block text-sm font-medium text-text-secondary mb-1">Nama Aset</label>
+                <label htmlFor="nama-liquid" className="block text-sm font-medium text-text-secondary mb-1">Nama Aset<RequiredMark /></label>
                 <input
                   id="nama-liquid"
                   type="text"
@@ -491,7 +491,7 @@ export default function OnboardingPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="jumlah-liquid" className="block text-sm font-medium text-text-secondary mb-1">Jumlah / Lot</label>
+                  <label htmlFor="jumlah-liquid" className="block text-sm font-medium text-text-secondary mb-1">Jumlah / Lot<RequiredMark /></label>
                   <input
                     id="jumlah-liquid"
                     type="number"
@@ -542,7 +542,7 @@ export default function OnboardingPage() {
               </div>
               <SavedBadge count={savedFixed} label="aset" />
               <div>
-                <label htmlFor="nama-fixed" className="block text-sm font-medium text-text-secondary mb-1">Nama Aset</label>
+                <label htmlFor="nama-fixed" className="block text-sm font-medium text-text-secondary mb-1">Nama Aset<RequiredMark /></label>
                 <input
                   id="nama-fixed"
                   type="text"
@@ -554,7 +554,7 @@ export default function OnboardingPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="jumlah-fixed" className="block text-sm font-medium text-text-secondary mb-1">Jumlah</label>
+                  <label htmlFor="jumlah-fixed" className="block text-sm font-medium text-text-secondary mb-1">Jumlah<RequiredMark /></label>
                   <input
                     id="jumlah-fixed"
                     type="number"
@@ -619,6 +619,7 @@ export default function OnboardingPage() {
               <div>
                 <label htmlFor="pemberi-utang" className="block text-sm font-medium text-text-secondary mb-1">
                   {tipeUtang === "kartu_kredit" ? "Nama Kartu / Penyedia" : "Nama Pemberi Pinjaman"}
+                  <RequiredMark />
                 </label>
                 <input
                   id="pemberi-utang"
@@ -668,7 +669,7 @@ export default function OnboardingPage() {
               </div>
               <SavedBadge count={savedPiutang} label="piutang" />
               <div>
-                <label htmlFor="peminjam" className="block text-sm font-medium text-text-secondary mb-1">Nama Peminjam</label>
+                <label htmlFor="peminjam" className="block text-sm font-medium text-text-secondary mb-1">Nama Peminjam<RequiredMark /></label>
                 <input
                   id="peminjam"
                   type="text"

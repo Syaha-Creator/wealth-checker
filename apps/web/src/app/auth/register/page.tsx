@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signUp, useSession } from "@/lib/auth-client";
-import { Input } from "@/components/ui/Input";
+import { Input, PasswordInput } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -145,9 +145,8 @@ export default function RegisterPage() {
             />
 
             <div>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 label="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
