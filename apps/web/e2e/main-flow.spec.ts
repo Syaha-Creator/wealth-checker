@@ -11,17 +11,25 @@ function uniqueEmail() {
  * (role="alert") instead of navigating. Without this, a rejected API call
  * (e.g. CORS/auth misconfiguration) just looks like a generic waitForURL
  * timeout with no indication of the real cause.
+ *
+ * Next.js's App Router injects its own always-present `<next-route-announcer>`
+ * shadow-DOM element with role="alert" (for screen-reader route announcements)
+ * on every page. It's visually hidden via clip-rect rather than display:none,
+ * so Playwright's isVisible() still reports it as visible, and its locator
+ * pierces shadow DOM so it matches `[role="alert"]` too. It starts out empty,
+ * so we only treat a match as a real error once it has non-empty text —
+ * that's enough to distinguish it from the app's own error boxes below.
  */
 async function assertNoErrorAlert(page: Page) {
-  // Exclude Next.js's built-in `#__next-route-announcer__` — a visually-hidden
-  // (1x1px clipped) a11y element with role="alert" used to announce route
-  // changes to screen readers. It always matches [role="alert"] and is
-  // technically "visible" per Playwright's bounding-box check, but it's not
-  // one of our app's error banners.
-  const alert = page.locator('[role="alert"]:not(#__next-route-announcer__)').first();
-  if (await alert.isVisible().catch(() => false)) {
-    const message = await alert.innerText().catch(() => "(tidak bisa membaca pesan error)");
-    throw new Error(`Form menampilkan error, navigasi dibatalkan: "${message.trim()}"`);
+  const alerts = page.locator('[role="alert"]');
+  const count = await alerts.count();
+  for (let i = 0; i < count; i++) {
+    const alert = alerts.nth(i);
+    if (!(await alert.isVisible().catch(() => false))) continue;
+    const message = (await alert.innerText().catch(() => "")).trim();
+    if (message) {
+      throw new Error(`Form menampilkan error, navigasi dibatalkan: "${message}"`);
+    }
   }
 }
 
@@ -121,9 +129,9 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
     // Kekayaan Bersih card always present
     await expect(page.locator("text=Kekayaan Bersih")).toBeVisible({ timeout: 15_000 });
 
-    // With 1.000.000 in cash and no debt, formatRp(1000000) → "Rp 1.0jt"
-    // (shown in multiple places: hero card, stat card, breakdown row — just
-    // confirm at least one is visible)
+    // With 1.000.000 in cash and no debt, formatRp(1000000) → "Rp 1.0jt".
+    // Multiple dashboard cards show the same value when there's only one
+    // account, so match the first occurrence rather than requiring uniqueness.
     await expect(page.locator("text=1.0jt").first()).toBeVisible({ timeout: 10_000 });
 
     // Account list should show BCA Tabungan

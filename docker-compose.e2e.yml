@@ -62,6 +62,12 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      # NOTE: next.config.ts's rewrites() are resolved at build time under
+      # output:"standalone" — these MUST match the runtime environment: below,
+      # otherwise the compiled proxy destination is a dead fallback URL.
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4001
+        INTERNAL_API_URL: http://api-e2e:4001
     container_name: wealth_web_e2e
     environment:
       PORT: "4000"

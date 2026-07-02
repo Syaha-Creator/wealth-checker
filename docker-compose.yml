@@ -95,6 +95,12 @@ services:
     build:
       context: .
       dockerfile: ./apps/web/Dockerfile
+      # NOTE: next.config.ts's rewrites() are resolved at build time under
+      # output:"standalone" — these MUST match the runtime environment: below,
+      # otherwise the compiled proxy destination is a dead fallback URL.
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3011}
+        INTERNAL_API_URL: http://api:3011
     container_name: wealth_web
     restart: unless-stopped
     env_file: .env

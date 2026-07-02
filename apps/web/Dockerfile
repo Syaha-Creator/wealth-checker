@@ -21,6 +21,14 @@ COPY package.json ./
 COPY apps/web ./apps/web
 COPY packages/db ./packages/db
 
+# next.config.ts's rewrites() (output: "standalone") is resolved at build time —
+# these values get baked into the compiled routes manifest, NOT re-read from the
+# container's runtime environment. They MUST be passed as build args, matching
+# whatever will be set at runtime via docker-compose.
+ARG NEXT_PUBLIC_API_URL
+ARG INTERNAL_API_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV INTERNAL_API_URL=${INTERNAL_API_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 RUN bun run --filter='@wealth/web' build
