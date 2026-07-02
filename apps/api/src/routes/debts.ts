@@ -10,7 +10,7 @@ export const debtRoutes = new Hono<AppEnv>();
 
 debtRoutes.use("*", requireAuth);
 
-// FIX #14: Reusable UUID param schema
+// Reusable UUID param schema
 const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
 
 // ─── Debts (Utang) ─────────────────────────────────────────────────────────

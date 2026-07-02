@@ -37,8 +37,9 @@ export async function calculateWealthSummary(db: DB, userId: string): Promise<We
   if (!user) throw new Error("User not found");
 
   const [[accRes], [liqRes], [fixRes], [debtRes], [recRes]] = await Promise.all([
+    // Only count active accounts, matching the accounts page total
     db.select({ total: sql<string>`coalesce(sum(saldo_cache::numeric), 0)` })
-      .from(accounts).where(eq(accounts.userId, userId)),
+      .from(accounts).where(and(eq(accounts.userId, userId), eq(accounts.isActive, true))),
     db.select({ total: sql<string>`coalesce(sum(jumlah * harga_beli_rata_rata), 0)` })
       .from(liquidAssets).where(eq(liquidAssets.userId, userId)),
     db.select({ total: sql<string>`coalesce(sum(jumlah * harga_beli_rata_rata), 0)` })
@@ -200,7 +201,7 @@ export async function calculateMonthlyCashFlow(
   const avgSisa = avgPemasukan - avgPengeluaran;
   const kasBersih = totalKas - totalUtang;
 
-  // FIX #10: Use avgPengeluaran (not avgSisa) so runway shows even when spending > income
+  // Use avgPengeluaran (not avgSisa) so runway shows even when spending > income
   // — that's exactly when knowing the runway matters most
   const hidupTanpaGajiBulan =
     avgPengeluaran > 0 && kasBersih > 0
@@ -236,7 +237,7 @@ export function calculateWealthLevel({
   uang: number;
   totalAset: number;
 }): number {
-  // FIX #11: -1 = no data yet (distinct from level 0 "pailit")
+  // -1 = no data yet (distinct from level 0 "pailit")
   if (totalAset === 0 && totalUtang === 0) return -1;
   if (totalAset < totalUtang) return 0;                 // pailit
   if (totalUtang > kekayaanBersih) return 1;            // terjerat utang

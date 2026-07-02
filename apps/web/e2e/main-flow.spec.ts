@@ -13,7 +13,12 @@ function uniqueEmail() {
  * timeout with no indication of the real cause.
  */
 async function assertNoErrorAlert(page: Page) {
-  const alert = page.locator('[role="alert"]').first();
+  // Exclude Next.js's built-in `#__next-route-announcer__` — a visually-hidden
+  // (1x1px clipped) a11y element with role="alert" used to announce route
+  // changes to screen readers. It always matches [role="alert"] and is
+  // technically "visible" per Playwright's bounding-box check, but it's not
+  // one of our app's error banners.
+  const alert = page.locator('[role="alert"]:not(#__next-route-announcer__)').first();
   if (await alert.isVisible().catch(() => false)) {
     const message = await alert.innerText().catch(() => "(tidak bisa membaca pesan error)");
     throw new Error(`Form menampilkan error, navigasi dibatalkan: "${message.trim()}"`);
@@ -117,10 +122,12 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
     await expect(page.locator("text=Kekayaan Bersih")).toBeVisible({ timeout: 15_000 });
 
     // With 1.000.000 in cash and no debt, formatRp(1000000) → "Rp 1.0jt"
-    await expect(page.locator("text=1.0jt")).toBeVisible({ timeout: 10_000 });
+    // (shown in multiple places: hero card, stat card, breakdown row — just
+    // confirm at least one is visible)
+    await expect(page.locator("text=1.0jt").first()).toBeVisible({ timeout: 10_000 });
 
     // Account list should show BCA Tabungan
-    await expect(page.locator("text=BCA Tabungan")).toBeVisible();
+    await expect(page.locator("text=BCA Tabungan").first()).toBeVisible();
   });
 
   // ── Step 4: Catat pengeluaran Rp 50.000 ─────────────────────────────────

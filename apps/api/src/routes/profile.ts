@@ -36,9 +36,19 @@ const profileSchema = z.object({
 
 profileRoutes.put("/", zValidator("json", profileSchema), async (c) => {
   const userId = c.get("userId") as string;
-  const data = c.req.valid("json");
+  const { pemasukanBulananRataRata, pengeluaranBulananRataRata, ...rest } = c.req.valid("json");
 
-  // FIX #8: Atomic upsert — eliminates TOCTOU race on concurrent requests
+  // Numeric columns are typed as `string` by Drizzle — convert, matching the
+  // pattern used in accounts/assets/debts routes (pre-existing type bug fix).
+  const data = {
+    ...rest,
+    pemasukanBulananRataRata:
+      pemasukanBulananRataRata === undefined ? undefined : pemasukanBulananRataRata === null ? null : String(pemasukanBulananRataRata),
+    pengeluaranBulananRataRata:
+      pengeluaranBulananRataRata === undefined ? undefined : pengeluaranBulananRataRata === null ? null : String(pengeluaranBulananRataRata),
+  };
+
+  // Atomic upsert — eliminates TOCTOU race on concurrent requests
   const [updated] = await db
     .insert(userProfile)
     .values({ id: userId, ...data, updatedAt: new Date() })

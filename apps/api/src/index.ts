@@ -53,7 +53,6 @@ app.route("/api/assets", assetRoutes);
 app.route("/api/debts", debtRoutes);
 app.route("/api/profile", profileRoutes);
 
-// 404 handler
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 
 const port = Number(process.env.PORT) || 3011;

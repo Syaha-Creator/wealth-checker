@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, varchar, numeric, pgEnum, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, varchar, numeric, pgEnum, timestamp, index } from "drizzle-orm/pg-core";
 import { authUser } from "./auth";
 
 export const debtTypeEnum = pgEnum("debt_type", ["utang_biasa", "kartu_kredit"]);
@@ -11,7 +11,9 @@ export const debts = pgTable("debts", {
   saldoAwal: numeric("saldo_awal", { precision: 20, scale: 2 }).notNull().default("0"),
   sisaSaldo: numeric("sisa_saldo", { precision: 20, scale: 2 }).notNull().default("0"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  userIdx: index("idx_debts_user").on(t.userId),
+}));
 
 export const receivables = pgTable("receivables", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -20,4 +22,6 @@ export const receivables = pgTable("receivables", {
   saldoAwal: numeric("saldo_awal", { precision: 20, scale: 2 }).notNull().default("0"),
   sisaSaldo: numeric("sisa_saldo", { precision: 20, scale: 2 }).notNull().default("0"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  userIdx: index("idx_receivables_user").on(t.userId),
+}));

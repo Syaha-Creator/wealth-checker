@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { db, accounts, transactions } from "@wealth/db";
-import { eq, and, count } from "drizzle-orm";
+import { eq, and, or, count } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import type { AppEnv } from "../types";
 
@@ -10,7 +10,7 @@ export const accountRoutes = new Hono<AppEnv>();
 
 accountRoutes.use("*", requireAuth);
 
-// FIX #14: Reusable UUID param schema
+// Reusable UUID param schema
 const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
 
 accountRoutes.get("/", async (c) => {
@@ -56,11 +56,14 @@ accountRoutes.delete("/:id", zValidator("param", idParam), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
 
-  // check no transactions linked
+  // Also check relatedEntityId (transfer destination), scoped to this user's own transactions.
   const [{ total }] = await db
     .select({ total: count() })
     .from(transactions)
-    .where(eq(transactions.accountId, id));
+    .where(and(
+      eq(transactions.userId, userId),
+      or(eq(transactions.accountId, id), eq(transactions.relatedEntityId, id)),
+    ));
 
   if (Number(total) > 0) {
     return c.json({ error: "Rekening masih memiliki transaksi terkait" }, 409);

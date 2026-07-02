@@ -1,29 +1,171 @@
 @import "tailwindcss";
 
+/* ─── Design tokens ──────────────────────────────────────────────────────────
+   Semantic CSS variables that flip between light and dark via the `.dark`
+   class on <html> (managed by next-themes). Components should use the
+   Tailwind utilities generated below (bg-surface, text-primary, etc.)
+   instead of hardcoded gray-* / slate-* classes. */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #f8fafc;
+  --bg-subtle: #f1f5f9;
+  --surface: #ffffff;
+  --surface-hover: #f8fafc;
+  --surface-raised: #ffffff;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+
+  --brand: #059669;
+  --brand-hover: #047857;
+  --brand-active: #065f46;
+  --brand-soft: #ecfdf5;
+  --brand-soft-border: #d1fae5;
+  --brand-text-on: #ffffff;
+
+  --danger: #ef4444;
+  --danger-hover: #dc2626;
+  --danger-soft: #fef2f2;
+  --danger-soft-border: #fee2e2;
+  --danger-text: #dc2626;
+
+  --warning: #f59e0b;
+  --warning-hover: #d97706;
+  --warning-soft: #fffbeb;
+  --warning-soft-border: #fef3c7;
+  --warning-text: #b45309;
+
+  --info: #3b82f6;
+  --info-soft: #eff6ff;
+  --info-soft-border: #dbeafe;
+  --info-text: #1d4ed8;
+
+  --shadow-color: 15 23 42;
+
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0b1120;
+  --bg-subtle: #0f172a;
+  --surface: #131c2e;
+  --surface-hover: #1a2436;
+  --surface-raised: #1a2436;
+  --border: #253349;
+  --border-strong: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #b6c2d4;
+  --text-muted: #64748b;
+
+  --brand: #34d399;
+  --brand-hover: #6ee7b7;
+  --brand-active: #a7f3d0;
+  --brand-soft: rgba(52, 211, 153, 0.12);
+  --brand-soft-border: rgba(52, 211, 153, 0.25);
+  --brand-text-on: #04241a;
+
+  --danger: #f87171;
+  --danger-hover: #fca5a5;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+  --danger-soft-border: rgba(248, 113, 113, 0.25);
+  --danger-text: #fca5a5;
+
+  --warning: #fbbf24;
+  --warning-hover: #fcd34d;
+  --warning-soft: rgba(251, 191, 36, 0.12);
+  --warning-soft-border: rgba(251, 191, 36, 0.25);
+  --warning-text: #fcd34d;
+
+  --info: #60a5fa;
+  --info-soft: rgba(96, 165, 250, 0.12);
+  --info-soft-border: rgba(96, 165, 250, 0.25);
+  --info-text: #93c5fd;
+
+  --shadow-color: 0 0 0;
+
+  color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-active: var(--brand-active);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-soft-border: var(--brand-soft-border);
+  --color-brand-text-on: var(--brand-text-on);
+
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-soft-border: var(--danger-soft-border);
+  --color-danger-text: var(--danger-text);
+
+  --color-warning: var(--warning);
+  --color-warning-hover: var(--warning-hover);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-soft-border: var(--warning-soft-border);
+  --color-warning-text: var(--warning-text);
+
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-soft-border: var(--info-soft-border);
+  --color-info-text: var(--info-text);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--border);
+}
+
+html {
+  color-scheme: light dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg);
+  color: var(--text-primary);
 }
 
 .safe-area-pb {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Smooth theme transitions without janking every element on first paint */
+.theme-transition,
+.theme-transition * {
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease, box-shadow 200ms ease;
+}
+
+/* Step transition for onboarding wizard */
+@keyframes step-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-step-in {
+  animation: step-fade-in 220ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-step-in,
+  .theme-transition,
+  .theme-transition * {
+    animation: none !important;
+    transition: none !important;
+  }
 }

@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signUp, useSession } from "@/lib/auth-client";
+import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 function PasswordStrength({ password }: { password: string }) {
   const checks = [
@@ -12,7 +15,7 @@ function PasswordStrength({ password }: { password: string }) {
     { label: "Angka", ok: /[0-9]/.test(password) },
   ];
   const score = checks.filter((c) => c.ok).length;
-  const colors = ["", "bg-red-500", "bg-yellow-500", "bg-emerald-500"];
+  const colors = ["", "bg-danger", "bg-warning", "bg-brand"];
 
   if (!password) return null;
   return (
@@ -22,14 +25,14 @@ function PasswordStrength({ password }: { password: string }) {
           <div
             key={i}
             className={`h-1 flex-1 rounded-full transition-colors ${
-              i < score ? colors[score] : "bg-slate-700"
+              i < score ? colors[score] : "bg-border"
             }`}
           />
         ))}
       </div>
       <div className="flex flex-wrap gap-2">
         {checks.map((c) => (
-          <span key={c.label} className={`text-xs ${c.ok ? "text-emerald-400" : "text-slate-600"}`}>
+          <span key={c.label} className={`text-xs ${c.ok ? "text-brand" : "text-text-muted"}`}>
             {c.ok ? "✓" : "·"} {c.label}
           </span>
         ))}
@@ -88,107 +91,86 @@ export default function RegisterPage() {
 
   if (isPending || session) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-950 via-slate-900 to-emerald-950 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-bg flex items-center justify-center p-6 relative">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 justify-center">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center text-slate-950 font-bold text-lg">
+            <div className="w-9 h-9 rounded-xl bg-brand flex items-center justify-center text-brand-text-on font-bold text-lg">
               W
             </div>
-            <span className="text-xl font-semibold text-white">WealthChecker</span>
+            <span className="text-xl font-semibold text-text-primary">WealthChecker</span>
           </Link>
-          <p className="mt-2 text-slate-400 text-sm">Buat akun baru — gratis selamanya</p>
+          <p className="mt-2 text-text-secondary text-sm">Buat akun baru — gratis selamanya</p>
         </div>
 
-        <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm">
+        <div className="bg-surface border border-border rounded-2xl p-6">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {error && (
-              <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3 rounded-lg" role="alert">
+              <div className="flex items-start gap-2 bg-danger-soft border border-danger-soft-border text-danger-text text-sm px-4 py-3 rounded-lg" role="alert">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="shrink-0 mt-0.5" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 <span>{error}</span>
               </div>
             )}
 
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="name" className="text-sm font-medium text-slate-300">
-                Nama Lengkap
-              </label>
-              <input
-                id="name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Nama kamu"
-                autoComplete="name"
-                required
-                className="bg-slate-900/60 border border-slate-700 text-white placeholder-slate-500 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all"
-              />
-            </div>
+            <Input
+              id="name"
+              type="text"
+              label="Nama Lengkap"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Nama kamu"
+              autoComplete="name"
+              required
+            />
 
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="email" className="text-sm font-medium text-slate-300">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="kamu@email.com"
-                autoComplete="email"
-                required
-                className="bg-slate-900/60 border border-slate-700 text-white placeholder-slate-500 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all"
-              />
-            </div>
+            <Input
+              id="email"
+              type="email"
+              label="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="kamu@email.com"
+              autoComplete="email"
+              required
+            />
 
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="password" className="text-sm font-medium text-slate-300">
-                Password
-              </label>
-              <input
+            <div>
+              <Input
                 id="password"
                 type="password"
+                label="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Min. 8 karakter"
                 autoComplete="new-password"
                 required
-                className="bg-slate-900/60 border border-slate-700 text-white placeholder-slate-500 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all"
               />
               <PasswordStrength password={password} />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="mt-1 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-semibold py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <span className="w-4 h-4 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin" />
-                  Mendaftar...
-                </>
-              ) : (
-                "Daftar Sekarang"
-              )}
-            </button>
+            <Button type="submit" loading={loading} fullWidth className="mt-1">
+              {loading ? "Mendaftar..." : "Daftar Sekarang"}
+            </Button>
           </form>
 
-          <p className="text-center text-slate-500 text-xs mt-4">
+          <p className="text-center text-text-muted text-xs mt-4">
             Dengan mendaftar, kamu menyetujui penggunaan data untuk layanan ini.
           </p>
         </div>
 
-        <p className="text-center text-slate-500 text-sm mt-5">
+        <p className="text-center text-text-muted text-sm mt-5">
           Sudah punya akun?{" "}
-          <Link href="/auth/login" className="text-emerald-400 hover:text-emerald-300 font-medium">
+          <Link href="/auth/login" className="text-brand hover:text-brand-hover font-medium">
             Masuk
           </Link>
         </p>

@@ -22,13 +22,13 @@ const DEBIT_TYPES = new Set([
   "beli_barang", "beli_investasi", "transfer",
 ]);
 
-// Types that add to source account (FIX #5: include jual_barang/jual_investasi)
+// Types that add to source account
 const CREDIT_TYPES = new Set([
   "pendapatan", "pinjaman_utang", "penerimaan_piutang",
   "jual_barang", "jual_investasi",
 ]);
 
-// UUID regex for param validation (FIX #14)
+// UUID regex for param validation
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ─── GET / ────────────────────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ const createSchema = z.object({
   ]),
   kategori: z.string().optional(),
   rincian: z.string().optional(),
-  // FIX #1: accountId required for all debit/credit types; toAccountId required for transfer
+  // accountId required for all debit/credit types; toAccountId required for transfer
   accountId: z.string().uuid().optional(),
   toAccountId: z.string().uuid().optional(),
   // relatedDebtId / relatedReceivableId for bayar_utang / penerimaan_piutang linkage
@@ -92,7 +92,7 @@ const createSchema = z.object({
   relatedReceivableId: z.string().uuid().optional(),
   nominal: z.number().positive(),
 }).superRefine((val, ctx) => {
-  // FIX #1: transfer must have both accountId and toAccountId, and they must differ
+  // Transfer must have both accountId and toAccountId, and they must differ
   if (val.type === "transfer") {
     if (!val.accountId) {
       ctx.addIssue({ code: "custom", message: "accountId diperlukan untuk transfer", path: ["accountId"] });
@@ -104,7 +104,7 @@ const createSchema = z.object({
       ctx.addIssue({ code: "custom", message: "Rekening asal dan tujuan tidak boleh sama", path: ["toAccountId"] });
     }
   }
-  // FIX #1: debit types must have an accountId to actually deduct from
+  // Debit types must have an accountId to actually deduct from
   if (DEBIT_TYPES.has(val.type) && val.type !== "transfer" && !val.accountId) {
     ctx.addIssue({ code: "custom", message: "accountId diperlukan untuk tipe transaksi ini", path: ["accountId"] });
   }
@@ -116,18 +116,21 @@ transactionRoutes.post("/", zValidator("json", createSchema), async (c) => {
 
   try {
     const [trx] = await db.transaction(async (tx) => {
-      // ── FIX #2+#16: Validate account ownership before any mutation ────────
+      // ── Validate account ownership before any mutation; source account must also be active ────────
       if (data.accountId) {
         const [srcAcc] = await tx
-          .select({ id: accounts.id, saldoCache: accounts.saldoCache })
+          .select({ id: accounts.id, saldoCache: accounts.saldoCache, isActive: accounts.isActive })
           .from(accounts)
           .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, userId)));
 
         if (!srcAcc) {
           throw Object.assign(new Error("Rekening asal tidak ditemukan"), { status: 404 });
         }
+        if (!srcAcc.isActive) {
+          throw Object.assign(new Error("Rekening asal tidak aktif"), { status: 422 });
+        }
 
-        // ── FIX #3: Balance check INSIDE transaction (atomic) ───────────────
+        // ── Balance check INSIDE transaction (atomic) ───────────────
         if (DEBIT_TYPES.has(data.type)) {
           // Use conditional UPDATE — atomically debit only if balance is sufficient
           const deducted = await tx
@@ -152,7 +155,7 @@ transactionRoutes.post("/", zValidator("json", createSchema), async (c) => {
             });
           }
         } else if (CREDIT_TYPES.has(data.type)) {
-          // FIX #5: credit types (incl. jual_barang/jual_investasi) add to balance
+          // Credit types (incl. jual_barang/jual_investasi) add to balance
           await tx
             .update(accounts)
             .set({ saldoCache: sql`saldo_cache + ${String(data.nominal)}` })
@@ -160,23 +163,27 @@ transactionRoutes.post("/", zValidator("json", createSchema), async (c) => {
         }
       }
 
-      // ── FIX #2: Validate toAccountId ownership for transfer ───────────────
+      // ── Validate toAccountId ownership for transfer; destination account must also be active ───────────────
       if (data.type === "transfer" && toAccountId) {
         const credited = await tx
           .update(accounts)
           .set({ saldoCache: sql`saldo_cache + ${String(data.nominal)}` })
-          .where(and(eq(accounts.id, toAccountId), eq(accounts.userId, userId)))
+          .where(and(
+            eq(accounts.id, toAccountId),
+            eq(accounts.userId, userId),
+            eq(accounts.isActive, true),
+          ))
           .returning({ id: accounts.id });
 
         if (credited.length === 0) {
           throw Object.assign(
-            new Error("Rekening tujuan tidak ditemukan"),
+            new Error("Rekening tujuan tidak ditemukan atau tidak aktif"),
             { status: 404 },
           );
         }
       }
 
-      // ── FIX #4: Auto-update debt/receivable sisaSaldo ─────────────────────
+      // ── Auto-update debt/receivable sisaSaldo ─────────────────────
       if (data.type === "bayar_utang" && relatedDebtId) {
         await tx
           .update(debts)
@@ -234,7 +241,7 @@ transactionRoutes.delete("/:id", async (c) => {
   const userId = c.get("userId") as string;
   const id = c.req.param("id");
 
-  // FIX #14: Validate UUID format
+  // Validate UUID format
   if (!UUID_RE.test(id)) return c.json({ error: "ID tidak valid" }, 400);
 
   const [trx] = await db
@@ -245,19 +252,20 @@ transactionRoutes.delete("/:id", async (c) => {
   if (!trx) return c.json({ error: "Not found" }, 404);
 
   await db.transaction(async (tx) => {
-    // ── Reverse account balance ───────────────────────────────────────────
+    // ── Reverse account balance; floor subtractions at 0 so a reversal never
+    // pushes the balance negative (e.g. credit was spent down before being reversed) ───
     if (trx.accountId) {
       if (CREDIT_TYPES.has(trx.type)) {
         // Reverse a credit: subtract
         await tx
           .update(accounts)
-          .set({ saldoCache: sql`saldo_cache - ${trx.nominal}` })
+          .set({ saldoCache: sql`GREATEST(0, saldo_cache::numeric - ${trx.nominal})` })
           .where(and(eq(accounts.id, trx.accountId), eq(accounts.userId, userId)));
       } else if (DEBIT_TYPES.has(trx.type)) {
         // Reverse a debit: add back
         await tx
           .update(accounts)
-          .set({ saldoCache: sql`saldo_cache + ${trx.nominal}` })
+          .set({ saldoCache: sql`saldo_cache::numeric + ${trx.nominal}` })
           .where(and(eq(accounts.id, trx.accountId), eq(accounts.userId, userId)));
       }
     }
@@ -266,22 +274,23 @@ transactionRoutes.delete("/:id", async (c) => {
     if (trx.type === "transfer" && trx.relatedEntityId) {
       await tx
         .update(accounts)
-        .set({ saldoCache: sql`saldo_cache - ${trx.nominal}` })
+        .set({ saldoCache: sql`GREATEST(0, saldo_cache::numeric - ${trx.nominal})` })
         .where(and(eq(accounts.id, trx.relatedEntityId), eq(accounts.userId, userId)));
     }
 
-    // ── FIX #4: Reverse debt/receivable sisaSaldo on delete ───────────────
+    // ── Reverse debt/receivable sisaSaldo on delete; cap at saldoAwal so a
+    // reversal never pushes sisaSaldo above the original amount owed/lent ────────
     if (trx.type === "bayar_utang" && trx.relatedEntityId) {
       await tx
         .update(debts)
-        .set({ sisaSaldo: sql`sisa_saldo::numeric + ${trx.nominal}` })
+        .set({ sisaSaldo: sql`LEAST(saldo_awal::numeric, sisa_saldo::numeric + ${trx.nominal})` })
         .where(and(eq(debts.id, trx.relatedEntityId), eq(debts.userId, userId)));
     }
 
     if (trx.type === "penerimaan_piutang" && trx.relatedEntityId) {
       await tx
         .update(receivables)
-        .set({ sisaSaldo: sql`sisa_saldo::numeric + ${trx.nominal}` })
+        .set({ sisaSaldo: sql`LEAST(saldo_awal::numeric, sisa_saldo::numeric + ${trx.nominal})` })
         .where(and(eq(receivables.id, trx.relatedEntityId), eq(receivables.userId, userId)));
     }
 

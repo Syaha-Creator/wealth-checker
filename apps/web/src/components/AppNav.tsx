@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const navItems = [
   {
@@ -31,9 +32,8 @@ const navItems = [
     label: "Catat",
     icon: () => (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="10" fill="currentColor" stroke="none" className="text-emerald-600" />
-        <line x1="12" y1="8" x2="12" y2="16" stroke="white" strokeWidth={2.5} />
-        <line x1="8" y1="12" x2="16" y2="12" stroke="white" strokeWidth={2.5} />
+        <line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" strokeWidth={2.5} />
+        <line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" strokeWidth={2.5} />
       </svg>
     ),
     special: true,
@@ -62,19 +62,30 @@ const navItems = [
   },
 ];
 
+// Pick the most specific (longest) matching href so nested routes like
+// /transactions/new don't also light up the /transactions nav item.
+function useActiveHref(pathname: string) {
+  return navItems
+    .map((item) => item.href)
+    .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
+    .sort((a, b) => b.length - a.length)[0];
+}
+
 export function AppNav() {
   const pathname = usePathname();
+  const activeHref = useActiveHref(pathname);
 
   return (
     <>
       {/* Desktop sidebar */}
-      <nav className="hidden md:flex flex-col fixed left-0 top-0 h-full w-56 bg-white border-r border-gray-100 z-40 py-6" aria-label="Navigasi utama">
-        <div className="px-6 mb-8">
-          <span className="text-lg font-bold text-emerald-700">Wealth Checker</span>
+      <nav className="hidden md:flex flex-col fixed left-0 top-0 h-full w-60 bg-surface border-r border-border z-40 py-6" aria-label="Navigasi utama">
+        <div className="px-6 mb-8 flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-brand flex items-center justify-center text-brand-text-on font-bold text-xs shrink-0" aria-hidden="true">W</div>
+          <span className="text-base font-bold text-text-primary">Wealth Checker</span>
         </div>
         <div className="flex flex-col gap-1 px-3 flex-1">
           {navItems.map((item) => {
-            const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
+            const active = item.href === activeHref;
             return (
               <Link
                 key={item.href}
@@ -83,13 +94,13 @@ export function AppNav() {
                 aria-current={active ? "page" : undefined}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   item.special
-                    ? "bg-emerald-600 text-white hover:bg-emerald-700 my-1"
+                    ? "bg-brand text-brand-text-on hover:bg-brand-hover my-1"
                     : active
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
+                    ? "bg-brand-soft text-brand"
+                    : "text-text-secondary hover:bg-surface-hover hover:text-text-primary"
                 }`}
               >
-                <span className={item.special ? "text-white" : active ? "text-emerald-600" : "text-gray-400"}>
+                <span className={item.special ? "text-brand-text-on" : active ? "text-brand" : "text-text-muted"}>
                   {item.icon(active)}
                 </span>
                 {item.label}
@@ -97,13 +108,16 @@ export function AppNav() {
             );
           })}
         </div>
+        <div className="px-3 pt-3 border-t border-border">
+          <ThemeToggle variant="pill" className="w-full justify-start" />
+        </div>
       </nav>
 
       {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 z-40 safe-area-pb" aria-label="Navigasi utama">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface border-t border-border z-40 safe-area-pb" aria-label="Navigasi utama">
         <div className="flex items-end justify-around px-2 pt-2 pb-3">
           {navItems.map((item) => {
-            const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
+            const active = item.href === activeHref;
             return (
               <Link
                 key={item.href}
@@ -115,19 +129,19 @@ export function AppNav() {
                 }`}
               >
                 {item.special ? (
-                  <span className="w-14 h-14 rounded-full bg-emerald-600 flex items-center justify-center">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2.5} strokeLinecap="round" aria-hidden="true">
+                  <span className="w-14 h-14 rounded-full bg-brand text-brand-text-on flex items-center justify-center shadow-lg shadow-brand/30">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" aria-hidden="true">
                       <line x1="12" y1="5" x2="12" y2="19" />
                       <line x1="5" y1="12" x2="19" y2="12" />
                     </svg>
                   </span>
                 ) : (
-                  <span className={active ? "text-emerald-600" : "text-gray-400"}>
+                  <span className={active ? "text-brand" : "text-text-muted"}>
                     {item.icon(active)}
                   </span>
                 )}
                 <span className={`text-[10px] font-medium ${
-                  item.special ? "text-emerald-600" : active ? "text-emerald-600" : "text-gray-400"
+                  item.special ? "text-brand" : active ? "text-brand" : "text-text-muted"
                 }`}>
                   {item.label}
                 </span>

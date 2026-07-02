@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const features = [
   {
@@ -36,25 +37,33 @@ const features = [
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-950 via-slate-900 to-emerald-950 text-white flex flex-col">
+    <div className="min-h-screen bg-bg text-text-primary flex flex-col relative overflow-hidden">
+      {/* Ambient brand glow — subtle in both themes */}
+      <div
+        className="pointer-events-none absolute inset-x-0 -top-40 h-120 bg-brand/10 blur-3xl"
+        style={{ maskImage: "radial-gradient(ellipse 60% 60% at 50% 0%, black, transparent)" }}
+        aria-hidden="true"
+      />
+
       {/* Navbar */}
-      <nav className="flex items-center justify-between px-6 py-5 max-w-6xl mx-auto w-full">
+      <nav className="relative flex items-center justify-between px-6 py-5 max-w-6xl mx-auto w-full">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center text-slate-950 font-bold text-sm" aria-hidden="true">
+          <div className="w-8 h-8 rounded-lg bg-brand flex items-center justify-center text-brand-text-on font-bold text-sm" aria-hidden="true">
             W
           </div>
-          <span className="font-semibold text-white">WealthChecker</span>
+          <span className="font-semibold text-text-primary">WealthChecker</span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
           <Link
             href="/auth/login"
-            className="text-sm text-slate-400 hover:text-white transition-colors px-4 py-2"
+            className="text-sm text-text-secondary hover:text-text-primary transition-colors px-4 py-2"
           >
             Masuk
           </Link>
           <Link
             href="/auth/register"
-            className="text-sm bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-medium px-4 py-2 rounded-lg transition-colors"
+            className="text-sm bg-brand hover:bg-brand-hover text-brand-text-on font-medium px-4 py-2 rounded-lg transition-colors"
           >
             Mulai Gratis
           </Link>
@@ -62,19 +71,19 @@ export default function Home() {
       </nav>
 
       {/* Hero */}
-      <main className="flex-1 flex flex-col items-center justify-center text-center px-6 py-20 max-w-4xl mx-auto w-full">
-        <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium px-3 py-1.5 rounded-full mb-8">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true" />
+      <main className="relative flex-1 flex flex-col items-center justify-center text-center px-6 py-20 max-w-4xl mx-auto w-full">
+        <div className="inline-flex items-center gap-2 bg-brand-soft border border-brand-soft-border text-brand text-xs font-medium px-3 py-1.5 rounded-full mb-8">
+          <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" aria-hidden="true" />
           Beta — Gratis untuk semua pengguna
         </div>
 
-        <h1 className="text-5xl sm:text-6xl font-bold tracking-tight text-white leading-tight mb-6">
+        <h1 className="text-5xl sm:text-6xl font-bold tracking-tight text-text-primary leading-tight mb-6">
           Lacak perjalanan{" "}
-          <span className="text-emerald-400">kebebasan finansial</span>{" "}
+          <span className="text-brand">kebebasan finansial</span>{" "}
           kamu
         </h1>
 
-        <p className="text-lg text-slate-400 max-w-2xl leading-relaxed mb-10">
+        <p className="text-lg text-text-secondary max-w-2xl leading-relaxed mb-10">
           Pantau aset likuid, investasi, utang, dan progres menuju financial
           freedom — semuanya dalam satu dashboard yang bersih dan sederhana.
         </p>
@@ -82,13 +91,13 @@ export default function Home() {
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link
             href="/auth/register"
-            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold px-8 py-3.5 rounded-xl text-base transition-colors"
+            className="bg-brand hover:bg-brand-hover text-brand-text-on font-semibold px-8 py-3.5 rounded-xl text-base transition-colors"
           >
             Mulai Sekarang →
           </Link>
           <Link
             href="/auth/register"
-            className="border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white px-8 py-3.5 rounded-xl text-base transition-colors"
+            className="border border-border-strong hover:border-brand text-text-secondary hover:text-text-primary px-8 py-3.5 rounded-xl text-base transition-colors"
           >
             Daftar Gratis
           </Link>
@@ -99,20 +108,20 @@ export default function Home() {
           {features.map((f) => (
             <div
               key={f.title}
-              className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-emerald-500/30 transition-colors"
+              className="bg-surface border border-border rounded-xl p-5 hover:border-brand/40 transition-colors"
             >
-              <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-3">
+              <div className="w-9 h-9 rounded-lg bg-brand-soft border border-brand-soft-border flex items-center justify-center text-brand mb-3">
                 {f.icon}
               </div>
-              <h3 className="font-semibold text-white mb-1.5">{f.title}</h3>
-              <p className="text-sm text-slate-400 leading-relaxed">{f.desc}</p>
+              <h3 className="font-semibold text-text-primary mb-1.5">{f.title}</h3>
+              <p className="text-sm text-text-secondary leading-relaxed">{f.desc}</p>
             </div>
           ))}
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="text-center py-6 text-slate-600 text-sm">
+      <footer className="relative text-center py-6 text-text-muted text-sm">
         © {new Date().getFullYear()} WealthChecker · Dibuat untuk kebebasan finansial
       </footer>
     </div>

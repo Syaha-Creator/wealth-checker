@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { Button } from "@/components/ui/Button";
 
 interface ConfirmModalProps {
   open: boolean;
@@ -38,12 +39,7 @@ export function ConfirmModal({
 
   if (!open) return null;
 
-  const confirmClass =
-    confirmVariant === "danger"
-      ? "bg-red-600 hover:bg-red-700 text-white"
-      : confirmVariant === "warning"
-      ? "bg-amber-500 hover:bg-amber-600 text-white"
-      : "bg-emerald-600 hover:bg-emerald-700 text-white";
+  const buttonVariant = confirmVariant === "danger" ? "danger" : confirmVariant === "warning" ? "warning" : "primary";
 
   return (
     <div
@@ -60,25 +56,18 @@ export function ConfirmModal({
       />
 
       {/* Dialog */}
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-        <h2 id="confirm-modal-title" className="text-base font-semibold text-gray-900 mb-2">
+      <div className="relative bg-surface border border-border rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <h2 id="confirm-modal-title" className="text-base font-semibold text-text-primary mb-2">
           {title}
         </h2>
-        <p className="text-sm text-gray-500 leading-relaxed mb-6">{message}</p>
+        <p className="text-sm text-text-secondary leading-relaxed mb-6">{message}</p>
         <div className="flex gap-3">
-          <button
-            ref={cancelRef}
-            onClick={onCancel}
-            className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors"
-          >
+          <Button ref={cancelRef} variant="secondary" onClick={onCancel} fullWidth>
             Batal
-          </button>
-          <button
-            onClick={onConfirm}
-            className={`flex-1 py-2.5 text-sm font-medium rounded-xl transition-colors ${confirmClass}`}
-          >
+          </Button>
+          <Button variant={buttonVariant} onClick={onConfirm} fullWidth>
             {confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

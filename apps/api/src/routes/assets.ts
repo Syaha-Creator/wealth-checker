@@ -10,7 +10,7 @@ export const assetRoutes = new Hono<AppEnv>();
 
 assetRoutes.use("*", requireAuth);
 
-// FIX #14: Reusable UUID param schema
+// Reusable UUID param schema
 const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
 
 const assetSchema = z.object({
