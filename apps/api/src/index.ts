@@ -55,6 +55,16 @@ app.route("/api/profile", profileRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 
+// Global error handler — catches any unhandled exception from routes/DB/etc
+// so clients always get a JSON body instead of Hono's default plain-text
+// "Internal Server Error". Full details are logged server-side for
+// debugging; only a generic message is exposed to the client (no stack
+// traces / raw DB errors leaked).
+app.onError((err, c) => {
+  console.error(`[unhandled-error] ${c.req.method} ${c.req.path}`, err);
+  return c.json({ error: "Terjadi kesalahan pada server. Silakan coba lagi nanti." }, 500);
+});
+
 const port = Number(process.env.PORT) || 3011;
 console.log(`🚀 Wealth Checker API running on port ${port}`);
 

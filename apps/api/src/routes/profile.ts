@@ -26,7 +26,13 @@ profileRoutes.get("/", async (c) => {
 });
 
 const profileSchema = z.object({
-  tanggalLahir: z.string().date().nullable().optional(),
+  // Optional birth date — treat "" (e.g. an untouched/cleared native date
+  // input) the same as omitted/null instead of failing `.date()` format
+  // validation with a confusing error.
+  tanggalLahir: z.preprocess(
+    (v) => (v === "" ? null : v),
+    z.string().date("Format tanggal lahir tidak valid (gunakan YYYY-MM-DD)").nullable().optional()
+  ),
   rencanaUsiaPensiun: z.number().int().min(30).max(99).nullable().optional(),
   rencanaUsiaWarisan: z.number().int().min(30).max(120).nullable().optional(),
   anggotaKeluargaDitanggung: z.number().int().min(1).max(20).optional(),
