@@ -1,0 +1,111 @@
+# Lightweight, PERSISTENT staging profile — reuses the same VPS (velrox-vps) as
+# production, with different ports/DB name, for manual QA before merging to
+# `main`. See docs/STAGING.md for usage.
+#
+# Unlike docker-compose.e2e.yml (ephemeral, tmpfs Postgres, torn down every CI
+# run), this stack is meant to stay running between manual test sessions — it
+# uses a named volume for Postgres so data survives `docker compose down`
+# (but not `down -v`). Deliberately NOT wired into any CI job — bring it
+# up/down manually, per the lightweight-staging scope decision.
+#
+# Explicit `name:` gives this its own Compose project namespace — same
+# reasoning as docker-compose.e2e.yml: without it, `down --remove-orphans` run
+# from here (or from that file) could treat unrelated stacks' containers as
+# orphans of this project and delete them.
+name: wealth-checker-staging
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — isolated staging database, own volume, own port
+  # ---------------------------------------------------------------------------
+  postgres-staging:
+    image: postgres:17-alpine
+    container_name: wealth_postgres_staging
+    restart: unless-stopped
+    env_file: .env.staging
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wealth_checker_staging}
+      POSTGRES_USER: ${POSTGRES_USER:-wealth}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - wealth_staging_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wealth} -d ${POSTGRES_DB:-wealth_checker_staging}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - wealth_staging_network
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  # ---------------------------------------------------------------------------
+  # API — Hono.js on Bun (staging port 4011)
+  # ---------------------------------------------------------------------------
+  api-staging:
+    build:
+      context: .
+      dockerfile: ./apps/api/Dockerfile
+    container_name: wealth_api_staging
+    restart: unless-stopped
+    env_file: .env.staging
+    environment:
+      PORT: "4011"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-wealth}:${POSTGRES_PASSWORD}@postgres-staging:5432/${POSTGRES_DB:-wealth_checker_staging}
+      # web-staging's browser-facing origin — required so better-auth's
+      # trustedOrigins and the API's CORS allow-list accept requests from it.
+      ADDITIONAL_TRUSTED_ORIGINS: ${ADDITIONAL_TRUSTED_ORIGINS:-http://localhost:4010}
+    ports:
+      - "4011:4011"
+    depends_on:
+      postgres-staging:
+        condition: service_healthy
+    networks:
+      - wealth_staging_network
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  # ---------------------------------------------------------------------------
+  # Web — Next.js (staging port 4010)
+  # ---------------------------------------------------------------------------
+  web-staging:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+      # NOTE: next.config.ts's rewrites() are resolved at build time under
+      # output:"standalone" — these MUST match the runtime environment: below,
+      # otherwise the compiled proxy destination is a dead fallback URL.
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4011}
+        INTERNAL_API_URL: http://api-staging:4011
+    container_name: wealth_web_staging
+    restart: unless-stopped
+    env_file: .env.staging
+    environment:
+      PORT: "4010"
+      INTERNAL_API_URL: http://api-staging:4011
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4011}
+    ports:
+      - "4010:4010"
+    depends_on:
+      - api-staging
+    networks:
+      - wealth_staging_network
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+
+volumes:
+  wealth_staging_postgres_data:
+    driver: local
+
+networks:
+  wealth_staging_network:
+    driver: bridge

@@ -37,14 +37,22 @@ accountRoutes.post("/", zValidator("json", createSchema), async (c) => {
 accountRoutes.patch(
   "/:id",
   zValidator("param", idParam),
-  zValidator("json", z.object({ nama: z.string().min(1).optional(), isActive: z.boolean().optional() })),
+  zValidator("json", z.object({
+    nama: z.string().min(1).optional(),
+    isActive: z.boolean().optional(),
+    // "Koreksi Saldo" — override manual saldoCache, TIDAK membuat baris transaksi
+    // (lihat docs/API.md untuk peringatan soal ini). Nama field tetap `saldo`
+    // di API publik agar konsisten dengan `saldoAwal` di POST, walau kolom
+    // di tabel accounts bernama `saldoCache`.
+    saldo: z.number().min(0).optional(),
+  })),
   async (c) => {
     const userId = c.get("userId") as string;
     const { id } = c.req.valid("param");
-    const data = c.req.valid("json");
+    const { saldo, ...data } = c.req.valid("json");
     const [account] = await db
       .update(accounts)
-      .set(data)
+      .set({ ...data, ...(saldo !== undefined ? { saldoCache: String(saldo) } : {}) })
       .where(and(eq(accounts.id, id), eq(accounts.userId, userId)))
       .returning();
     if (!account) return c.json({ error: "Not found" }, 404);

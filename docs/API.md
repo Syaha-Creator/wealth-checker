@@ -137,16 +137,23 @@ Create a new account.
 
 ### PATCH `/api/accounts/:id`
 
-Update account name or active status.
+Update account name, active status, or manually correct its cached balance.
 
 **Request body** (all fields optional)
 
 ```json
 {
   "nama": "New Name",
-  "isActive": false
+  "isActive": false,
+  "saldo": 2000000
 }
 ```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `nama` | string | Min length 1 |
+| `isActive` | boolean | |
+| `saldo` | number | ≥ 0. **"Koreksi Saldo"** — directly overwrites `accounts.saldoCache`. Does **not** create a transaction record and does not affect transaction history; use only to correct drift between the calculated balance and reality (e.g. a wrong initial balance). |
 
 **Response `200`** — the updated account object.
 
@@ -184,6 +191,7 @@ List transactions for the authenticated user, newest first.
 |-------|------|---------|-------|
 | `limit` | number | `50` | Max `200` |
 | `offset` | number | `0` | For pagination |
+| `accountId` | string (UUID) | — | Filter to transactions whose source `accountId` matches. Does not match the destination side of a `transfer`. |
 
 **Response `200`**
 
@@ -219,6 +227,16 @@ List transactions for the authenticated user, newest first.
 | `jual_barang` | Sale of a fixed asset — increases account balance |
 | `beli_investasi` | Purchase of liquid asset / investment — decreases account balance |
 | `jual_investasi` | Sale of investment — increases account balance |
+
+---
+
+### GET `/api/transactions/:id`
+
+Fetch a single transaction by id (used by the edit page so it works regardless of the 200-row cap on the list endpoint above).
+
+**Response `200`** — the transaction object (same shape as list items).
+
+**Error `404`** — transaction not found or does not belong to user.
 
 ---
 
@@ -286,6 +304,44 @@ Returned when a debit-type transaction (`pengeluaran`, `bayar_utang`, `pemberian
 
 ---
 
+### PATCH `/api/transactions/:id`
+
+Edit an existing transaction. Internally this reverses the transaction's old balance/debt/receivable effects and re-applies new ones atomically in a single DB transaction (equivalent to delete + recreate, but rolled back automatically on any failure — e.g. insufficient balance with the new nominal).
+
+**Request body** (all fields optional — only send what changed)
+
+```json
+{
+  "tanggal": "2026-07-02",
+  "kategori": "Transportasi",
+  "rincian": "Bensin",
+  "nominal": 75000,
+  "accountId": "uuid",
+  "toAccountId": null
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `tanggal` | string (YYYY-MM-DD) | |
+| `kategori` | string | |
+| `rincian` | string | |
+| `nominal` | number | Must be > 0 |
+| `accountId` | string (UUID) | Source account |
+| `toAccountId` | string (UUID) | Destination account — only meaningful when the transaction's `type` is `transfer` |
+
+**`type` cannot be changed.** Changing type would require re-deriving debt/receivable/asset side-effects from scratch — delete and recreate the transaction instead if the type is wrong.
+
+**Response `200`** — the updated transaction object.
+
+**Error `404`** — transaction not found.
+
+**Error `409`** — transaction type is `beli_barang`/`jual_barang`/`beli_investasi`/`jual_investasi` (asset transactions can't be edited, for the same moving-average-cost reason they can't be deleted — see below).
+
+**Error `422`** — same shape as POST's insufficient-balance error (`code: "INSUFFICIENT_BALANCE"`), or `EXCEEDS_DEBT_BALANCE` / `EXCEEDS_RECEIVABLE_BALANCE` if the new nominal would overpay a linked debt/receivable.
+
+---
+
 ### DELETE `/api/transactions/:id`
 
 Delete a transaction and reverse its balance effect on the linked account.
@@ -293,6 +349,8 @@ Delete a transaction and reverse its balance effect on the linked account.
 **Response `204`** — no content.
 
 **Error `404`** — transaction not found.
+
+**Error `409`** — transaction type is `beli_barang`/`jual_barang`/`beli_investasi`/`jual_investasi`. These change a running moving-average cost that can't be safely un-applied, so they're blocked from deletion (and edit) entirely — record a new adjusting transaction instead.
 
 ---
 
@@ -565,68 +623,72 @@ Compute a full wealth snapshot for the authenticated user.
 
 ```json
 {
+  "userName": "Jane Doe",
+  "userEmail": "user@example.com",
   "totalKas": 5000000,
-  "totalAsetLancar": 15000000,
-  "totalAsetTetap": 30000000,
+  "totalLiquidAssets": 15000000,
+  "totalFixedAssets": 30000000,
+  "totalReceivables": 500000,
   "totalUtang": 8000000,
-  "totalPiutang": 500000,
+  "totalAset": 50500000,
   "kekayaanBersih": 42500000,
-  "level": 2,
-  "levelLabel": "Aman",
-  "nextLevelThreshold": 100000000
+  "wealthLevel": 2,
+  "wealthLevelName": "Terlihat Kaya"
 }
 ```
 
 | Field | Description |
 |-------|-------------|
-| `totalKas` | Sum of all active account balances |
-| `totalAsetLancar` | Total value of liquid/investment assets |
-| `totalAsetTetap` | Total value of fixed assets |
-| `totalUtang` | Total remaining debt |
-| `totalPiutang` | Total outstanding receivables |
-| `kekayaanBersih` | Net worth = assets − debts |
-| `level` | Wealth level 0–6 |
-| `levelLabel` | Human-readable label for the level |
-| `nextLevelThreshold` | Net worth target to reach the next level (`null` at level 6) |
+| `userName` | Display name from the Better Auth user record |
+| `userEmail` | Email from the Better Auth user record |
+| `totalKas` | Sum of all **active** account balances |
+| `totalLiquidAssets` | Total value of liquid/investment assets (`jumlah × hargaBeliRataRata`) |
+| `totalFixedAssets` | Total value of fixed (non-liquid) assets |
+| `totalReceivables` | Total outstanding receivables (`sisaSaldo`) |
+| `totalUtang` | Total remaining debt (`sisaSaldo`) |
+| `totalAset` | `totalKas + totalLiquidAssets + totalReceivables + totalFixedAssets` |
+| `kekayaanBersih` | Net worth = `totalAset − totalUtang` |
+| `wealthLevel` | Wealth level, `0`–`6`, or `-1` when the user has no financial data yet at all (`totalAset === 0 && totalUtang === 0`) — distinct from level `0` ("Pailit", negative net worth) |
+| `wealthLevelName` | Human-readable label for `wealthLevel` from `wealth_level_reference` (empty string for `-1`, since there's no matching row) |
+
+There is currently no `nextLevelThreshold` (or similar "distance to next level") field in the response — compute that client-side from `kekayaanBersih` if needed.
 
 ---
 
 ### GET `/api/wealth/monthly-cash-flow`
 
-Return income/expense analysis for the current and previous month, plus a 3-month rolling average.
+Return income/expense analysis for the current and previous month, plus a 3-month rolling average. Internally calls `calculateWealthSummary` first to get `totalKas`/`totalUtang`, but does **not** pass those through in the response — call `/api/wealth/summary` separately if you need them too.
 
 **Response `200`**
 
 ```json
 {
   "bulanIni": {
-    "pendapatan": 10000000,
+    "bulan": "2026-07",
+    "pemasukan": 10000000,
     "pengeluaran": 7500000,
-    "sisaBersih": 2500000
+    "sisaUangBulanan": 2500000
   },
   "bulanLalu": {
-    "pendapatan": 9500000,
+    "bulan": "2026-06",
+    "pemasukan": 9500000,
     "pengeluaran": 8000000,
-    "sisaBersih": 1500000
+    "sisaUangBulanan": 1500000
   },
   "rataRata3Bulan": {
-    "pendapatan": 9800000,
+    "pemasukan": 9800000,
     "pengeluaran": 7700000,
-    "sisaBersih": 2100000
+    "sisaUangBulanan": 2100000
   },
-  "hidupTanpaGaji": 6,
-  "totalKas": 5000000,
-  "totalUtang": 8000000
+  "hidupTanpaGajiBulan": 6.5,
+  "usedProfileFallback": false
 }
 ```
 
 | Field | Description |
 |-------|-------------|
-| `bulanIni` | Current calendar month snapshot |
-| `bulanLalu` | Previous calendar month snapshot |
-| `rataRata3Bulan` | Average of the last 3 complete months |
-| `hidupTanpaGaji` | Estimated months the user can survive on current cash without any income (`totalKas / avg monthly expense`) |
-| `totalKas` | Passed through from wealth summary |
-| `totalUtang` | Passed through from wealth summary |
-
-If the user has no transaction data yet, values fall back to the planned figures from `/api/profile` (`pemasukanBulananRataRata` / `pengeluaranBulananRataRata`).
+| `bulanIni` | Current calendar month snapshot (`bulan`: `"YYYY-MM"`, `pemasukan`, `pengeluaran`, `sisaUangBulanan` = `pemasukan − pengeluaran`) |
+| `bulanLalu` | Previous calendar month snapshot, same shape (minus `bulan` context implied by position) |
+| `rataRata3Bulan` | Average `pemasukan`/`pengeluaran`/`sisaUangBulanan` across the current + previous 2 months |
+| `hidupTanpaGajiBulan` | Estimated months the user can survive on current net cash (`totalKas − totalUtang`) without any income, based on `rataRata3Bulan.pengeluaran`; `null` if net cash ≤ 0 or average expense is 0 |
+| `usedProfileFallback` | `true` if the user has no transaction data at all yet, in which case `bulanIni`/`rataRata3Bulan` fall back to the planned figures from `/api/profile` (`pemasukanBulananRataRata` / `pengeluaranBulananRataRata`) instead of `0` |

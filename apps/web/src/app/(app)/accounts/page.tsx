@@ -64,6 +64,10 @@ export default function AccountsPage() {
   const [saldo, setSaldo] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [koreksiId, setKoreksiId] = useState<string | null>(null);
+  const [koreksiValue, setKoreksiValue] = useState("");
+  const [koreksiError, setKoreksiError] = useState("");
+  const [koreksiSaving, setKoreksiSaving] = useState(false);
   const [modal, setModal] = useState<ModalState>({
     open: false,
     title: "",
@@ -127,6 +131,43 @@ export default function AccountsPage() {
           await refetch();
         } catch (err: unknown) {
           setFetchError(err instanceof Error ? err.message : "Gagal menonaktifkan rekening");
+        }
+      },
+    });
+  };
+
+  const openKoreksi = (acc: Account) => {
+    setKoreksiId(acc.id);
+    setKoreksiValue(formatRupiahInput(String(Math.round(Number(acc.saldoCache)))));
+    setKoreksiError("");
+  };
+
+  const closeKoreksi = () => {
+    setKoreksiId(null);
+    setKoreksiValue("");
+    setKoreksiError("");
+  };
+
+  const handleKoreksiSubmit = (acc: Account, e: React.FormEvent) => {
+    e.preventDefault();
+    const nilaiBaru = parseRupiahInput(koreksiValue);
+    setModal({
+      open: true,
+      title: "Koreksi Saldo",
+      message: `Saldo "${acc.nama}" akan diubah langsung dari ${formatCurrency(acc.saldoCache)} menjadi ${formatCurrency(nilaiBaru)}. Ini menimpa saldo hasil hitungan histori transaksi dan TIDAK membuat catatan transaksi baru — hanya gunakan untuk mengoreksi selisih (mis. saldo awal yang salah dicatat).`,
+      confirmLabel: "Ya, Koreksi Saldo",
+      confirmVariant: "warning",
+      onConfirm: async () => {
+        closeModal();
+        setKoreksiSaving(true);
+        try {
+          await apiFetch(`/api/accounts/${acc.id}`, "PATCH", { saldo: nilaiBaru });
+          closeKoreksi();
+          await refetch();
+        } catch (err: unknown) {
+          setKoreksiError(err instanceof Error ? err.message : "Gagal mengoreksi saldo");
+        } finally {
+          setKoreksiSaving(false);
         }
       },
     });
@@ -270,6 +311,15 @@ export default function AccountsPage() {
                     {!acc.isActive && <Badge>Nonaktif</Badge>}
                   </div>
                   <div className="flex gap-0.5 shrink-0 -mr-1 -mt-1">
+                    <button
+                      onClick={() => (koreksiId === acc.id ? closeKoreksi() : openKoreksi(acc))}
+                      aria-label={`Koreksi saldo rekening ${acc.nama}`}
+                      aria-pressed={koreksiId === acc.id}
+                      className="p-1.5 text-text-muted hover:text-info transition-colors rounded-lg hover:bg-info-soft"
+                      title="Koreksi Saldo"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    </button>
                     {acc.isActive && (
                       <button
                         onClick={() => handleDeactivate(acc.id, acc.nama)}
@@ -291,6 +341,35 @@ export default function AccountsPage() {
                   </div>
                 </div>
                 <p className="text-lg font-bold text-brand">{formatCurrency(acc.saldoCache)}</p>
+
+                {koreksiId === acc.id && (
+                  <form onSubmit={(e) => handleKoreksiSubmit(acc, e)} className="mt-3 pt-3 border-t border-border space-y-2">
+                    {koreksiError && <p className="text-xs text-danger-text">{koreksiError}</p>}
+                    <label htmlFor={`koreksi-${acc.id}`} className="block text-xs font-medium text-text-muted">
+                      Saldo baru (koreksi manual)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm" aria-hidden="true">Rp</span>
+                      <input
+                        id={`koreksi-${acc.id}`}
+                        type="text"
+                        inputMode="numeric"
+                        className="w-full pl-10 pr-3 py-2 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-info/30"
+                        value={koreksiValue}
+                        onChange={(e) => setKoreksiValue(formatRupiahInput(e.target.value))}
+                        autoFocus
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button type="button" variant="secondary" size="sm" fullWidth onClick={closeKoreksi}>
+                        Batal
+                      </Button>
+                      <Button type="submit" variant="info" size="sm" fullWidth loading={koreksiSaving}>
+                        Simpan
+                      </Button>
+                    </div>
+                  </form>
+                )}
               </Card>
             ))}
           </div>

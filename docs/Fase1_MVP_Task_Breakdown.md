@@ -10,10 +10,10 @@ Stack: Next.js (web), Hono.js di atas Bun (API), Drizzle ORM, PostgreSQL, Better
 ## Sprint 0 — Project Setup & Foundation
 
 - [x] Inisialisasi monorepo (apps/web, apps/api, packages/db) — konsisten dengan struktur Velrox ERP
-- [ ] Setup PostgreSQL (lokal untuk dev, lalu siapkan environment staging) — *gap: lokal dev sudah ada (`docker-compose.yml`), tapi tidak ada environment staging persisten (hanya production + E2E ephemeral di CI)*
+- [x] Setup PostgreSQL (lokal untuk dev, lalu siapkan environment staging) — lokal dev via `docker-compose.yml`; environment staging persisten (bukan sekadar E2E ephemeral) kini tersedia lewat `docker-compose.staging.yml` (profil ringan di VPS yang sama, port/DB terpisah) — lihat `docs/STAGING.md`. **Catatan scope**: ini keputusan sadar untuk staging "ringan" (bukan VPS/subdomain terpisah, dan tidak diotomasi di CI) — lihat Catatan Verifikasi di bawah
 - [x] Setup Drizzle ORM + konfigurasi migrasi
 - [x] Setup Better Auth (email/password, session-based, single-user per akun)
-- [ ] Setup CI dasar (lint, type-check, build) — bisa pakai GitHub Actions — *gap: `.github/workflows/deploy.yml` menjalankan lint + test + build, tapi tidak ada step eksplisit `bun run typecheck`; build root hanya mem-build `@wealth/web` sehingga `apps/api` dan `packages/db` tidak pernah divalidasi tipenya di CI*
+- [x] Setup CI dasar (lint, type-check, build) — bisa pakai GitHub Actions — `.github/workflows/deploy.yml` job `quality-gate` kini menjalankan `Lint` → `Type check` (`bun run typecheck`, memvalidasi tipe `@wealth/web`, `@wealth/api`, DAN `@wealth/db`) → `Test` → `Build web` → `Build api`
 - [x] Setup struktur folder service layer (`services/`, `routes/`, `db/schema/`)
 
 ## Sprint 1 — Skema Database Inti
@@ -32,7 +32,7 @@ Stack: Next.js (web), Hono.js di atas Bun (API), Drizzle ORM, PostgreSQL, Better
 
 - [x] Endpoint register/login/logout (Better Auth)
 - [x] Endpoint CRUD `accounts` (tambah/edit/nonaktifkan rekening — menggantikan baris dinamis di sheet "Kas dan Tabungan")
-- [ ] UI halaman manajemen rekening (list, tambah, edit saldo awal) — *gap: halaman `/accounts` hanya mendukung list, tambah, nonaktifkan, dan hapus rekening. Tidak ada UI maupun endpoint untuk mengedit saldo rekening yang sudah ada (endpoint `PATCH /api/accounts/:id` hanya menerima field `nama` dan `isActive`, bukan saldo)*
+- [x] UI halaman manajemen rekening (list, tambah, edit saldo awal) — halaman `/accounts` kini punya aksi **"Koreksi Saldo"** per rekening (input inline + konfirmasi eksplisit lewat `ConfirmModal` yang memperingatkan bahwa ini menimpa saldo hasil hitungan histori dan tidak membuat transaksi baru), didukung field `saldo` baru di `PATCH /api/accounts/:id`
 - [x] Unit test: validasi tidak bisa hapus rekening yang masih punya transaksi terkait
 
 ## Sprint 3 — Modul Onboarding (Wealth Checker Snapshot)
@@ -56,13 +56,15 @@ Stack: Next.js (web), Hono.js di atas Bun (API), Drizzle ORM, PostgreSQL, Better
 
 ## Sprint 5 — Modul Transaction Tracking (Pendapatan, Pengeluaran, Transfer)
 
-- [ ] Endpoint CRUD `transactions` type=pendapatan (tanggal, kategori, rincian, account_id, nominal) — *gap: hanya Create/Read/Delete yang tersedia (`GET`, `POST`, `DELETE /api/transactions`). Tidak ada endpoint Update/PATCH untuk mengedit transaksi yang sudah tercatat*
-- [ ] Endpoint CRUD `transactions` type=pengeluaran — *gap sama: tidak ada Update/PATCH*
-- [ ] Endpoint CRUD `transactions` type=transfer (dari_account_id, ke_account_id, nominal) — efek ganda ke dua rekening — *efek ganda ke dua rekening sudah benar (Create & Delete membalik saldo kedua rekening), tapi gap sama: tidak ada Update/PATCH*
+- [x] Endpoint CRUD `transactions` type=pendapatan (tanggal, kategori, rincian, account_id, nominal) — `PATCH /api/transactions/:id` kini tersedia (lihat di bawah) di samping `GET`, `POST`, `DELETE`
+- [x] Endpoint CRUD `transactions` type=pengeluaran — sama, tercakup oleh `PATCH /api/transactions/:id` yang generik untuk semua tipe non-aset
+- [x] Endpoint CRUD `transactions` type=transfer (dari_account_id, ke_account_id, nominal) — efek ganda ke dua rekening — Create & Delete sudah membalik saldo kedua rekening; `PATCH /api/transactions/:id` menambahkan Update dengan reverse-lalu-reapply atomik (satu `db.transaction`, termasuk saat `toAccountId` diubah)
 - [x] Dukungan kategori custom per user (tabel kategori dinamis atau field bebas dengan autocomplete dari histori) — `GET /api/transactions/categories` + datalist di UI
 - [x] UI quick-add transaksi (mobile-first, idealnya floating action button dari home screen) — tombol "Catat" melingkar mengambang di bottom nav mobile
-- [ ] UI list transaksi dengan filter dasar (tanggal, kategori, rekening) — *gap: filter yang tersedia di `/transactions` adalah tipe transaksi, bulan, dan pencarian teks bebas — tidak ada filter khusus per rekening/akun*
+- [x] UI list transaksi dengan filter dasar (tanggal, kategori, rekening) — filter tipe transaksi, bulan, dan pencarian teks sudah ada; filter **per rekening** kini ditambahkan (pill rekening di sidebar filter `/transactions`, didukung parameter `accountId` baru di `GET /api/transactions`)
 - [x] Validasi saldo tidak boleh negatif pada transfer/pengeluaran (atau beri warning, sesuai keputusan produk) — dicek atomik di dalam DB transaction (conditional UPDATE `saldo_cache >= nominal`) dan di UI sebelum submit
+
+**Catatan tambahan (di luar 47 item asli, ditambahkan saat menutup gap Update/PATCH transaksi):** halaman edit transaksi baru (`/transactions/[id]/edit`) memblokir edit untuk transaksi beli/jual aset (`beli_barang`/`jual_barang`/`beli_investasi`/`jual_investasi`) dengan alasan yang sama seperti larangan hapusnya (moving average cost tidak bisa di-replay dengan aman) — konsisten dengan modul Fase 2 yang disebut di "Catatan Prioritas" di bawah. `type` transaksi sendiri sengaja tidak bisa diedit (hapus + buat ulang untuk kasus itu).
 
 ## Sprint 6 — Wealth Dashboard Versi Dasar
 
@@ -75,8 +77,8 @@ Stack: Next.js (web), Hono.js di atas Bun (API), Drizzle ORM, PostgreSQL, Better
 
 - [x] End-to-end testing alur: onboarding → dashboard → catat transaksi → dashboard update — `apps/web/e2e/main-flow.spec.ts`, dijalankan otomatis di CI (job `e2e-test`) untuk push ke `main`
 - [x] Review UX mobile (form input cepat, validasi error jelas) — terlihat dari commit `feat: full UI/UX redesign...`, `fix(web): high-priority UI/UX audit fixes`, error banner (`role="alert"`) konsisten di semua form
-- [ ] Setup deployment (staging + production) — *gap: `.github/workflows/deploy.yml` hanya punya job deploy ke production (VPS via SSH/rsync + docker compose). Environment E2E (`docker-compose.e2e.yml`) bersifat sementara (dibuat & dihapus otomatis tiap run CI), bukan staging environment persisten untuk QA manual*
-- [x] Dokumentasi API dasar (untuk kebutuhan integrasi mobile app jika dipisah dari web) — `docs/API.md` mencakup semua endpoint utama, meski contoh response JSON di bagian "Wealth" (field `totalAsetLancar`, `level`, `levelLabel`, dst.) sudah tidak sinkron dengan bentuk response aktual di `services/wealth.ts` (`totalLiquidAssets`, `wealthLevel`, `wealthLevelName`, dst.) — perlu disegarkan
+- [x] Setup deployment (staging + production) — `.github/workflows/deploy.yml` tetap hanya punya job otomatis untuk production (by design — lihat catatan scope di bawah); staging kini tersedia sebagai profil **manual/on-demand** (`docker-compose.staging.yml` + `.env.staging.example`, didokumentasikan di `docs/STAGING.md`) yang jalan berdampingan dengan production di VPS yang sama, port/DB terpisah. E2E (`docker-compose.e2e.yml`) tetap terpisah dan tetap sementara (khusus CI)
+- [x] Dokumentasi API dasar (untuk kebutuhan integrasi mobile app jika dipisah dari web) — `docs/API.md` disegarkan: contoh response "Wealth Summary" & "Monthly Cash Flow" kini sesuai bentuk aktual (`totalLiquidAssets`, `wealthLevel`, `wealthLevelName`, `pemasukan`/`pengeluaran`/`sisaUangBulanan`, dst., field `nextLevelThreshold` yang tidak pernah ada di response dihapus dari dokumentasi), plus dokumentasi endpoint baru: `PATCH /api/transactions/:id`, `GET /api/transactions/:id`, parameter `accountId` di `GET /api/transactions`, dan field `saldo` di `PATCH /api/accounts/:id`
 
 ---
 
@@ -137,3 +139,24 @@ Re-verifikasi ulang dilakukan langsung terhadap kode saat ini (bukan hanya nama 
 - `app.onError` global error handler ada di `apps/api/src/index.ts`, mengembalikan JSON generik (bukan bocoran stack trace) untuk error tak terduga.
 
 Lint (`bun run --filter='@wealth/web' lint`) dan seluruh 56 test API lolos tanpa error pada saat re-verifikasi ini (exit code 0 untuk keduanya).
+
+---
+
+## Catatan Verifikasi — Update 3 (penutupan 8 gap Fase 1)
+
+Kedelapan gap yang tercatat di Update 1/2 di atas telah ditutup lewat implementasi berikut (checklist di sprint masing-masing di atas sudah ditandai `[x]`). Rincian per gap:
+
+1. **Sprint 0 — Environment staging PostgreSQL.** `docker-compose.staging.yml` (baru) menyediakan Postgres staging persisten (volume bernama, bukan `tmpfs` seperti E2E) di port `5434`, DB `wealth_checker_staging`, berjalan berdampingan dengan production di VPS yang sama. `.env.staging.example` (baru) mendokumentasikan variabel yang dibutuhkan. Lihat `docs/STAGING.md` (baru) untuk cara pakai.
+2. **Sprint 0 — CI type-check.** Root cause (`"types": ["bun-types"]` di `apps/api/tsconfig.json` dan `packages/db/tsconfig.json`, padahal dependency yang terpasang adalah `@types/bun`) diperbaiki menjadi `"types": ["bun"]`. `bun run typecheck` sekarang lolos (exit code 0) untuk ketiga workspace (`@wealth/web`, `@wealth/api`, `@wealth/db`). `.github/workflows/deploy.yml` job `quality-gate` ditambah step `Type check` (di antara `Lint` dan `Test`) dan step `Build api` (di antara `Build web`) sehingga `apps/api` dan `packages/db` kini tervalidasi tipenya di CI, bukan cuma `apps/web`.
+3. **Sprint 2 — Edit saldo rekening.** `PATCH /api/accounts/:id` menerima field opsional baru `saldo` (dipetakan ke kolom `saldoCache`). Halaman `/accounts` punya aksi **"Koreksi Saldo"** per rekening — input inline pre-filled dengan saldo saat ini, dikonfirmasi lewat `ConfirmModal` dengan pesan yang secara eksplisit memperingatkan bahwa ini menimpa saldo hasil hitungan histori dan **tidak** membuat catatan transaksi.
+4. **Sprint 5 (3 item) — Update/PATCH transaksi.** `PATCH /api/transactions/:id` (baru) mendukung edit `tanggal`, `kategori`, `rincian`, `nominal`, `accountId`, `toAccountId` untuk semua tipe transaksi kecuali beli/jual aset (diblokir `409`, alasan sama dengan larangan hapus — moving average cost tidak bisa di-replay dengan aman) — `type` transaksi itu sendiri sengaja tidak bisa diedit. Implementasi merefactor logika reversal `DELETE` dan logika efek `POST` menjadi dua helper bersama (`reverseTransactionEffects`, `applyTransactionEffects`) yang dipakai ulang oleh `PATCH` (reverse nilai lama → apply nilai baru, keduanya di dalam satu `db.transaction` sehingga rollback otomatis kalau gagal, mis. saldo tidak cukup dengan nominal baru). Halaman baru `/transactions/[id]/edit` + aksi "Edit" di setiap baris `/transactions`.
+5. **Sprint 5 — Filter transaksi per rekening.** `GET /api/transactions` menerima parameter query opsional `accountId`. Halaman `/transactions` menambah filter pill "Rekening" (pola sama seperti filter tipe/bulan yang sudah ada), termasuk di `isFiltering` dan aksi reset "Hapus semua filter".
+6. **Sprint 7 — Staging deployment.** Sama seperti gap #1 — profil staging (`docker-compose.staging.yml`) sekarang ada, dijalankan manual/on-demand di `velrox-vps`, terpisah dari production dan dari E2E CI.
+
+**Catatan scope yang disengaja (bukan gap):** deploy staging otomatis lewat CI dan VPS/subdomain staging yang sepenuhnya terpisah dari production **tetap di luar scope** — ini keputusan produk untuk staging yang ringan (`docker-compose.staging.yml` di VPS yang sama, port/DB berbeda, dikelola manual), bukan sesuatu yang belum sempat dikerjakan. `.github/workflows/deploy.yml` sengaja tidak menambah job staging otomatis.
+
+**Perubahan tambahan yang menyertai penutupan gap-gap di atas:**
+- `docs/API.md` disegarkan: contoh response `GET /api/wealth/summary` dan `GET /api/wealth/monthly-cash-flow` (sebelumnya memakai nama field lama yang sudah tidak sesuai kode — `totalAsetLancar`, `level`, `levelLabel`, `pendapatan`/`sisaBersih`, dst.) diganti dengan bentuk aktual (`totalLiquidAssets`, `wealthLevel`, `wealthLevelName`, `pemasukan`/`pengeluaran`/`sisaUangBulanan`, `usedProfileFallback`, dst.), termasuk penghapusan field `nextLevelThreshold` yang ternyata tidak pernah ada di response asli. Endpoint baru (`PATCH /api/transactions/:id`, `GET /api/transactions/:id`) dan parameter/field baru (`accountId` di `GET /api/transactions`, `saldo` di `PATCH /api/accounts/:id`) didokumentasikan.
+- `GET /api/transactions/:id` ditambahkan (di luar 8 gap asli, tapi diperlukan) — halaman edit transaksi butuh cara mengambil satu transaksi berdasarkan id secara andal, tidak bergantung pada transaksi tersebut berada dalam batas 200 baris `GET /api/transactions`.
+
+**Verifikasi:** seluruh 56 unit test API (`bun run --filter='@wealth/api' test`), lint web (`bun run --filter='@wealth/web' lint`), dan `bun run typecheck` (ketiga workspace) lolos tanpa error pada saat penutupan gap ini dilakukan.

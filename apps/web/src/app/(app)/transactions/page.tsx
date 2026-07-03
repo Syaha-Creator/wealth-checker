@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -17,9 +18,12 @@ type Transaction = {
   type: string;
   kategori: string | null;
   rincian: string | null;
+  accountId: string | null;
   nominal: string;
   createdAt: string;
 };
+
+type Account = { id: string; nama: string };
 
 type ModalState = {
   open: boolean;
@@ -86,12 +90,14 @@ function TransactionsIcon() {
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState("");
   const [deleteModal, setDeleteModal] = useState<ModalState>({ open: false, id: "" });
   const [deleteError, setDeleteError] = useState("");
   const [filterType, setFilterType] = useState("semua");
   const [filterMonth, setFilterMonth] = useState("semua");
+  const [filterAccount, setFilterAccount] = useState("semua");
   const [searchText, setSearchText] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
@@ -127,10 +133,21 @@ export default function TransactionsPage() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    fetch(`${API}/api/accounts`, { credentials: "include" })
+      .then((res) => res.json())
+      .then((data: Account[]) => {
+        if (!cancelled) setAccounts(data);
+      })
+      .catch(() => {}); // filter rekening tidak kritis — diamkan saja jika gagal
     return () => { cancelled = true; };
   }, []);
 
   const monthOptions = useMemo(() => getMonthOptions(transactions), [transactions]);
+  // Hanya tampilkan pilihan rekening yang benar-benar dipakai transaksi yang ada
+  const accountOptions = useMemo(
+    () => accounts.filter((a) => transactions.some((t) => t.accountId === a.id)),
+    [accounts, transactions]
+  );
 
   const filtered = useMemo(() => {
     return transactions.filter((tx) => {
@@ -144,6 +161,9 @@ export default function TransactionsPage() {
       if (filterMonth !== "semua") {
         if (!tx.tanggal.startsWith(filterMonth)) return false;
       }
+      if (filterAccount !== "semua") {
+        if (tx.accountId !== filterAccount) return false;
+      }
       if (searchText.trim()) {
         const q = searchText.toLowerCase();
         const inRincian = tx.rincian?.toLowerCase().includes(q) ?? false;
@@ -153,7 +173,7 @@ export default function TransactionsPage() {
       }
       return true;
     });
-  }, [transactions, filterType, filterMonth, searchText]);
+  }, [transactions, filterType, filterMonth, filterAccount, searchText]);
 
   const totalPemasukan = useMemo(() =>
     filtered.filter((t) => t.type === "pendapatan").reduce((s, t) => s + Number(t.nominal), 0),
@@ -165,7 +185,8 @@ export default function TransactionsPage() {
   );
 
   const groups = groupByDate(filtered);
-  const isFiltering = filterType !== "semua" || filterMonth !== "semua" || searchText.trim() !== "";
+  const isFiltering = filterType !== "semua" || filterMonth !== "semua" || filterAccount !== "semua" || searchText.trim() !== "";
+  const resetFilters = () => { setFilterType("semua"); setFilterMonth("semua"); setFilterAccount("semua"); setSearchText(""); };
 
   const handleDeleteConfirm = async () => {
     const id = deleteModal.id;
@@ -306,10 +327,44 @@ export default function TransactionsPage() {
               </div>
             )}
 
+            {/* Account filter */}
+            {accountOptions.length > 1 && (
+              <div>
+                <p className="text-xs text-text-muted mb-2 font-medium">Rekening</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => setFilterAccount("semua")}
+                    aria-pressed={filterAccount === "semua"}
+                    className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                      filterAccount === "semua"
+                        ? "bg-brand border-brand text-brand-text-on"
+                        : "border-border text-text-secondary hover:border-border-strong"
+                    }`}
+                  >
+                    Semua
+                  </button>
+                  {accountOptions.map((a) => (
+                    <button
+                      key={a.id}
+                      onClick={() => setFilterAccount(a.id)}
+                      aria-pressed={filterAccount === a.id}
+                      className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                        filterAccount === a.id
+                          ? "bg-brand border-brand text-brand-text-on"
+                          : "border-border text-text-secondary hover:border-border-strong"
+                      }`}
+                    >
+                      {a.nama}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Reset filters */}
             {isFiltering && (
               <button
-                onClick={() => { setFilterType("semua"); setFilterMonth("semua"); setSearchText(""); }}
+                onClick={resetFilters}
                 className="text-xs text-danger-text hover:text-danger font-medium"
               >
                 Hapus semua filter
@@ -372,7 +427,7 @@ export default function TransactionsPage() {
               description={isFiltering ? undefined : "Mulai catat pemasukan atau pengeluaran Anda"}
               action={
                 isFiltering ? (
-                  <Button variant="ghost" size="sm" onClick={() => { setFilterType("semua"); setFilterMonth("semua"); setSearchText(""); }}>
+                  <Button variant="ghost" size="sm" onClick={resetFilters}>
                     Hapus filter
                   </Button>
                 ) : (
@@ -407,6 +462,13 @@ export default function TransactionsPage() {
                             <p className={`text-sm font-semibold ${cfg.color}`}>
                               {cfg.sign}{formatCurrency(tx.nominal)}
                             </p>
+                            <Link
+                              href={`/transactions/${tx.id}/edit`}
+                              aria-label={`Edit transaksi ${tx.rincian || tx.kategori || cfg.label}`}
+                              className="p-1.5 text-text-muted/60 hover:text-brand hover:bg-brand-soft rounded-lg transition-colors"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                            </Link>
                             <button
                               onClick={() => setDeleteModal({ open: true, id: tx.id })}
                               aria-label={`Hapus transaksi ${tx.rincian || tx.kategori || cfg.label}`}

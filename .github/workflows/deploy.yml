@@ -38,11 +38,17 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      - name: Type check
+        run: bun run typecheck
+
       - name: Test
         run: bun run test
 
       - name: Build web
         run: bun run build
+
+      - name: Build api
+        run: bun run build:api
 
 # ---------------------------------------------------------------------------
 # 2 — E2E Tests (main branch only)
