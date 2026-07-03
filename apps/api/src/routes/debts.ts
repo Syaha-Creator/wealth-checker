@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { db, debts, receivables } from "@wealth/db";
-import { eq, and } from "drizzle-orm";
+import { db, debts, receivables, transactions } from "@wealth/db";
+import { eq, and, count } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { calculateDebtSummary, calculateReceivableSummary } from "../services/debtReceivable";
 import type { AppEnv } from "../types";
@@ -26,11 +26,19 @@ debtRoutes.get("/summary", async (c) => {
 
 // ─── Debts (Utang) ─────────────────────────────────────────────────────────
 
-const debtSchema = z.object({
+// Medium #6 (bug hunt): sisaSaldo tidak boleh melebihi saldoAwal — kalau lolos,
+// progress % pembayaran jadi negatif di UI. Base object kept separate from POST's
+// `.refine()` so PATCH can still use `.partial()` (ZodEffects has no `.partial()`);
+// PATCH re-checks the cross-field constraint manually against the merged row instead.
+const debtBaseSchema = z.object({
   pemberiUtang: z.string().min(1),
   tipe: z.enum(["utang_biasa", "kartu_kredit"]).default("utang_biasa"),
-  saldoAwal: z.number().min(0),
-  sisaSaldo: z.number().min(0).optional(),
+  saldoAwal: z.number().min(0).finite(),
+  sisaSaldo: z.number().min(0).finite().optional(),
+});
+const debtSchema = debtBaseSchema.refine((val) => val.sisaSaldo === undefined || val.sisaSaldo <= val.saldoAwal, {
+  message: "sisaSaldo tidak boleh melebihi saldoAwal",
+  path: ["sisaSaldo"],
 });
 
 debtRoutes.get("/", async (c) => {
@@ -54,10 +62,20 @@ debtRoutes.post("/", zValidator("json", debtSchema), async (c) => {
   return c.json(row, 201);
 });
 
-debtRoutes.patch("/:id", zValidator("param", idParam), zValidator("json", debtSchema.partial()), async (c) => {
+debtRoutes.patch("/:id", zValidator("param", idParam), zValidator("json", debtBaseSchema.partial()), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
+
+  const [existing] = await db.select().from(debts).where(and(eq(debts.id, id), eq(debts.userId, userId)));
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
+  const nextSaldoAwal = data.saldoAwal !== undefined ? data.saldoAwal : Number(existing.saldoAwal);
+  const nextSisaSaldo = data.sisaSaldo !== undefined ? data.sisaSaldo : Number(existing.sisaSaldo);
+  if (nextSisaSaldo > nextSaldoAwal) {
+    return c.json({ error: "sisaSaldo tidak boleh melebihi saldoAwal", code: "VALIDATION_ERROR" }, 422);
+  }
+
   const [row] = await db
     .update(debts)
     .set({
@@ -68,23 +86,39 @@ debtRoutes.patch("/:id", zValidator("param", idParam), zValidator("json", debtSc
     })
     .where(and(eq(debts.id, id), eq(debts.userId, userId)))
     .returning();
-  if (!row) return c.json({ error: "Not found" }, 404);
   return c.json(row);
 });
 
 debtRoutes.delete("/:id", zValidator("param", idParam), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
+
+  // High #4 (bug hunt): tanpa guard ini, hapus debt yang masih dirujuk transaksi
+  // (pinjaman_utang/bayar_utang) meninggalkan relatedEntityId yatim.
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.relatedEntityId, id)));
+
+  if (Number(total) > 0) {
+    return c.json({ error: "Utang masih memiliki transaksi terkait (pinjaman/cicilan) — hapus atau edit transaksi tersebut dahulu" }, 409);
+  }
+
   await db.delete(debts).where(and(eq(debts.id, id), eq(debts.userId, userId)));
   return c.body(null, 204);
 });
 
 // ─── Receivables (Piutang) ─────────────────────────────────────────────────
 
-const receivableSchema = z.object({
+// Medium #6 (bug hunt): sama seperti debtBaseSchema — sisaSaldo <= saldoAwal.
+const receivableBaseSchema = z.object({
   peminjam: z.string().min(1),
-  saldoAwal: z.number().min(0),
-  sisaSaldo: z.number().min(0).optional(),
+  saldoAwal: z.number().min(0).finite(),
+  sisaSaldo: z.number().min(0).finite().optional(),
+});
+const receivableSchema = receivableBaseSchema.refine((val) => val.sisaSaldo === undefined || val.sisaSaldo <= val.saldoAwal, {
+  message: "sisaSaldo tidak boleh melebihi saldoAwal",
+  path: ["sisaSaldo"],
 });
 
 debtRoutes.get("/receivables", async (c) => {
@@ -115,10 +149,20 @@ debtRoutes.post("/receivables", zValidator("json", receivableSchema), async (c) 
   return c.json(row, 201);
 });
 
-debtRoutes.patch("/receivables/:id", zValidator("param", idParam), zValidator("json", receivableSchema.partial()), async (c) => {
+debtRoutes.patch("/receivables/:id", zValidator("param", idParam), zValidator("json", receivableBaseSchema.partial()), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
+
+  const [existing] = await db.select().from(receivables).where(and(eq(receivables.id, id), eq(receivables.userId, userId)));
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
+  const nextSaldoAwal = data.saldoAwal !== undefined ? data.saldoAwal : Number(existing.saldoAwal);
+  const nextSisaSaldo = data.sisaSaldo !== undefined ? data.sisaSaldo : Number(existing.sisaSaldo);
+  if (nextSisaSaldo > nextSaldoAwal) {
+    return c.json({ error: "sisaSaldo tidak boleh melebihi saldoAwal", code: "VALIDATION_ERROR" }, 422);
+  }
+
   const [row] = await db
     .update(receivables)
     .set({
@@ -128,13 +172,23 @@ debtRoutes.patch("/receivables/:id", zValidator("param", idParam), zValidator("j
     })
     .where(and(eq(receivables.id, id), eq(receivables.userId, userId)))
     .returning();
-  if (!row) return c.json({ error: "Not found" }, 404);
   return c.json(row);
 });
 
 debtRoutes.delete("/receivables/:id", zValidator("param", idParam), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
+
+  // High #4 (bug hunt): sama seperti debts.delete di atas.
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.relatedEntityId, id)));
+
+  if (Number(total) > 0) {
+    return c.json({ error: "Piutang masih memiliki transaksi terkait (pemberian/penerimaan) — hapus atau edit transaksi tersebut dahulu" }, 409);
+  }
+
   await db.delete(receivables).where(and(eq(receivables.id, id), eq(receivables.userId, userId)));
   return c.body(null, 204);
 });

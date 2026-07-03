@@ -36,6 +36,13 @@
       "when": 1782865200002,
       "tag": "0004_more_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782865200003,
+      "tag": "0005_unique_name_constraints",
+      "breakpoints": true
     }
   ]
 }

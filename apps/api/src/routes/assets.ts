@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { db, liquidAssets, fixedAssets } from "@wealth/db";
-import { eq, and } from "drizzle-orm";
+import { db, liquidAssets, fixedAssets, transactions } from "@wealth/db";
+import { eq, and, count } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import type { AppEnv } from "../types";
 
@@ -13,10 +13,12 @@ assetRoutes.use("*", requireAuth);
 // Reusable UUID param schema
 const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
 
+// Medium #8 (bug hunt): .finite() — tanpa ini, Infinity lolos validasi lalu
+// gagal aneh di level Postgres saat di-cast ke numeric.
 const assetSchema = z.object({
   namaAset: z.string().min(1),
-  jumlah: z.number().positive(),
-  hargaBeliRataRata: z.number().min(0),
+  jumlah: z.number().positive().finite(),
+  hargaBeliRataRata: z.number().min(0).finite(),
 });
 
 // ─── Liquid Assets (Aset Setara Kas) ─────────────────────────────────────────
@@ -57,6 +59,18 @@ assetRoutes.patch("/liquid/:id", zValidator("param", idParam), zValidator("json"
 assetRoutes.delete("/liquid/:id", zValidator("param", idParam), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
+
+  // High #4 (bug hunt): tanpa guard ini, hapus aset yang masih dirujuk transaksi
+  // (beli_investasi/jual_investasi) meninggalkan relatedEntityId yatim.
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.relatedEntityId, id)));
+
+  if (Number(total) > 0) {
+    return c.json({ error: "Aset masih memiliki transaksi terkait (beli/jual) — hapus atau edit transaksi tersebut dahulu" }, 409);
+  }
+
   await db.delete(liquidAssets).where(and(eq(liquidAssets.id, id), eq(liquidAssets.userId, userId)));
   return c.body(null, 204);
 });
@@ -99,6 +113,17 @@ assetRoutes.patch("/fixed/:id", zValidator("param", idParam), zValidator("json",
 assetRoutes.delete("/fixed/:id", zValidator("param", idParam), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
+
+  // High #4 (bug hunt): sama seperti liquid.delete di atas.
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.relatedEntityId, id)));
+
+  if (Number(total) > 0) {
+    return c.json({ error: "Aset masih memiliki transaksi terkait (beli/jual) — hapus atau edit transaksi tersebut dahulu" }, 409);
+  }
+
   await db.delete(fixedAssets).where(and(eq(fixedAssets.id, id), eq(fixedAssets.userId, userId)));
   return c.body(null, 204);
 });

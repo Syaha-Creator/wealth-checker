@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, varchar, numeric, pgEnum, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, varchar, numeric, pgEnum, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { authUser } from "./auth";
 
 export const debtTypeEnum = pgEnum("debt_type", ["utang_biasa", "kartu_kredit"]);
@@ -13,6 +14,10 @@ export const debts = pgTable("debts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => ({
   userIdx: index("idx_debts_user").on(t.userId),
+  // Mencegah race condition "find-or-create by name" di POST /transactions
+  // (dua pinjaman_utang konkuren dengan pemberi baru yang sama) membuat baris
+  // duplikat — lihat migration 0005 & INSERT...ON CONFLICT di transactions.ts.
+  userPemberiUniqueIdx: uniqueIndex("idx_debts_user_pemberi_unique").on(t.userId, sql`lower(${t.pemberiUtang})`),
 }));
 
 export const receivables = pgTable("receivables", {
@@ -24,4 +29,6 @@ export const receivables = pgTable("receivables", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => ({
   userIdx: index("idx_receivables_user").on(t.userId),
+  // Sama seperti idx_debts_user_pemberi_unique — cegah duplikat pemberian_piutang.
+  userPeminjamUniqueIdx: uniqueIndex("idx_receivables_user_peminjam_unique").on(t.userId, sql`lower(${t.peminjam})`),
 }));

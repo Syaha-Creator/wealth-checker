@@ -11,6 +11,11 @@ interface ConfirmModalProps {
   confirmVariant?: "danger" | "warning" | "default";
   onConfirm: () => void;
   onCancel: () => void;
+  // Medium #12 (bug hunt): busy guard — tanpa ini, klik ganda pada tombol
+  // konfirmasi saat aksi (mis. DELETE) masih berjalan bisa memicu request
+  // duplikat. Saat `busy`, tombol konfirmasi menampilkan spinner + disabled,
+  // dan Batal/Escape/backdrop-click juga dinonaktifkan sampai aksi selesai.
+  busy?: boolean;
 }
 
 export function ConfirmModal({
@@ -21,6 +26,7 @@ export function ConfirmModal({
   confirmVariant = "danger",
   onConfirm,
   onCancel,
+  busy = false,
 }: ConfirmModalProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -31,11 +37,11 @@ export function ConfirmModal({
   useEffect(() => {
     if (!open) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape" && !busy) onCancel();
     };
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [open, onCancel]);
+  }, [open, busy, onCancel]);
 
   if (!open) return null;
 
@@ -51,7 +57,7 @@ export function ConfirmModal({
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={onCancel}
+        onClick={busy ? undefined : onCancel}
         aria-hidden="true"
       />
 
@@ -62,10 +68,10 @@ export function ConfirmModal({
         </h2>
         <p className="text-sm text-text-secondary leading-relaxed mb-6">{message}</p>
         <div className="flex gap-3">
-          <Button ref={cancelRef} variant="secondary" onClick={onCancel} fullWidth>
+          <Button ref={cancelRef} variant="secondary" onClick={onCancel} disabled={busy} fullWidth>
             Batal
           </Button>
-          <Button variant={buttonVariant} onClick={onConfirm} fullWidth>
+          <Button variant={buttonVariant} onClick={onConfirm} loading={busy} fullWidth>
             {confirmLabel}
           </Button>
         </div>

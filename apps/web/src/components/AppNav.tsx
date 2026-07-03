@@ -124,8 +124,12 @@ export function AppNav() {
       </nav>
 
       {/* Mobile bottom nav */}
+      {/* Medium #10 (bug hunt): 6 item dengan `min-w-[56px]` fixed (336px) bisa
+          overflow/clip di layar sempit (<=375px, mis. iPhone SE). Ganti ke
+          `flex-1 min-w-0` agar tiap item menyusut proporsional mengikuti lebar
+          viewport alih-alih memaksakan lebar minimum tetap. */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface border-t border-border z-40 safe-area-pb" aria-label="Navigasi utama">
-        <div className="flex items-end justify-around px-2 pt-2 pb-3">
+        <div className="flex items-end justify-between px-1 pt-2 pb-3">
           {navItems.map((item) => {
             const active = item.href === activeHref;
             return (
@@ -134,7 +138,7 @@ export function AppNav() {
                 href={item.href}
                 aria-label={item.label}
                 aria-current={active ? "page" : undefined}
-                className={`flex flex-col items-center gap-0.5 min-w-[56px] ${
+                className={`flex flex-col items-center gap-0.5 flex-1 min-w-0 px-0.5 ${
                   item.special ? "-mt-4" : ""
                 }`}
               >
@@ -150,7 +154,7 @@ export function AppNav() {
                     {item.icon(active)}
                   </span>
                 )}
-                <span className={`text-[10px] font-medium ${
+                <span className={`text-[10px] font-medium truncate max-w-full ${
                   item.special ? "text-brand" : active ? "text-brand" : "text-text-muted"
                 }`}>
                   {item.label}

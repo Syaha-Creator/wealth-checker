@@ -95,6 +95,8 @@ export default function TransactionsPage() {
   const [fetchError, setFetchError] = useState("");
   const [deleteModal, setDeleteModal] = useState<ModalState>({ open: false, id: "" });
   const [deleteError, setDeleteError] = useState("");
+  // Medium #12 (bug hunt): busy guard untuk ConfirmModal — lihat catatan di accounts/page.tsx.
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [filterType, setFilterType] = useState("semua");
   const [filterMonth, setFilterMonth] = useState("semua");
   const [filterAccount, setFilterAccount] = useState("semua");
@@ -190,14 +192,20 @@ export default function TransactionsPage() {
 
   const handleDeleteConfirm = async () => {
     const id = deleteModal.id;
-    setDeleteModal({ open: false, id: "" });
+    setDeleteBusy(true);
     setDeleteError("");
     try {
       const res = await fetch(`${API}/api/transactions/${id}`, { method: "DELETE", credentials: "include" });
-      if (!res.ok) throw new Error("Gagal menghapus transaksi");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Gagal menghapus transaksi" }));
+        throw new Error(body.error ?? "Gagal menghapus transaksi");
+      }
       await refetch();
     } catch (err: unknown) {
       setDeleteError(err instanceof Error ? err.message : "Gagal menghapus transaksi");
+    } finally {
+      setDeleteBusy(false);
+      setDeleteModal({ open: false, id: "" });
     }
   };
 
@@ -211,6 +219,7 @@ export default function TransactionsPage() {
         confirmVariant="danger"
         onConfirm={handleDeleteConfirm}
         onCancel={() => setDeleteModal({ open: false, id: "" })}
+        busy={deleteBusy}
       />
 
       <PageHeader

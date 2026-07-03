@@ -101,6 +101,12 @@ export default function DashboardPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Medium #9 (bug hunt): "Coba Lagi" sebelumnya hanya reset error/loading state
+  // tanpa memicu ulang fetch — useEffect di bawah cuma bergantung pada `session`
+  // yang tidak berubah saat retry, jadi skeleton loading jadi permanen. retryKey
+  // dinaikkan setiap klik retry dan dimasukkan ke dependency array agar fetch
+  // benar-benar diulang.
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     if (!session) return;
@@ -127,7 +133,7 @@ export default function DashboardPage() {
         setError(err.message ?? "Gagal memuat data. Coba muat ulang halaman.");
       })
       .finally(() => setLoading(false));
-  }, [session]);
+  }, [session, retryKey]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -148,7 +154,7 @@ export default function DashboardPage() {
         </svg>
         <p className="text-sm font-medium text-danger-text mb-1">Gagal memuat dashboard</p>
         <p className="text-xs text-text-muted mb-4">{error}</p>
-        <Button variant="danger" size="sm" onClick={() => { setError(""); setLoading(true); }}>
+        <Button variant="danger" size="sm" onClick={() => { setError(""); setLoading(true); setRetryKey((k) => k + 1); }}>
           Coba Lagi
         </Button>
       </Card>

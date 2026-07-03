@@ -79,6 +79,13 @@ describe("calculateDebtSummary (ringkasan Pemberi Utang vs Sisa Utang)", () => {
     expect(summary.progressPercent).toBe(0);
     expect(summary.perPemberi).toEqual([]);
   });
+
+  it("bug hunt Medium #7: sisaSaldo > saldoAwal (data lama/anomali) → progress di-floor ke 0, bukan negatif", () => {
+    const summary = calculateDebtSummary([
+      { id: "1", pemberiUtang: "Anomali", tipe: "utang_biasa", saldoAwal: "1000000", sisaSaldo: "1200000" },
+    ]);
+    expect(summary.perPemberi[0].progressPercent).toBe(0);
+  });
 });
 
 describe("calculateReceivableSummary (ringkasan Peminjam vs Sisa Piutang)", () => {

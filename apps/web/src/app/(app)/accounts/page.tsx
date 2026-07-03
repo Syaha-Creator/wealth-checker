@@ -77,7 +77,11 @@ export default function AccountsPage() {
     onConfirm: () => {},
   });
 
-  const closeModal = () => setModal((m) => ({ ...m, open: false }));
+  // Medium #12 (bug hunt): busy guard untuk ConfirmModal — dilempar ke `busy`
+  // prop agar tombol konfirmasi disabled+spinner selama request async berjalan,
+  // mencegah double-submit dari klik ganda.
+  const [modalBusy, setModalBusy] = useState(false);
+  const closeModal = () => { setModal((m) => ({ ...m, open: false })); setModalBusy(false); };
 
   const refetch = useCallback(async () => {
     setLoading(true);
@@ -125,12 +129,14 @@ export default function AccountsPage() {
       confirmLabel: "Nonaktifkan",
       confirmVariant: "warning",
       onConfirm: async () => {
-        closeModal();
+        setModalBusy(true);
         try {
           await apiFetch(`/api/accounts/${id}`, "PATCH", { isActive: false });
           await refetch();
         } catch (err: unknown) {
           setFetchError(err instanceof Error ? err.message : "Gagal menonaktifkan rekening");
+        } finally {
+          closeModal();
         }
       },
     });
@@ -158,7 +164,7 @@ export default function AccountsPage() {
       confirmLabel: "Ya, Koreksi Saldo",
       confirmVariant: "warning",
       onConfirm: async () => {
-        closeModal();
+        setModalBusy(true);
         setKoreksiSaving(true);
         try {
           await apiFetch(`/api/accounts/${acc.id}`, "PATCH", { saldo: nilaiBaru });
@@ -168,6 +174,7 @@ export default function AccountsPage() {
           setKoreksiError(err instanceof Error ? err.message : "Gagal mengoreksi saldo");
         } finally {
           setKoreksiSaving(false);
+          closeModal();
         }
       },
     });
@@ -181,12 +188,14 @@ export default function AccountsPage() {
       confirmLabel: "Hapus",
       confirmVariant: "danger",
       onConfirm: async () => {
-        closeModal();
+        setModalBusy(true);
         try {
           await apiFetch(`/api/accounts/${id}`, "DELETE");
           await refetch();
         } catch (err: unknown) {
           setFetchError(err instanceof Error ? err.message : "Gagal menghapus — pastikan tidak ada transaksi terkait.");
+        } finally {
+          closeModal();
         }
       },
     });
@@ -204,6 +213,7 @@ export default function AccountsPage() {
         confirmVariant={modal.confirmVariant}
         onConfirm={modal.onConfirm}
         onCancel={closeModal}
+        busy={modalBusy}
       />
 
       <PageHeader

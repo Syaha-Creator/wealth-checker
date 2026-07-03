@@ -270,7 +270,7 @@ function DebtTab({
                   <p className="text-xs text-text-muted mt-0.5">Total pinjaman: {formatCurrency(d.totalPinjaman)}</p>
                 </div>
                 {!d.lunas && (
-                  <Button size="sm" variant="outline" onClick={() => openPayForm(payingId === d.id ? "" : d.id)}>
+                  <Button size="sm" variant="outline" onClick={() => (payingId === d.id ? setPayingId(null) : openPayForm(d.id))}>
                     Bayar Cicilan
                   </Button>
                 )}
@@ -278,34 +278,43 @@ function DebtTab({
               <p className={`text-lg font-bold ${d.lunas ? "text-brand" : "text-danger-text"}`}>{formatCurrency(d.sisaSaldo)}</p>
               <div className="mt-2"><ProgressBar percent={d.progressPercent} /></div>
 
-              {payingId === d.id && (
-                <form onSubmit={(e) => handlePay(e, d.id)} className="mt-4 pt-4 border-t border-border space-y-3">
-                  {payError && <p className="text-sm text-danger-text">{payError}</p>}
-                  <InputRupiah
-                    id={`pay-nominal-${d.id}`}
-                    label="Nominal Cicilan"
-                    value={payNominal}
-                    onChange={setPayNominal}
-                    hint={`Sisa utang: ${formatCurrency(d.sisaSaldo)}`}
-                    required
-                  />
-                  <Select
-                    id={`pay-account-${d.id}`}
-                    label="Rekening Sumber"
-                    value={payAccountId}
-                    onChange={(e) => setPayAccountId(e.target.value)}
-                    required
-                  >
-                    <option value="">Pilih rekening</option>
-                    {accounts.map((a) => <option key={a.id} value={a.id}>{a.nama}</option>)}
-                  </Select>
-                  <Input id={`pay-tanggal-${d.id}`} type="date" label="Tanggal" value={payTanggal} onChange={(e) => setPayTanggal(e.target.value)} required />
-                  <div className="flex gap-2 max-w-xs">
-                    <Button type="button" variant="secondary" fullWidth onClick={() => setPayingId(null)}>Batal</Button>
-                    <Button type="submit" fullWidth loading={paySaving}>{paySaving ? "Memproses..." : "Bayar"}</Button>
-                  </div>
-                </form>
-              )}
+              {payingId === d.id && (() => {
+                // Medium #11 (bug hunt): client-side cap vs sisaSaldo — server
+                // sudah guard ini (atomic conditional UPDATE), tapi UX lebih
+                // responsif kalau user langsung lihat error sebelum submit,
+                // konsisten dengan pola di transactions/new.
+                const payNominalValue = parseRupiahInput(payNominal);
+                const payExceedsLimit = payNominalValue > d.sisaSaldo;
+                return (
+                  <form onSubmit={(e) => handlePay(e, d.id)} className="mt-4 pt-4 border-t border-border space-y-3">
+                    {payError && <p className="text-sm text-danger-text">{payError}</p>}
+                    <InputRupiah
+                      id={`pay-nominal-${d.id}`}
+                      label="Nominal Cicilan"
+                      value={payNominal}
+                      onChange={setPayNominal}
+                      hint={payExceedsLimit ? undefined : `Sisa utang: ${formatCurrency(d.sisaSaldo)}`}
+                      error={payExceedsLimit ? `Nominal melebihi sisa utang (${formatCurrency(d.sisaSaldo)})` : undefined}
+                      required
+                    />
+                    <Select
+                      id={`pay-account-${d.id}`}
+                      label="Rekening Sumber"
+                      value={payAccountId}
+                      onChange={(e) => setPayAccountId(e.target.value)}
+                      required
+                    >
+                      <option value="">Pilih rekening</option>
+                      {accounts.map((a) => <option key={a.id} value={a.id}>{a.nama}</option>)}
+                    </Select>
+                    <Input id={`pay-tanggal-${d.id}`} type="date" label="Tanggal" value={payTanggal} onChange={(e) => setPayTanggal(e.target.value)} required />
+                    <div className="flex gap-2 max-w-xs">
+                      <Button type="button" variant="secondary" fullWidth onClick={() => setPayingId(null)}>Batal</Button>
+                      <Button type="submit" fullWidth loading={paySaving} disabled={payExceedsLimit}>{paySaving ? "Memproses..." : "Bayar"}</Button>
+                    </div>
+                  </form>
+                );
+              })()}
             </Card>
           ))}
         </div>
@@ -461,7 +470,7 @@ function ReceivableTab({
                   <p className="text-xs text-text-muted mt-0.5">Total dipinjamkan: {formatCurrency(r.totalDipinjamkan)}</p>
                 </div>
                 {!r.lunas && (
-                  <Button size="sm" variant="outline" onClick={() => openReceiveForm(receivingId === r.id ? "" : r.id)}>
+                  <Button size="sm" variant="outline" onClick={() => (receivingId === r.id ? setReceivingId(null) : openReceiveForm(r.id))}>
                     Terima Pembayaran
                   </Button>
                 )}
@@ -469,34 +478,40 @@ function ReceivableTab({
               <p className={`text-lg font-bold ${r.lunas ? "text-brand" : "text-warning-text"}`}>{formatCurrency(r.sisaSaldo)}</p>
               <div className="mt-2"><ProgressBar percent={r.progressPercent} /></div>
 
-              {receivingId === r.id && (
-                <form onSubmit={(e) => handleReceive(e, r.id)} className="mt-4 pt-4 border-t border-border space-y-3">
-                  {recvError && <p className="text-sm text-danger-text">{recvError}</p>}
-                  <InputRupiah
-                    id={`recv-nominal-${r.id}`}
-                    label="Nominal Diterima"
-                    value={recvNominal}
-                    onChange={setRecvNominal}
-                    hint={`Sisa piutang: ${formatCurrency(r.sisaSaldo)}`}
-                    required
-                  />
-                  <Select
-                    id={`recv-account-${r.id}`}
-                    label="Rekening Tujuan"
-                    value={recvAccountId}
-                    onChange={(e) => setRecvAccountId(e.target.value)}
-                    required
-                  >
-                    <option value="">Pilih rekening</option>
-                    {accounts.map((a) => <option key={a.id} value={a.id}>{a.nama}</option>)}
-                  </Select>
-                  <Input id={`recv-tanggal-${r.id}`} type="date" label="Tanggal" value={recvTanggal} onChange={(e) => setRecvTanggal(e.target.value)} required />
-                  <div className="flex gap-2 max-w-xs">
-                    <Button type="button" variant="secondary" fullWidth onClick={() => setReceivingId(null)}>Batal</Button>
-                    <Button type="submit" fullWidth loading={recvSaving}>{recvSaving ? "Memproses..." : "Terima"}</Button>
-                  </div>
-                </form>
-              )}
+              {receivingId === r.id && (() => {
+                // Medium #11 (bug hunt): sama seperti DebtTab di atas.
+                const recvNominalValue = parseRupiahInput(recvNominal);
+                const recvExceedsLimit = recvNominalValue > r.sisaSaldo;
+                return (
+                  <form onSubmit={(e) => handleReceive(e, r.id)} className="mt-4 pt-4 border-t border-border space-y-3">
+                    {recvError && <p className="text-sm text-danger-text">{recvError}</p>}
+                    <InputRupiah
+                      id={`recv-nominal-${r.id}`}
+                      label="Nominal Diterima"
+                      value={recvNominal}
+                      onChange={setRecvNominal}
+                      hint={recvExceedsLimit ? undefined : `Sisa piutang: ${formatCurrency(r.sisaSaldo)}`}
+                      error={recvExceedsLimit ? `Nominal melebihi sisa piutang (${formatCurrency(r.sisaSaldo)})` : undefined}
+                      required
+                    />
+                    <Select
+                      id={`recv-account-${r.id}`}
+                      label="Rekening Tujuan"
+                      value={recvAccountId}
+                      onChange={(e) => setRecvAccountId(e.target.value)}
+                      required
+                    >
+                      <option value="">Pilih rekening</option>
+                      {accounts.map((a) => <option key={a.id} value={a.id}>{a.nama}</option>)}
+                    </Select>
+                    <Input id={`recv-tanggal-${r.id}`} type="date" label="Tanggal" value={recvTanggal} onChange={(e) => setRecvTanggal(e.target.value)} required />
+                    <div className="flex gap-2 max-w-xs">
+                      <Button type="button" variant="secondary" fullWidth onClick={() => setReceivingId(null)}>Batal</Button>
+                      <Button type="submit" fullWidth loading={recvSaving} disabled={recvExceedsLimit}>{recvSaving ? "Memproses..." : "Terima"}</Button>
+                    </div>
+                  </form>
+                );
+              })()}
             </Card>
           ))}
         </div>

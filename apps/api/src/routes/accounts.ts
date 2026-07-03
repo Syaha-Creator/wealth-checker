@@ -19,9 +19,10 @@ accountRoutes.get("/", async (c) => {
   return c.json(rows);
 });
 
+// Medium #8 (bug hunt): .finite() — cegah Infinity lolos validasi.
 const createSchema = z.object({
   nama: z.string().min(1),
-  saldoAwal: z.number().min(0).default(0),
+  saldoAwal: z.number().min(0).finite().default(0),
 });
 
 accountRoutes.post("/", zValidator("json", createSchema), async (c) => {
@@ -44,7 +45,7 @@ accountRoutes.patch(
     // (lihat docs/API.md untuk peringatan soal ini). Nama field tetap `saldo`
     // di API publik agar konsisten dengan `saldoAwal` di POST, walau kolom
     // di tabel accounts bernama `saldoCache`.
-    saldo: z.number().min(0).optional(),
+    saldo: z.number().min(0).finite().optional(),
   })),
   async (c) => {
     const userId = c.get("userId") as string;

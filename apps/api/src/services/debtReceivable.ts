@@ -56,8 +56,11 @@ export interface DebtSummary {
   perPemberi: DebtSummaryItem[];
 }
 
+// Medium #7 (bug hunt): floor di 0 juga, bukan hanya cap di 100 — kalau
+// `paid` negatif (mis. data lama/manual PATCH yang membuat sisaSaldo > saldoAwal
+// sebelum guard #6 ditambahkan), progress % tidak boleh tampil negatif di UI.
 function progressOf(paid: number, total: number): number {
-  return total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+  return total > 0 ? Math.max(0, Math.min(100, Math.round((paid / total) * 100))) : 0;
 }
 
 /** Ringkasan "Pemberi Utang vs Sisa Utang" — menggantikan tabel ringkasan di sheet asli. */

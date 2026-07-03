@@ -105,25 +105,61 @@ async function reverseTransactionEffects(
   }
 
   // ── Reverse pinjaman_utang / pemberian_piutang: undo the debt/receivable
-  // this loan added — floored at 0 in case cicilan already paid it down further ──
+  // this loan added ──────────────────────────────────────────────────────
+  // Bug hunt High #5: previously used GREATEST(0, ...) to silently clamp at
+  // zero if cicilan had already paid the debt down further than this specific
+  // loan's reversal would allow. That silently erases the bookkeeping trail of
+  // money that already left the account via cicilan. Since debts are a pooled
+  // balance per pemberi_utang (not lot-tracked per loan event — same limitation
+  // as the asset moving-average engine), we can't tell whether the payment(s)
+  // applied against THIS loan's principal specifically. So: if sisaSaldo is
+  // already less than what we're about to subtract, reject instead of
+  // silently corrupting the balance — consistent with the 409 block on
+  // deleting/editing asset buy/sell transactions for the same class of reason.
   if (trx.type === "pinjaman_utang" && trx.relatedEntityId) {
-    await tx
-      .update(debts)
-      .set({
-        saldoAwal: sql`GREATEST(0, saldo_awal::numeric - ${trx.nominal})`,
-        sisaSaldo: sql`GREATEST(0, sisa_saldo::numeric - ${trx.nominal})`,
-      })
+    const [debt] = await tx
+      .select({ sisaSaldo: debts.sisaSaldo })
+      .from(debts)
       .where(and(eq(debts.id, trx.relatedEntityId), eq(debts.userId, userId)));
+
+    if (debt && Number(debt.sisaSaldo) < Number(trx.nominal)) {
+      throw Object.assign(new Error(
+        "Transaksi pinjaman ini tidak bisa dihapus/diedit karena utang terkait sudah dicicil sebagian — membalik transaksi ini akan membuat sisa saldo utang tidak konsisten. Catat transaksi penyesuaian baru jika perlu.",
+      ), { status: 409 });
+    }
+
+    if (debt) {
+      await tx
+        .update(debts)
+        .set({
+          saldoAwal: sql`saldo_awal::numeric - ${trx.nominal}`,
+          sisaSaldo: sql`sisa_saldo::numeric - ${trx.nominal}`,
+        })
+        .where(and(eq(debts.id, trx.relatedEntityId), eq(debts.userId, userId)));
+    }
   }
 
   if (trx.type === "pemberian_piutang" && trx.relatedEntityId) {
-    await tx
-      .update(receivables)
-      .set({
-        saldoAwal: sql`GREATEST(0, saldo_awal::numeric - ${trx.nominal})`,
-        sisaSaldo: sql`GREATEST(0, sisa_saldo::numeric - ${trx.nominal})`,
-      })
+    const [rec] = await tx
+      .select({ sisaSaldo: receivables.sisaSaldo })
+      .from(receivables)
       .where(and(eq(receivables.id, trx.relatedEntityId), eq(receivables.userId, userId)));
+
+    if (rec && Number(rec.sisaSaldo) < Number(trx.nominal)) {
+      throw Object.assign(new Error(
+        "Transaksi piutang ini tidak bisa dihapus/diedit karena piutang terkait sudah sebagian dibayar — membalik transaksi ini akan membuat sisa saldo piutang tidak konsisten. Catat transaksi penyesuaian baru jika perlu.",
+      ), { status: 409 });
+    }
+
+    if (rec) {
+      await tx
+        .update(receivables)
+        .set({
+          saldoAwal: sql`saldo_awal::numeric - ${trx.nominal}`,
+          sisaSaldo: sql`sisa_saldo::numeric - ${trx.nominal}`,
+        })
+        .where(and(eq(receivables.id, trx.relatedEntityId), eq(receivables.userId, userId)));
+    }
   }
 }
 
@@ -211,50 +247,149 @@ async function applyTransactionEffects(
   }
 
   // ── bayar_utang — guard: tidak boleh melebihi sisa saldo utang ──
+  // Bug hunt Critical #2: guard sebelumnya SELECT sisaSaldo lalu UPDATE terpisah
+  // tanpa kondisi WHERE — dua bayar_utang konkuren pada utang yang sama bisa
+  // membuat sisaSaldo negatif (guard di JS jadi stale/TOCTOU). Fix: UPDATE itu
+  // sendiri jadi guard atomic (WHERE sisa_saldo >= X), sama seperti debit saldo
+  // rekening di atas. 0 baris terupdate = gagal (utang tidak ada ATAU sisa
+  // saldo tidak cukup) — dibedakan lewat SELECT terpisah HANYA untuk pesan error.
   if (data.type === "bayar_utang" && relatedEntityId) {
-    const [debt] = await tx
-      .select({ sisaSaldo: debts.sisaSaldo })
-      .from(debts)
-      .where(and(eq(debts.id, relatedEntityId), eq(debts.userId, userId)));
+    const paid = await tx
+      .update(debts)
+      .set({ sisaSaldo: sql`sisa_saldo::numeric - ${String(computedNominal)}` })
+      .where(and(
+        eq(debts.id, relatedEntityId),
+        eq(debts.userId, userId),
+        sql`sisa_saldo::numeric >= ${String(computedNominal)}`,
+      ))
+      .returning({ id: debts.id });
 
-    if (!debt) {
-      throw Object.assign(new Error("Utang tidak ditemukan"), { status: 404 });
-    }
-    const guard = canPayDebt(Number(debt.sisaSaldo), computedNominal);
-    if (!guard.allowed) {
-      throw Object.assign(new Error(guard.error), {
+    if (paid.length === 0) {
+      const [debt] = await tx
+        .select({ sisaSaldo: debts.sisaSaldo })
+        .from(debts)
+        .where(and(eq(debts.id, relatedEntityId), eq(debts.userId, userId)));
+
+      if (!debt) {
+        throw Object.assign(new Error("Utang tidak ditemukan"), { status: 404 });
+      }
+      throw Object.assign(new Error(canPayDebt(Number(debt.sisaSaldo), computedNominal).error), {
         status: 422, code: "EXCEEDS_DEBT_BALANCE", sisaSaldo: Number(debt.sisaSaldo),
       });
     }
-
-    await tx
-      .update(debts)
-      .set({ sisaSaldo: sql`sisa_saldo::numeric - ${String(computedNominal)}` })
-      .where(and(eq(debts.id, relatedEntityId), eq(debts.userId, userId)));
   }
 
   // ── penerimaan_piutang — guard: tidak boleh melebihi sisa piutang ──
+  // Sama seperti bayar_utang di atas — atomic conditional UPDATE alih-alih
+  // SELECT-lalu-UPDATE yang rawan TOCTOU.
   if (data.type === "penerimaan_piutang" && relatedEntityId) {
-    const [rec] = await tx
-      .select({ sisaSaldo: receivables.sisaSaldo })
-      .from(receivables)
-      .where(and(eq(receivables.id, relatedEntityId), eq(receivables.userId, userId)));
+    const received = await tx
+      .update(receivables)
+      .set({ sisaSaldo: sql`sisa_saldo::numeric - ${String(computedNominal)}` })
+      .where(and(
+        eq(receivables.id, relatedEntityId),
+        eq(receivables.userId, userId),
+        sql`sisa_saldo::numeric >= ${String(computedNominal)}`,
+      ))
+      .returning({ id: receivables.id });
 
-    if (!rec) {
-      throw Object.assign(new Error("Piutang tidak ditemukan"), { status: 404 });
-    }
-    const guard = canReceiveReceivable(Number(rec.sisaSaldo), computedNominal);
-    if (!guard.allowed) {
-      throw Object.assign(new Error(guard.error), {
+    if (received.length === 0) {
+      const [rec] = await tx
+        .select({ sisaSaldo: receivables.sisaSaldo })
+        .from(receivables)
+        .where(and(eq(receivables.id, relatedEntityId), eq(receivables.userId, userId)));
+
+      if (!rec) {
+        throw Object.assign(new Error("Piutang tidak ditemukan"), { status: 404 });
+      }
+      throw Object.assign(new Error(canReceiveReceivable(Number(rec.sisaSaldo), computedNominal).error), {
         status: 422, code: "EXCEEDS_RECEIVABLE_BALANCE", sisaSaldo: Number(rec.sisaSaldo),
       });
     }
-
-    await tx
-      .update(receivables)
-      .set({ sisaSaldo: sql`sisa_saldo::numeric - ${String(computedNominal)}` })
-      .where(and(eq(receivables.id, relatedEntityId), eq(receivables.userId, userId)));
   }
+}
+
+// ─── Atomic upsert helpers (Sprint 8/9/10 — bug hunt Critical #1 & #3) ────────
+//
+// The original implementation did SELECT (by lower(name)) → branch to INSERT
+// or UPDATE in JS. Under concurrent requests for the SAME name this raced two
+// ways: (a) lost-update — two buys/sells of the same asset could compute their
+// new jumlah/hargaBeliRataRata from the same stale read and overwrite each
+// other; (b) duplicate rows — two first-time buys/loans for a brand-new name
+// could both see "not found" and both INSERT. A single `INSERT ... ON CONFLICT
+// DO UPDATE` closes both: it's one atomic statement, and the SET clause reads
+// the table's own (pre-conflict) column values, so Postgres serializes
+// concurrent upserts of the same conflict target correctly. Requires the
+// unique indexes added in migration 0005 as the conflict target.
+
+/**
+ * Upsert for beli_barang/beli_investasi — atomic moving-average-cost update.
+ * Mirrors calculateMovingAverageCost()'s formula exactly:
+ *   new_avg = ((existing_qty × existing_avg) + (new_qty × new_price)) / (existing_qty + new_qty)
+ * On first buy (no conflict), the row simply starts at (qty, price).
+ */
+async function upsertAssetBuy(
+  tx: DbTx,
+  tableName: "fixed_assets" | "liquid_assets",
+  userId: string,
+  namaAset: string,
+  qty: number,
+  price: number,
+): Promise<string> {
+  const t = sql.raw(tableName);
+  const rows = await tx.execute<{ id: string }>(sql`
+    INSERT INTO ${t} (user_id, nama_aset, jumlah, harga_beli_rata_rata)
+    VALUES (${userId}, ${namaAset}, ${String(qty)}, ${String(price)})
+    ON CONFLICT (user_id, lower(nama_aset))
+    DO UPDATE SET
+      jumlah = ${t}.jumlah::numeric + excluded.jumlah::numeric,
+      harga_beli_rata_rata = (
+        (${t}.jumlah::numeric * ${t}.harga_beli_rata_rata::numeric)
+        + (excluded.jumlah::numeric * excluded.harga_beli_rata_rata::numeric)
+      ) / (${t}.jumlah::numeric + excluded.jumlah::numeric),
+      updated_at = now()
+    RETURNING id
+  `);
+  return (rows as unknown as { id: string }[])[0].id;
+}
+
+/** Upsert for pinjaman_utang — cari-atau-buat debt berdasarkan nama pemberi (case-insensitive). */
+async function upsertDebtOnLoan(
+  tx: DbTx,
+  userId: string,
+  pemberiUtang: string,
+  tipe: "utang_biasa" | "kartu_kredit",
+  nominal: number,
+): Promise<string> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    INSERT INTO debts (user_id, pemberi_utang, tipe, saldo_awal, sisa_saldo)
+    VALUES (${userId}, ${pemberiUtang}, ${tipe}::debt_type, ${String(nominal)}, ${String(nominal)})
+    ON CONFLICT (user_id, lower(pemberi_utang))
+    DO UPDATE SET
+      saldo_awal = debts.saldo_awal::numeric + excluded.saldo_awal::numeric,
+      sisa_saldo = debts.sisa_saldo::numeric + excluded.sisa_saldo::numeric
+    RETURNING id
+  `);
+  return (rows as unknown as { id: string }[])[0].id;
+}
+
+/** Upsert for pemberian_piutang — cari-atau-buat receivable berdasarkan nama peminjam (case-insensitive). */
+async function upsertReceivableOnLend(
+  tx: DbTx,
+  userId: string,
+  peminjam: string,
+  nominal: number,
+): Promise<string> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    INSERT INTO receivables (user_id, peminjam, saldo_awal, sisa_saldo)
+    VALUES (${userId}, ${peminjam}, ${String(nominal)}, ${String(nominal)})
+    ON CONFLICT (user_id, lower(peminjam))
+    DO UPDATE SET
+      saldo_awal = receivables.saldo_awal::numeric + excluded.saldo_awal::numeric,
+      sisa_saldo = receivables.sisa_saldo::numeric + excluded.sisa_saldo::numeric
+    RETURNING id
+  `);
+  return (rows as unknown as { id: string }[])[0].id;
 }
 
 // ─── GET / ────────────────────────────────────────────────────────────────────
@@ -344,7 +479,9 @@ const createSchema = z.object({
   relatedReceivableId: z.string().uuid().optional(),
   // Nominal wajib untuk semua tipe KECUALI beli/jual barang & investasi, di mana
   // nominal dihitung server-side dari jumlah × hargaSatuan (lihat ASSET_TYPES)
-  nominal: z.number().positive().optional(),
+  // Medium #8 (bug hunt): .finite() di semua skema angka uang/kuantitas — tanpa
+  // ini, Infinity lolos validasi lalu gagal aneh di level Postgres saat cast numeric.
+  nominal: z.number().positive().finite().optional(),
   // pinjaman_utang: cari-atau-buat baris `debts` berdasarkan nama pemberi
   pemberiUtang: z.string().min(1).optional(),
   debtTipe: z.enum(["utang_biasa", "kartu_kredit"]).optional(),
@@ -353,8 +490,8 @@ const createSchema = z.object({
   // beli/jual barang & investasi: cari-atau-buat baris aset berdasarkan nama,
   // lalu jalankan Moving Average Cost engine (Sprint 10)
   namaAset: z.string().min(1).optional(),
-  jumlah: z.number().positive().optional(),
-  hargaSatuan: z.number().positive().optional(),
+  jumlah: z.number().positive().finite().optional(),
+  hargaSatuan: z.number().positive().finite().optional(),
 }).superRefine((val, ctx) => {
   // Transfer must have both accountId and toAccountId, and they must differ
   if (val.type === "transfer") {
@@ -424,32 +561,26 @@ transactionRoutes.post("/", zValidator("json", createSchema), async (c) => {
       // ── Sprint 10: Moving Average Cost engine untuk beli/jual barang & investasi ──
       if (isAssetTx) {
         const table = assetTableFor(data.type);
-        const [existing] = await tx
-          .select()
-          .from(table)
-          .where(and(eq(table.userId, userId), sql`lower(nama_aset) = lower(${namaAset})`));
 
         if (ASSET_BUY_TYPES.has(data.type)) {
-          const existingQty = existing ? Number(existing.jumlah) : 0;
-          const existingAvg = existing ? Number(existing.hargaBeliRataRata) : 0;
-          const newAvg = calculateMovingAverageCost(existingQty, existingAvg, jumlah!, hargaSatuan!);
-
-          if (existing) {
-            const [updated] = await tx
-              .update(table)
-              .set({ jumlah: String(existingQty + jumlah!), hargaBeliRataRata: String(newAvg), updatedAt: new Date() })
-              .where(eq(table.id, existing.id))
-              .returning({ id: table.id });
-            relatedEntityId = updated.id;
-          } else {
-            const [inserted] = await tx
-              .insert(table)
-              .values({ userId, namaAset: namaAset!, jumlah: String(jumlah!), hargaBeliRataRata: String(newAvg) })
-              .returning({ id: table.id });
-            relatedEntityId = inserted.id;
-          }
+          // Atomic upsert (bug hunt Critical #1 & #3) — lihat komentar di
+          // upsertAssetBuy() di atas. Menggantikan SELECT-then-branch lama
+          // yang race di bawah beli konkuren pada aset yang sama/baru.
+          const tableName = data.type === "beli_barang" ? "fixed_assets" : "liquid_assets";
+          relatedEntityId = await upsertAssetBuy(tx, tableName, userId, namaAset!, jumlah!, hargaSatuan!);
         } else {
-          // jual_barang / jual_investasi — guard: tidak bisa jual melebihi kepemilikan
+          // jual_barang / jual_investasi — guard: tidak bisa jual melebihi kepemilikan.
+          // `.for("update")` mengunci baris aset ini sampai transaksi commit
+          // (bug hunt Critical #1) — request jual/beli konkuren lain pada aset
+          // yang sama harus menunggu, jadi `ownedQty`/`ownedAvg` di bawah
+          // dijamin bukan data basi (tidak ada insert-path di sini sehingga
+          // row lock saja cukup, tidak perlu ON CONFLICT seperti buy path).
+          const [existing] = await tx
+            .select()
+            .from(table)
+            .where(and(eq(table.userId, userId), sql`lower(nama_aset) = lower(${namaAset})`))
+            .for("update");
+
           const ownedQty = existing ? Number(existing.jumlah) : 0;
           const ownedAvg = existing ? Number(existing.hargaBeliRataRata) : 0;
           const sellCheck = canSell(ownedQty, jumlah!);
@@ -481,59 +612,15 @@ transactionRoutes.post("/", zValidator("json", createSchema), async (c) => {
       await applyTransactionEffects(tx, userId, { type: data.type, accountId: data.accountId, toAccountId }, computedNominal, relatedEntityId);
 
       // ── Sprint 8: pinjaman_utang — cari-atau-buat debt berdasarkan nama pemberi ──
+      // Atomic upsert (bug hunt Critical #3) — lihat komentar di upsertDebtOnLoan().
       if (data.type === "pinjaman_utang") {
-        const [existingDebt] = await tx
-          .select({ id: debts.id })
-          .from(debts)
-          .where(and(eq(debts.userId, userId), sql`lower(pemberi_utang) = lower(${pemberiUtang})`));
-
-        if (existingDebt) {
-          await tx
-            .update(debts)
-            .set({
-              saldoAwal: sql`saldo_awal::numeric + ${String(computedNominal)}`,
-              sisaSaldo: sql`sisa_saldo::numeric + ${String(computedNominal)}`,
-            })
-            .where(eq(debts.id, existingDebt.id));
-          relatedEntityId = existingDebt.id;
-        } else {
-          const [inserted] = await tx
-            .insert(debts)
-            .values({
-              userId,
-              pemberiUtang: pemberiUtang!,
-              tipe: debtTipe ?? "utang_biasa",
-              saldoAwal: String(computedNominal),
-              sisaSaldo: String(computedNominal),
-            })
-            .returning({ id: debts.id });
-          relatedEntityId = inserted.id;
-        }
+        relatedEntityId = await upsertDebtOnLoan(tx, userId, pemberiUtang!, debtTipe ?? "utang_biasa", computedNominal);
       }
 
       // ── Sprint 9: pemberian_piutang — cari-atau-buat receivable berdasarkan nama peminjam ──
+      // Atomic upsert (bug hunt Critical #3) — lihat komentar di upsertReceivableOnLend().
       if (data.type === "pemberian_piutang") {
-        const [existingRec] = await tx
-          .select({ id: receivables.id })
-          .from(receivables)
-          .where(and(eq(receivables.userId, userId), sql`lower(peminjam) = lower(${peminjam})`));
-
-        if (existingRec) {
-          await tx
-            .update(receivables)
-            .set({
-              saldoAwal: sql`saldo_awal::numeric + ${String(computedNominal)}`,
-              sisaSaldo: sql`sisa_saldo::numeric + ${String(computedNominal)}`,
-            })
-            .where(eq(receivables.id, existingRec.id));
-          relatedEntityId = existingRec.id;
-        } else {
-          const [inserted] = await tx
-            .insert(receivables)
-            .values({ userId, peminjam: peminjam!, saldoAwal: String(computedNominal), sisaSaldo: String(computedNominal) })
-            .returning({ id: receivables.id });
-          relatedEntityId = inserted.id;
-        }
+        relatedEntityId = await upsertReceivableOnLend(tx, userId, peminjam!, computedNominal);
       }
 
       // (bayar_utang / penerimaan_piutang guards + sisaSaldo decrement already
@@ -604,15 +691,21 @@ transactionRoutes.delete("/:id", async (c) => {
     }, 409);
   }
 
-  await db.transaction(async (tx) => {
-    await reverseTransactionEffects(tx, userId, {
-      type: trx.type,
-      accountId: trx.accountId,
-      relatedEntityId: trx.relatedEntityId,
-      nominal: trx.nominal,
+  try {
+    await db.transaction(async (tx) => {
+      await reverseTransactionEffects(tx, userId, {
+        type: trx.type,
+        accountId: trx.accountId,
+        relatedEntityId: trx.relatedEntityId,
+        nominal: trx.nominal,
+      });
+      await tx.delete(transactions).where(eq(transactions.id, id));
     });
-    await tx.delete(transactions).where(eq(transactions.id, id));
-  });
+  } catch (err: unknown) {
+    const e = err as { status?: number; message?: string };
+    if (e.status === 409) return c.json({ error: e.message }, 409);
+    throw err; // re-throw unexpected errors as 500
+  }
 
   return c.body(null, 204);
 });
@@ -627,7 +720,7 @@ const patchSchema = z.object({
   tanggal: z.string().date().optional(),
   kategori: z.string().optional(),
   rincian: z.string().optional(),
-  nominal: z.number().positive().optional(),
+  nominal: z.number().positive().finite().optional(),
   accountId: z.string().uuid().optional(),
   toAccountId: z.string().uuid().optional(),
 });
@@ -749,6 +842,9 @@ transactionRoutes.patch("/:id", zValidator("json", patchSchema), async (c) => {
     }
     if (e.status === 404) {
       return c.json({ error: e.message ?? "Not found" }, 404);
+    }
+    if (e.status === 409) {
+      return c.json({ error: e.message }, 409);
     }
     throw err; // re-throw unexpected errors as 500
   }
