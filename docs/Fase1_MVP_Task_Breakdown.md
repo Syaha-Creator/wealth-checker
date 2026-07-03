@@ -100,3 +100,40 @@ Status checklist di atas diperbarui berdasarkan pemeriksaan langsung terhadap ko
 6. **Sprint 7** — Belum ada environment staging deployment yang persisten, hanya production + E2E environment sementara di CI.
 
 Semua unit test API (`bun run --filter='@wealth/api' test`, 56 test di 4 file) dan lint web (`bun run --filter='@wealth/web' lint`) lolos tanpa error pada saat verifikasi ini dilakukan.
+
+---
+
+## Catatan Verifikasi — Update 2 (re-audit pasca "deep bug hunt" & UI/UX audit)
+
+Re-verifikasi ulang dilakukan langsung terhadap kode saat ini (bukan hanya nama commit), termasuk menjalankan ulang test/lint dan membaca langsung `apps/api/src/routes/transactions.ts`, `accounts.ts`, `profile.ts`, `index.ts`, workflow CI, dan komponen web terkait. **Kesimpulan: breakdown 39 selesai / 8 gap di atas masih akurat** — tidak ada checklist Fase 1 yang perlu diubah tandanya. Kedelapan gap yang tercatat di atas dicek satu per satu ke kode aktual dan **semuanya masih ada** (belum tidak sengaja teratasi oleh pekerjaan lain):
+
+- `PATCH /api/accounts/:id` masih hanya menerima `{ nama?, isActive? }` — belum ada field saldo (gap #3 masih valid).
+- `transactions.ts` masih hanya punya `GET /`, `GET /categories`, `POST /`, `DELETE /:id` — tidak ada `PATCH`/`PUT` untuk edit transaksi (gap #4 masih valid, berlaku untuk pendapatan/pengeluaran/transfer sekaligus).
+- Query list transaksi (`listQuerySchema`) hanya punya `limit`/`offset`, tidak ada parameter filter `accountId`; halaman `/transactions` di web juga tidak mengirim filter rekening ke API (gap #5 masih valid).
+- `.github/workflows/deploy.yml` (job `quality-gate`) masih menjalankan `lint` → `test` → `build` (yang hanya build `@wealth/web`, sesuai `package.json` root: `"build": "bun run --filter='@wealth/web' build"`). Script `typecheck` sudah didefinisikan di root `package.json` tapi **tidak dipanggil di CI manapun** (gap #1/#2 masih valid). Deploy hanya punya 1 job (`deploy-production`), tidak ada job staging terpisah (gap #6 masih valid).
+
+**Klarifikasi angka test (24 vs 56)** — dikonfirmasi **bukan typo**: saat ini `bun run --filter='@wealth/api' test` benar-benar menghasilkan **56 test lolos di 4 file** (`wealth.test.ts`: 17, `accounts.test.ts`: 7, `movingAverageCost.test.ts`: 18, `debtReceivable.test.ts`: 14). Dua file terakhir (Moving Average Cost & Debt/Receivable service test) baru ditambahkan oleh commit `b40a524 feat(api,web): Fase 2 - Moving Average Cost engine, Utang & Piutang tracking` — modul Fase 2 yang sengaja didorong keluar dari scope 47 item Fase 1 ini (lihat "Catatan Prioritas" di atas), tapi test-nya numpang di suite yang sama. Angka **24 test di 2 file** yang sempat terlihat sebelumnya adalah kondisi kode **sebelum** commit Fase 2 tersebut (`wealth.test.ts` 17 + `accounts.test.ts` 7 = 24) — bukan file yang hilang/terhapus, hanya snapshot dari commit yang lebih lama. Per commit `b40a524` dan seterusnya (termasuk `HEAD` saat ini), jumlah yang benar sudah 56/4, jadi klaim di dokumen ini akurat.
+
+**Verifikasi 9 fix dari "deep bug hunt"** (commit `7adb43c fix: deep bug hunt — 9 critical/high/medium issues resolved`, dan perbaikan terkait sesudahnya) — seluruhnya dikonfirmasi ada di kode saat ini:
+
+1. ✅ Validasi ownership `accountId`/`toAccountId` — `transactions.ts` mengecek `eq(accounts.userId, userId)` untuk rekening sumber maupun tujuan sebelum mutasi apa pun.
+2. ✅ Atomic balance check dalam `db.transaction` — conditional `UPDATE ... WHERE saldo_cache::numeric >= nominal` di dalam `db.transaction(async (tx) => ...)`, bukan read-then-write terpisah.
+3. ✅ `bayar_utang`/`penerimaan_piutang` meng-update `sisaSaldo` di `debts`/`receivables`, dengan guard `canPayDebt`/`canReceiveReceivable` (service `debtReceivable.ts`) agar tidak melebihi sisa saldo.
+4. ✅ `jual_barang`/`jual_investasi` masuk `CREDIT_TYPES` sehingga hasil penjualan di-credit ke `accounts.saldo_cache`.
+5. ✅ Fix partial-loop failure onboarding — `savePendingForStep()` di `apps/web/src/app/onboarding/page.tsx` menghapus item dari list segera setelah tersimpan (`setXxxList((prev) => prev.slice(1))`), jadi retry setelah gagal di tengah tidak mengirim ulang item yang sudah tersimpan.
+6. ✅ `profile.ts` upsert pakai `onConflictDoUpdate` (bukan select-then-insert/update terpisah yang rawan race condition).
+7. ✅ `hidupTanpaGaji` dihitung dari `avgPengeluaran` (bukan `avgSisa`) di `wealth.ts`, dengan level 0 ("Pailit") dipisah eksplisit dari level lain (`-1` untuk "belum ada data" vs level 0 untuk kekayaan bersih negatif).
+8. ✅ Validasi UUID di semua route param `:id` — `z.string().uuid()` di `accounts.ts`, `assets.ts`, `debts.ts`; regex `UUID_RE` eksplisit di `transactions.ts` untuk `DELETE /:id`.
+9. ✅ Banner warning saat transaksi terpotong di 200 — halaman `/transactions` fetch dengan `?limit=200` dan menampilkan badge "⚠ maks 200" ketika `transactions.length >= 200`.
+
+**Item pekerjaan lain yang disebutkan sebagai sudah dilakukan** juga dikonfirmasi ada di kode:
+
+- E2E test `apps/web/e2e/main-flow.spec.ts` ada dan dijalankan di job `e2e-test` CI.
+- Docker build args `NEXT_PUBLIC_API_URL`/`INTERNAL_API_URL` ada di `apps/web/Dockerfile` (`ARG`/`ENV`).
+- `RequiredMark` dipakai di beberapa halaman form (`accounts`, `debts`, `transactions/new`, `onboarding`).
+- Toggle show/hide password (`PasswordInput` di `components/ui/Input.tsx`) dipakai di `auth/login` dan `auth/register`.
+- Autocomplete institusi keuangan (`apps/web/src/lib/institutions.ts`) dipakai di halaman `accounts`, `debts`, dan `onboarding`.
+- Migrasi `0003_indexes_seed_profile.sql` (index + seed `wealth_level_reference`/`budget_allocation_reference` + kolom rencana bulanan di `user_profile`) dan `0004_more_indexes.sql` (index `user_id` di `accounts`/`debts`/`receivables`/`liquid_assets`/`fixed_assets`) ada di `packages/db/migrations/`.
+- `app.onError` global error handler ada di `apps/api/src/index.ts`, mengembalikan JSON generik (bukan bocoran stack trace) untuk error tak terduga.
+
+Lint (`bun run --filter='@wealth/web' lint`) dan seluruh 56 test API lolos tanpa error pada saat re-verifikasi ini (exit code 0 untuk keduanya).
