@@ -106,6 +106,16 @@ jobs:
             sleep 3
           done
 
+      - name: Run concurrency/race-condition tests
+        # Bug hunt Critical #1-3 (Sprint 8/9/10 atomic upsert/guard fixes) —
+        # fires real concurrent HTTP requests against api-e2e (backed by real
+        # Postgres) via Promise.all. See transactions.concurrency.test.ts for
+        # why these can't run as pure-function tests in the quality-gate job.
+        working-directory: apps/api
+        env:
+          E2E_API_URL: http://localhost:4001
+        run: bunx vitest run src/routes/transactions.concurrency.test.ts
+
       - name: Install Playwright browsers
         working-directory: apps/web
         run: bunx playwright install chromium --with-deps
