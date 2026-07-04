@@ -72,7 +72,7 @@ export default function BudgetingPage() {
   const fetchAdvice = useCallback(async () => {
     setError("");
     try {
-      const res = await fetch(`${API}/api/budgeting-advice`, { credentials: "include" });
+      const res = await fetch(`${API}/api/budgeting-advice?bulanTahun=${currentYm()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Gagal memuat rekomendasi budgeting");
       const json: BudgetingAdvice = await res.json();
       setAdvice(json);
@@ -87,7 +87,11 @@ export default function BudgetingPage() {
   // fetchAdvice() (which sets state) directly in the effect body.
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API}/api/budgeting-advice`, { credentials: "include" })
+    // bulanTahun dihitung di client (bukan andalkan default server-side) agar
+    // konsisten dengan zona waktu lokal user — server bisa berjalan di timezone
+    // berbeda (mis. UTC), yang di sekitar tengah malam WIB bisa membuat GET ini
+    // dan POST /budget-plans (lihat handleSavePlan) merujuk bulan yang berbeda.
+    fetch(`${API}/api/budgeting-advice?bulanTahun=${currentYm()}`, { credentials: "include" })
       .then((res) => {
         if (!res.ok) throw new Error("Gagal memuat rekomendasi budgeting");
         return res.json();

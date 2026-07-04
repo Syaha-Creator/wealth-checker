@@ -36,8 +36,11 @@ const profileSchema = z.object({
   rencanaUsiaPensiun: z.number().int().min(30).max(99).nullable().optional(),
   rencanaUsiaWarisan: z.number().int().min(30).max(120).nullable().optional(),
   anggotaKeluargaDitanggung: z.number().int().min(1).max(20).optional(),
-  pemasukanBulananRataRata: z.number().nonnegative().nullable().optional(),
-  pengeluaranBulananRataRata: z.number().nonnegative().nullable().optional(),
+  // Medium #8 (bug hunt) terlewat di sini sebelumnya: tanpa .finite(), Infinity
+  // lolos validasi lalu gagal aneh (500 generik) saat di-cast ke kolom numeric
+  // Postgres — pola yang sama seperti di accounts/assets/debts/transactions.
+  pemasukanBulananRataRata: z.number().nonnegative().finite().nullable().optional(),
+  pengeluaranBulananRataRata: z.number().nonnegative().finite().nullable().optional(),
 });
 
 profileRoutes.put("/", zValidator("json", profileSchema), async (c) => {
