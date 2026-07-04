@@ -6,6 +6,9 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
+  // The main-flow spec chains 13 sequential test.step()s in one browser context;
+  // the 30s default can be exceeded by cumulative step time under CI/Docker latency.
+  timeout: 120_000,
   reporter: process.env.CI ? "list" : "html",
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3010",

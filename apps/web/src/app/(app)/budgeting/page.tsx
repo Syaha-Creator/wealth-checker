@@ -42,7 +42,7 @@ function WalletIcon() {
 
 function ErrorBanner({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <Card className="text-center max-w-lg mx-auto">
+    <Card className="text-center max-w-lg mx-auto" role="alert">
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="mx-auto mb-3 text-danger" aria-hidden="true">
         <circle cx="12" cy="12" r="10" />
         <line x1="12" y1="8" x2="12" y2="12" />
@@ -163,7 +163,7 @@ export default function BudgetingPage() {
           {showForm && (
             <Card as="form" onSubmit={handleSavePlan} padding="lg">
               <h3 className="font-semibold text-text-primary mb-3">Atur Rencana Pemasukan Bulan Ini</h3>
-              {formError && <p className="text-sm text-danger-text mb-3">{formError}</p>}
+              {formError && <p role="alert" className="text-sm text-danger-text mb-3">{formError}</p>}
               <InputRupiah id="pemasukan" label="Rencana Pemasukan" value={pemasukan} onChange={setPemasukan} required />
               <div className="flex gap-2 mt-4 max-w-xs">
                 <Button type="button" variant="secondary" fullWidth onClick={() => setShowForm(false)}>Batal</Button>
@@ -172,7 +172,7 @@ export default function BudgetingPage() {
             </Card>
           )}
 
-          {advice.alokasi.length === 0 ? (
+          {!advice.hasPlan ? (
             <EmptyState
               icon={<WalletIcon />}
               title="Atur rencana pemasukan bulananmu"

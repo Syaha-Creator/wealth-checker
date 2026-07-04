@@ -204,7 +204,7 @@ function DebtTab({
       {showAddForm && (
         <Card as="form" onSubmit={handleAdd} padding="lg" className="mb-6">
           <h3 className="font-semibold text-text-primary mb-4">Utang Baru</h3>
-          {formError && <p className="text-sm text-danger-text mb-3">{formError}</p>}
+          {formError && <p role="alert" className="text-sm text-danger-text mb-3">{formError}</p>}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Select
               label="Tipe"
@@ -425,7 +425,7 @@ function ReceivableTab({
       {showAddForm && (
         <Card as="form" onSubmit={handleAdd} padding="lg" className="mb-6">
           <h3 className="font-semibold text-text-primary mb-4">Piutang Baru</h3>
-          {formError && <p className="text-sm text-danger-text mb-3">{formError}</p>}
+          {formError && <p role="alert" className="text-sm text-danger-text mb-3">{formError}</p>}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input
               id="rec-peminjam"
