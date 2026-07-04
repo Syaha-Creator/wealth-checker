@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { db, transactions, budgetPlans, budgetAllocationReference, userProfile } from "@wealth/db";
-import { eq, and, gte, lte, sql } from "drizzle-orm";
+import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { calculateWealthSummary } from "../services/wealth";
 import { calculateBudgetAllocation } from "../services/budgeting";
@@ -90,7 +90,7 @@ analyticsRoutes.get("/budget-vs-actual", zValidator("query", budgetVsActualQuery
       SELECT
         COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pendapatan'), 0) AS pendapatan,
         COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pengeluaran'), 0) AS pengeluaran,
-        COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pengeluaran' AND kategori = ANY(${essentialCategories})), 0) AS "kebutuhanPokok",
+        COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pengeluaran' AND ${inArray(transactions.kategori, essentialCategories)}), 0) AS "kebutuhanPokok",
         COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'bayar_utang'), 0) AS "bayarUtang",
         COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'beli_investasi'), 0) AS investasi
       FROM transactions
@@ -172,7 +172,7 @@ analyticsRoutes.get("/essential-expenses", zValidator("query", essentialExpenses
       eq(transactions.type, "pengeluaran"),
       gte(transactions.tanggal, from),
       lte(transactions.tanggal, to),
-      sql`${transactions.kategori} = ANY(${categories})`,
+      inArray(transactions.kategori, categories),
     ));
 
   const { items, grandTotal } = groupEssentialExpenses(rows.map((r) => ({
