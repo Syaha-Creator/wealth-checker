@@ -152,6 +152,7 @@ Menggantikan sheet "Saran Budgeting". Bergantung pada Sprint 13.
 - [x] Review UX mobile: nav bawah ditambah 1 entry gabungan "Aset" (bukan 2 entry terpisah) mengikuti catatan Medium #10 bug-hunt soal nav yang sudah padat
 - [x] Update dokumentasi API — `docs/API.md` mencakup seluruh endpoint baru Fase 2 (`/assets/*/summary`, `?all=true`, `/wealth/health-checkup`, `/budget-plans`, `/budgeting-advice`, `/accounts/:id/mutasi`)
 - [x] Bug-proofing tambahan (di luar rencana awal, ditemukan lewat deep bug hunt): Critical #1-3 (race condition), High #4-5 (delete guard, reversal clamp), Medium #6-12 (validasi, quick wins) — lihat commit checkpoint & `transactions.concurrency.test.ts`
+- [x] **Medium #13** (ditemukan saat audit "apa yang kurang" pasca Sprint 15): unique index dari migration 0005 (`idx_debts_user_pemberi_unique`, `idx_receivables_user_peminjam_unique`, `idx_liquid_assets_user_nama_unique`, `idx_fixed_assets_user_nama_unique`) membuat POST/PATCH langsung di `debts.ts`/`assets.ts` bisa melempar `23505 unique_violation` mentah yang jatuh ke global error handler sebagai 500 generik, bukan 409 yang jelas. Ditambahkan helper `isUniqueViolation()` (`apps/api/src/lib/dbErrors.ts`) + try/catch di 8 handler (POST & PATCH × debts/receivables/liquid/fixed) agar user dapat pesan 409 yang jelas ("nama sudah dipakai") — lihat `dbErrors.test.ts`
 - [ ] Deploy Fase 2 ke production — menunggu konfirmasi commit/push dari user (deploy otomatis terjadi lewat CI saat push ke `main`, lihat `.github/workflows/deploy.yml`)
 
 ---

@@ -5,6 +5,7 @@ import { db, liquidAssets, fixedAssets, transactions } from "@wealth/db";
 import { eq, and, count, sql } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { calculateAssetSummary } from "../services/assetSummary";
+import { isUniqueViolation } from "../lib/dbErrors";
 import type { AppEnv } from "../types";
 
 export const assetRoutes = new Hono<AppEnv>();
@@ -55,29 +56,43 @@ assetRoutes.get("/liquid/summary", async (c) => {
 assetRoutes.post("/liquid", zValidator("json", assetSchema), async (c) => {
   const userId = c.get("userId") as string;
   const { namaAset, jumlah, hargaBeliRataRata } = c.req.valid("json");
-  const [row] = await db
-    .insert(liquidAssets)
-    .values({ userId, namaAset, jumlah: String(jumlah), hargaBeliRataRata: String(hargaBeliRataRata) })
-    .returning();
-  return c.json(row, 201);
+  try {
+    const [row] = await db
+      .insert(liquidAssets)
+      .values({ userId, namaAset, jumlah: String(jumlah), hargaBeliRataRata: String(hargaBeliRataRata) })
+      .returning();
+    return c.json(row, 201);
+  } catch (err) {
+    if (isUniqueViolation(err, "idx_liquid_assets_user_nama_unique")) {
+      return c.json({ error: `Aset investasi "${namaAset}" sudah ada — edit baris yang sudah ada, atau catat lewat transaksi "Beli Investasi" agar otomatis digabung` }, 409);
+    }
+    throw err;
+  }
 });
 
 assetRoutes.patch("/liquid/:id", zValidator("param", idParam), zValidator("json", assetSchema.partial()), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
-  const [row] = await db
-    .update(liquidAssets)
-    .set({
-      ...(data.namaAset && { namaAset: data.namaAset }),
-      ...(data.jumlah !== undefined && { jumlah: String(data.jumlah) }),
-      ...(data.hargaBeliRataRata !== undefined && { hargaBeliRataRata: String(data.hargaBeliRataRata) }),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(liquidAssets.id, id), eq(liquidAssets.userId, userId)))
-    .returning();
-  if (!row) return c.json({ error: "Not found" }, 404);
-  return c.json(row);
+  try {
+    const [row] = await db
+      .update(liquidAssets)
+      .set({
+        ...(data.namaAset && { namaAset: data.namaAset }),
+        ...(data.jumlah !== undefined && { jumlah: String(data.jumlah) }),
+        ...(data.hargaBeliRataRata !== undefined && { hargaBeliRataRata: String(data.hargaBeliRataRata) }),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(liquidAssets.id, id), eq(liquidAssets.userId, userId)))
+      .returning();
+    if (!row) return c.json({ error: "Not found" }, 404);
+    return c.json(row);
+  } catch (err) {
+    if (isUniqueViolation(err, "idx_liquid_assets_user_nama_unique")) {
+      return c.json({ error: `Nama aset "${data.namaAset}" sudah dipakai aset investasi lain` }, 409);
+    }
+    throw err;
+  }
 });
 
 assetRoutes.delete("/liquid/:id", zValidator("param", idParam), async (c) => {
@@ -127,29 +142,43 @@ assetRoutes.get("/fixed/summary", async (c) => {
 assetRoutes.post("/fixed", zValidator("json", assetSchema), async (c) => {
   const userId = c.get("userId") as string;
   const { namaAset, jumlah, hargaBeliRataRata } = c.req.valid("json");
-  const [row] = await db
-    .insert(fixedAssets)
-    .values({ userId, namaAset, jumlah: String(jumlah), hargaBeliRataRata: String(hargaBeliRataRata) })
-    .returning();
-  return c.json(row, 201);
+  try {
+    const [row] = await db
+      .insert(fixedAssets)
+      .values({ userId, namaAset, jumlah: String(jumlah), hargaBeliRataRata: String(hargaBeliRataRata) })
+      .returning();
+    return c.json(row, 201);
+  } catch (err) {
+    if (isUniqueViolation(err, "idx_fixed_assets_user_nama_unique")) {
+      return c.json({ error: `Aset barang "${namaAset}" sudah ada — edit baris yang sudah ada, atau catat lewat transaksi "Beli Barang" agar otomatis digabung` }, 409);
+    }
+    throw err;
+  }
 });
 
 assetRoutes.patch("/fixed/:id", zValidator("param", idParam), zValidator("json", assetSchema.partial()), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
-  const [row] = await db
-    .update(fixedAssets)
-    .set({
-      ...(data.namaAset && { namaAset: data.namaAset }),
-      ...(data.jumlah !== undefined && { jumlah: String(data.jumlah) }),
-      ...(data.hargaBeliRataRata !== undefined && { hargaBeliRataRata: String(data.hargaBeliRataRata) }),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(fixedAssets.id, id), eq(fixedAssets.userId, userId)))
-    .returning();
-  if (!row) return c.json({ error: "Not found" }, 404);
-  return c.json(row);
+  try {
+    const [row] = await db
+      .update(fixedAssets)
+      .set({
+        ...(data.namaAset && { namaAset: data.namaAset }),
+        ...(data.jumlah !== undefined && { jumlah: String(data.jumlah) }),
+        ...(data.hargaBeliRataRata !== undefined && { hargaBeliRataRata: String(data.hargaBeliRataRata) }),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(fixedAssets.id, id), eq(fixedAssets.userId, userId)))
+      .returning();
+    if (!row) return c.json({ error: "Not found" }, 404);
+    return c.json(row);
+  } catch (err) {
+    if (isUniqueViolation(err, "idx_fixed_assets_user_nama_unique")) {
+      return c.json({ error: `Nama aset "${data.namaAset}" sudah dipakai aset barang lain` }, 409);
+    }
+    throw err;
+  }
 });
 
 assetRoutes.delete("/fixed/:id", zValidator("param", idParam), async (c) => {

@@ -5,6 +5,7 @@ import { db, debts, receivables, transactions } from "@wealth/db";
 import { eq, and, count } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { calculateDebtSummary, calculateReceivableSummary } from "../services/debtReceivable";
+import { isUniqueViolation } from "../lib/dbErrors";
 import type { AppEnv } from "../types";
 
 export const debtRoutes = new Hono<AppEnv>();
@@ -49,17 +50,24 @@ debtRoutes.get("/", async (c) => {
 debtRoutes.post("/", zValidator("json", debtSchema), async (c) => {
   const userId = c.get("userId") as string;
   const { pemberiUtang, tipe, saldoAwal, sisaSaldo } = c.req.valid("json");
-  const [row] = await db
-    .insert(debts)
-    .values({
-      userId,
-      pemberiUtang,
-      tipe,
-      saldoAwal: String(saldoAwal),
-      sisaSaldo: String(sisaSaldo ?? saldoAwal),
-    })
-    .returning();
-  return c.json(row, 201);
+  try {
+    const [row] = await db
+      .insert(debts)
+      .values({
+        userId,
+        pemberiUtang,
+        tipe,
+        saldoAwal: String(saldoAwal),
+        sisaSaldo: String(sisaSaldo ?? saldoAwal),
+      })
+      .returning();
+    return c.json(row, 201);
+  } catch (err) {
+    if (isUniqueViolation(err, "idx_debts_user_pemberi_unique")) {
+      return c.json({ error: `Utang dengan nama pemberi "${pemberiUtang}" sudah ada — edit baris yang sudah ada, atau catat lewat transaksi "Pinjam Utang" agar otomatis digabung` }, 409);
+    }
+    throw err;
+  }
 });
 
 debtRoutes.patch("/:id", zValidator("param", idParam), zValidator("json", debtBaseSchema.partial()), async (c) => {
@@ -76,17 +84,24 @@ debtRoutes.patch("/:id", zValidator("param", idParam), zValidator("json", debtBa
     return c.json({ error: "sisaSaldo tidak boleh melebihi saldoAwal", code: "VALIDATION_ERROR" }, 422);
   }
 
-  const [row] = await db
-    .update(debts)
-    .set({
-      ...(data.pemberiUtang && { pemberiUtang: data.pemberiUtang }),
-      ...(data.tipe && { tipe: data.tipe }),
-      ...(data.saldoAwal !== undefined && { saldoAwal: String(data.saldoAwal) }),
-      ...(data.sisaSaldo !== undefined && { sisaSaldo: String(data.sisaSaldo) }),
-    })
-    .where(and(eq(debts.id, id), eq(debts.userId, userId)))
-    .returning();
-  return c.json(row);
+  try {
+    const [row] = await db
+      .update(debts)
+      .set({
+        ...(data.pemberiUtang && { pemberiUtang: data.pemberiUtang }),
+        ...(data.tipe && { tipe: data.tipe }),
+        ...(data.saldoAwal !== undefined && { saldoAwal: String(data.saldoAwal) }),
+        ...(data.sisaSaldo !== undefined && { sisaSaldo: String(data.sisaSaldo) }),
+      })
+      .where(and(eq(debts.id, id), eq(debts.userId, userId)))
+      .returning();
+    return c.json(row);
+  } catch (err) {
+    if (isUniqueViolation(err, "idx_debts_user_pemberi_unique")) {
+      return c.json({ error: `Nama pemberi utang "${data.pemberiUtang}" sudah dipakai utang lain` }, 409);
+    }
+    throw err;
+  }
 });
 
 debtRoutes.delete("/:id", zValidator("param", idParam), async (c) => {
@@ -137,16 +152,23 @@ debtRoutes.get("/receivables/summary", async (c) => {
 debtRoutes.post("/receivables", zValidator("json", receivableSchema), async (c) => {
   const userId = c.get("userId") as string;
   const { peminjam, saldoAwal, sisaSaldo } = c.req.valid("json");
-  const [row] = await db
-    .insert(receivables)
-    .values({
-      userId,
-      peminjam,
-      saldoAwal: String(saldoAwal),
-      sisaSaldo: String(sisaSaldo ?? saldoAwal),
-    })
-    .returning();
-  return c.json(row, 201);
+  try {
+    const [row] = await db
+      .insert(receivables)
+      .values({
+        userId,
+        peminjam,
+        saldoAwal: String(saldoAwal),
+        sisaSaldo: String(sisaSaldo ?? saldoAwal),
+      })
+      .returning();
+    return c.json(row, 201);
+  } catch (err) {
+    if (isUniqueViolation(err, "idx_receivables_user_peminjam_unique")) {
+      return c.json({ error: `Piutang dengan nama peminjam "${peminjam}" sudah ada — edit baris yang sudah ada, atau catat lewat transaksi "Beri Piutang" agar otomatis digabung` }, 409);
+    }
+    throw err;
+  }
 });
 
 debtRoutes.patch("/receivables/:id", zValidator("param", idParam), zValidator("json", receivableBaseSchema.partial()), async (c) => {
@@ -163,16 +185,23 @@ debtRoutes.patch("/receivables/:id", zValidator("param", idParam), zValidator("j
     return c.json({ error: "sisaSaldo tidak boleh melebihi saldoAwal", code: "VALIDATION_ERROR" }, 422);
   }
 
-  const [row] = await db
-    .update(receivables)
-    .set({
-      ...(data.peminjam && { peminjam: data.peminjam }),
-      ...(data.saldoAwal !== undefined && { saldoAwal: String(data.saldoAwal) }),
-      ...(data.sisaSaldo !== undefined && { sisaSaldo: String(data.sisaSaldo) }),
-    })
-    .where(and(eq(receivables.id, id), eq(receivables.userId, userId)))
-    .returning();
-  return c.json(row);
+  try {
+    const [row] = await db
+      .update(receivables)
+      .set({
+        ...(data.peminjam && { peminjam: data.peminjam }),
+        ...(data.saldoAwal !== undefined && { saldoAwal: String(data.saldoAwal) }),
+        ...(data.sisaSaldo !== undefined && { sisaSaldo: String(data.sisaSaldo) }),
+      })
+      .where(and(eq(receivables.id, id), eq(receivables.userId, userId)))
+      .returning();
+    return c.json(row);
+  } catch (err) {
+    if (isUniqueViolation(err, "idx_receivables_user_peminjam_unique")) {
+      return c.json({ error: `Nama peminjam "${data.peminjam}" sudah dipakai piutang lain` }, 409);
+    }
+    throw err;
+  }
 });
 
 debtRoutes.delete("/receivables/:id", zValidator("param", idParam), async (c) => {

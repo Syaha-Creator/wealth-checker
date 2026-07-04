@@ -20,10 +20,18 @@ import { describe, it, expect, beforeAll } from "vitest";
 
 const E2E_API_URL = process.env.E2E_API_URL;
 
+// Better Auth rejects state-changing requests with a missing/null Origin
+// header (its own CSRF-style check, independent of Hono's CORS middleware —
+// see `MISSING_OR_NULL_ORIGIN`), regardless of `trustedOrigins`. Node's
+// `fetch` never sends `Origin` automatically like a browser does, so it must
+// be set explicitly here, matching an origin api-e2e actually trusts (see
+// `ADDITIONAL_TRUSTED_ORIGINS` in docker-compose.e2e.yml).
+const TEST_ORIGIN = process.env.E2E_TEST_ORIGIN ?? "http://localhost:4000";
+
 async function api(cookie: string, path: string, method: string, body?: unknown) {
   const res = await fetch(`${E2E_API_URL}${path}`, {
     method,
-    headers: { "Content-Type": "application/json", Cookie: cookie },
+    headers: { "Content-Type": "application/json", Cookie: cookie, Origin: TEST_ORIGIN },
     body: body ? JSON.stringify(body) : undefined,
   });
   const json = res.status === 204 ? null : await res.json().catch(() => null);
@@ -34,7 +42,7 @@ async function registerAndLogin(): Promise<string> {
   const email = `wealth-e2e-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;
   const res = await fetch(`${E2E_API_URL}/api/auth/sign-up/email`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Origin: TEST_ORIGIN },
     body: JSON.stringify({ email, password: "test-password-12345", name: "Wealth E2E Test User" }),
   });
   if (!res.ok) throw new Error(`sign-up failed: ${res.status} ${await res.text()}`);
