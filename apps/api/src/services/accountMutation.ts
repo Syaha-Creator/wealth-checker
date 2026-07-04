@@ -1,3 +1,5 @@
+import { DEBIT_TYPES, CREDIT_TYPES } from "../lib/transactionTypes";
+
 // Mutasi Rekening (Fase 2 Sprint 15) — pure function, pola sama dengan
 // debtReceivable.ts/assetSummary.ts agar bisa di-unit-test tanpa database.
 //
@@ -9,15 +11,6 @@
 // ke saldoCache) — flag ini murni untuk mendeteksi bug logika di deltaFor()
 // sendiri (mis. transaksi non-uang yang salah ikut terhitung), bukan mendeteksi
 // anomali data eksternal.
-
-const DEBIT_TYPES = new Set([
-  "pengeluaran", "bayar_utang", "pemberian_piutang",
-  "beli_barang", "beli_investasi", "transfer",
-]);
-const CREDIT_TYPES = new Set([
-  "pendapatan", "pinjaman_utang", "penerimaan_piutang",
-  "jual_barang", "jual_investasi",
-]);
 
 export interface MutationTransaction {
   id: string;

@@ -43,15 +43,28 @@ export function calculateBudgetAllocation(
     { nama: ref.kategori4Nama, persen: ref.kategori4Persen },
   ];
 
+  // Medium #3 (bug hunt): membulatkan tiap kategori secara independen bisa
+  // membuat totalnya SEDIKIT melebihi rencanaPemasukanBulanan (mis. 9.999.999
+  // dengan persentase 35/35/20/10% masing-masing dibulatkan sendiri jadi
+  // 3.500.000+3.500.000+2.000.000+1.000.000=10.000.000, melebihi rencana),
+  // sementara sisaTidakTeralokasi cuma di-clamp ke 0 dan diam-diam
+  // menyembunyikan kelebihan itu. Fix: bulatkan nominal KUMULATIF (rencana ×
+  // persentase kumulatif sejauh ini) lalu ambil selisihnya dari kumulatif
+  // sebelumnya — setiap kategori menyerap tepat error pembulatan sejauh itu,
+  // bukan cuma kategori terakhir, dan totalnya tidak akan pernah melebihi
+  // rencana × totalPersen/100 (== rencana kalau totalPersen 100, seperti
+  // seluruh data seed level 0-6).
+  let kumulatifPersen = 0;
+  let kumulatifNominal = 0;
   const alokasi: BudgetAllocationItem[] = raw
     .filter((r) => r.nama && Number(r.persen) > 0)
     .map((r) => {
       const persen = Number(r.persen);
-      return {
-        kategori: r.nama as string,
-        persen,
-        nominal: Math.round(rencanaPemasukanBulanan * (persen / 100)),
-      };
+      kumulatifPersen += persen;
+      const targetKumulatif = Math.round(rencanaPemasukanBulanan * (kumulatifPersen / 100));
+      const nominal = targetKumulatif - kumulatifNominal;
+      kumulatifNominal = targetKumulatif;
+      return { kategori: r.nama as string, persen, nominal };
     });
 
   const totalPersen = alokasi.reduce((s, a) => s + a.persen, 0);

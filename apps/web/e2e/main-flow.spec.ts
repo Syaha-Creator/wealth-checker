@@ -41,6 +41,14 @@ async function clickAndWaitForUrl(page: Page, selector: string, urlPattern: RegE
   await page.waitForURL(urlPattern, { timeout, waitUntil: "commit" });
 }
 
+/** Like clickAndWaitForUrl, but for forms (Profil, Dream Tracker) that save via
+ * fetch and update in-place instead of navigating — nothing to waitForURL on. */
+async function clickAndSettle(page: Page, selector: string) {
+  await page.click(selector);
+  await page.waitForTimeout(700);
+  await assertNoErrorAlert(page);
+}
+
 // ─── Single end-to-end flow (one browser context = cookies shared) ────────────
 //
 // Using test.step() inside a single test keeps the browser context alive
@@ -233,5 +241,63 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
     await assertNoErrorAlert(page);
     await expect(page.locator("text=Saldo Saat Ini")).toBeVisible({ timeout: 10_000 });
     await expect(page.locator("text=Pengeluaran").first()).toBeVisible({ timeout: 10_000 });
+  });
+
+  // ── Fase 3 regression (Sprint 16-22): halaman baru harus render tanpa error
+  // untuk user yang sudah punya data dasar dari langkah-langkah di atas, dan
+  // alur lintas modul (goal terhubung rekening, rencana pensiun terintegrasi
+  // dengan profil) harus bekerja end-to-end lewat UI asli.
+  await test.step("Halaman Analisa (Sprint 20) tampil tanpa error di semua tab", async () => {
+    await page.goto("/analytics");
+    await expect(page.locator('[role="tab"]:has-text("Kekayaan Bersih")')).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(500);
+    await assertNoErrorAlert(page);
+
+    for (const tab of ["Laba Rugi Bulanan", "Budgeting", "Dana Darurat", "Kebutuhan Pokok", "Pemasukan"]) {
+      await page.click(`[role="tab"]:has-text("${tab}")`);
+      await page.waitForTimeout(500);
+      await assertNoErrorAlert(page);
+    }
+  });
+
+  await test.step("Dream Tracker (Sprint 21) — tambah impian terhubung rekening, progress otomatis dari saldo", async () => {
+    await page.goto("/dream-tracker");
+    await expect(page.locator("text=Dream Tracker")).toBeVisible({ timeout: 10_000 });
+
+    await page.click('button:has-text("Tambah")');
+    await page.fill("#goal-nama", "Liburan E2E");
+    await page.fill("#goal-target", "1000000");
+    await page.selectOption("#goal-account", { label: "BCA Tabungan" });
+    await clickAndSettle(page, 'button[type="submit"]:has-text("Simpan")');
+
+    await expect(page.locator("text=Liburan E2E")).toBeVisible({ timeout: 10_000 });
+    // Saldo rekening 950.000 dari target 1.000.000 → progress 95%, bukan 0/manual.
+    await expect(page.locator('[role="progressbar"][aria-label="Progress Liburan E2E"]')).toHaveAttribute("aria-valuenow", "95");
+  });
+
+  await test.step("Profil — lengkapi tanggal lahir & rencana keuangan (prasyarat Rencana Pensiun)", async () => {
+    await page.goto("/profile");
+    await expect(page.locator("text=Data Pribadi")).toBeVisible({ timeout: 10_000 });
+
+    await page.fill("#tanggal-lahir", "1996-01-01");
+    await page.fill("#usia-pensiun", "56");
+    await page.fill("#usia-warisan", "81");
+    await page.fill("#pemasukan-rencana", "10000000");
+    await page.fill("#pengeluaran-rencana", "6000000");
+    await clickAndSettle(page, 'button[type="submit"]:has-text("Simpan Perubahan")');
+
+    await expect(page.locator("text=Profil berhasil disimpan")).toBeVisible({ timeout: 10_000 });
+  });
+
+  await test.step("Rencana Pensiun & Warisan (Sprint 22) menampilkan target dana terintegrasi dengan profil", async () => {
+    await page.goto("/retirement-plan");
+    await expect(page.locator("text=Total Dana Pensiun & Warisan Dibutuhkan")).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(500);
+    await assertNoErrorAlert(page);
+
+    await expect(page.locator("text=Dana Dibutuhkan Sebelum Pensiun")).toBeVisible();
+    await expect(page.locator("text=Kapan Utang Bisa Lunas?")).toBeVisible();
+    // Sudah lunas (tidak ada utang) → pesan "bisa dilunasi sekarang", bukan estimasi bulan.
+    await expect(page.locator("text=Utang bisa dilunasi sekarang")).toBeVisible();
   });
 });

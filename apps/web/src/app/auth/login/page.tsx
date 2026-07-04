@@ -1,12 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { signIn, useSession } from "@/lib/auth-client";
 import { Input, PasswordInput } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ThemeToggle";
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? "";
+
+// Bug hunt (Issue 1): "sudah onboarding atau belum" dulu ditentukan dari
+// GET /api/accounts.length — tidak konsisten dengan definisi dashboard sendiri
+// (wealthLevel !== -1, yang juga menghitung aset likuid/tidak lancar/utang).
+// User yang cuma mencatat investasi/utang tanpa rekening bank akan terus-menerus
+// dilempar ke /onboarding tiap login. Pakai sumber kebenaran yang sama di sini.
+async function resolvePostLoginDestination(): Promise<"/onboarding" | "/dashboard"> {
+  try {
+    const res = await fetch(`${API}/api/wealth/summary`, { credentials: "include" });
+    if (!res.ok) return "/dashboard";
+    const summary = await res.json();
+    return summary?.wealthLevel === -1 ? "/onboarding" : "/dashboard";
+  } catch {
+    return "/dashboard";
+  }
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,12 +33,16 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Bug hunt (Issue 2): satu-satunya jalur navigasi pasca-login/sudah-login,
+  // supaya tidak ada race antara efek ini dan keputusan redirect di handleSubmit
+  // (yang sebelumnya bisa membuat user baru "kelihatan" sempat mampir ke
+  // /dashboard sebelum dilempar ke /onboarding).
+  const navigatingRef = useRef(false);
 
-  // Sudah login? langsung redirect ke dashboard
   useEffect(() => {
-    if (!isPending && session) {
-      router.replace("/dashboard");
-    }
+    if (isPending || !session || navigatingRef.current) return;
+    navigatingRef.current = true;
+    resolvePostLoginDestination().then((destination) => router.replace(destination));
   }, [session, isPending, router]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -28,11 +50,7 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
-    const { error: err } = await signIn.email({
-      email,
-      password,
-      callbackURL: "/dashboard",
-    });
+    const { error: err } = await signIn.email({ email, password });
 
     if (err) {
       setError(
@@ -44,21 +62,8 @@ export default function LoginPage() {
       return;
     }
 
-    // Smart redirect: new users (no accounts yet) go to onboarding, others to dashboard
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/accounts`, {
-        credentials: "include",
-      });
-      const accounts = await res.json();
-      if (!Array.isArray(accounts) || accounts.length === 0) {
-        router.push("/onboarding");
-      } else {
-        router.push("/dashboard");
-      }
-    } catch {
-      router.push("/dashboard");
-    }
-    router.refresh();
+    // Navigasi ditangani oleh useEffect di atas begitu `session` ter-update —
+    // tetap loading sampai redirect terjadi.
   }
 
   if (isPending || session) {

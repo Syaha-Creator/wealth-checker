@@ -122,7 +122,16 @@ export default function AccountsPage() {
     }
   };
 
-  const handleDeactivate = (id: string, accountName: string) => {
+  const handleDeactivate = (id: string, accountName: string, saldoCache: string) => {
+    // Bug hunt High #2: PATCH /:id sekarang menolak (409) menonaktifkan rekening
+    // yang masih bersaldo — dicek dulu di sini supaya user tidak perlu klik
+    // konfirmasi dulu hanya untuk melihat request-nya ditolak server.
+    if (Number(saldoCache) !== 0) {
+      setFetchError(
+        `Rekening "${accountName}" masih memiliki saldo ${formatCurrency(saldoCache)}. Pindahkan/tarik saldo ke Rp 0 dahulu (lewat transaksi atau Koreksi Saldo) sebelum menonaktifkan — supaya saldo itu tidak hilang diam-diam dari total kekayaan Anda.`,
+      );
+      return;
+    }
     setModal({
       open: true,
       title: "Nonaktifkan Rekening",
@@ -341,7 +350,7 @@ export default function AccountsPage() {
                     </button>
                     {acc.isActive && (
                       <button
-                        onClick={() => handleDeactivate(acc.id, acc.nama)}
+                        onClick={() => handleDeactivate(acc.id, acc.nama, acc.saldoCache)}
                         aria-label={`Nonaktifkan rekening ${acc.nama}`}
                         className="p-1.5 text-text-muted hover:text-warning transition-colors rounded-lg hover:bg-warning-soft"
                         title="Nonaktifkan"

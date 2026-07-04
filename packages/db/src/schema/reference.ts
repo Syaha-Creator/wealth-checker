@@ -40,6 +40,9 @@ export const dreamGoals = pgTable("dream_goals", {
   namaGoal: varchar("nama_goal", { length: 255 }).notNull(),
   accountId: uuid("account_id"),
   targetNominal: numeric("target_nominal", { precision: 20, scale: 2 }).notNull(),
+  // Sprint 21 (Fase 3): dipakai HANYA jika accountId NULL — progress goal yang
+  // tidak terkait rekening spesifik diupdate manual oleh user, bukan live.
+  saldoManual: numeric("saldo_manual", { precision: 20, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

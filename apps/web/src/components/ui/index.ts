@@ -7,3 +7,4 @@ export { EmptyState } from "./EmptyState";
 export { Skeleton, SkeletonCard, SkeletonRow, SkeletonHero } from "./Skeleton";
 export { PageHeader } from "./PageHeader";
 export { StatCard } from "./StatCard";
+export { DateRangeFilter } from "./DateRangeFilter";

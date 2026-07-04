@@ -221,7 +221,7 @@ function AssetTab({
               id="asset-jumlah"
               type="number"
               step="any"
-              min="0"
+              min="0.01"
               label="Jumlah/Unit"
               value={jumlah}
               onChange={(e) => setJumlah(e.target.value)}
@@ -279,7 +279,7 @@ function AssetTab({
                       id={`sell-jumlah-${item.id}`}
                       type="number"
                       step="any"
-                      min="0"
+                      min="0.01"
                       label="Jumlah Dijual"
                       value={sellJumlah}
                       onChange={(e) => setSellJumlah(e.target.value)}

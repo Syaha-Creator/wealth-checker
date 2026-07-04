@@ -43,3 +43,14 @@ export function formatMonthLabel(ym: string): string {
     year: "numeric",
   });
 }
+
+/** Bentuk singkat untuk label sumbu chart, mis. "4 Jan" (Fase 3 — grafik Analisa). */
+export function formatDateShort(dateStr: string): string {
+  return new Date(dateStr + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+}
+
+/** "Jan 2026" — label bulan singkat untuk chart (Fase 3 — Laba Rugi Bulanan). */
+export function formatMonthShort(ym: string): string {
+  const [year, month] = ym.split("-");
+  return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString("id-ID", { month: "short", year: "numeric" });
+}

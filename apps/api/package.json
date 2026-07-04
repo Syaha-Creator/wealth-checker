@@ -8,7 +8,8 @@
     "start": "bun run dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "backfill:wealth-snapshots": "bun run src/scripts/backfillWealthSnapshots.ts"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.5.0",

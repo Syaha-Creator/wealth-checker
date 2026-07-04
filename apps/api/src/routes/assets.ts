@@ -5,22 +5,33 @@ import { db, liquidAssets, fixedAssets, transactions } from "@wealth/db";
 import { eq, and, count, sql } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { calculateAssetSummary } from "../services/assetSummary";
+import { createWealthSnapshot } from "../services/wealth";
 import { isUniqueViolation } from "../lib/dbErrors";
+import { zodErrorHook, MAX_MONETARY_VALUE } from "../lib/validation";
 import type { AppEnv } from "../types";
 
 export const assetRoutes = new Hono<AppEnv>();
 
 assetRoutes.use("*", requireAuth);
 
+// Sprint 16 (Fase 3) — lihat catatan di transactions.ts: fire-and-forget,
+// dipanggil setelah mutasi CRUD aset (liquid/fixed) commit.
+function snapshotWealthInBackground(userId: string): void {
+  createWealthSnapshot(db, userId).catch((err) => {
+    console.error("[wealth-snapshot] gagal membuat snapshot", err);
+  });
+}
+
 // Reusable UUID param schema
 const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
 
 // Medium #8 (bug hunt): .finite() — tanpa ini, Infinity lolos validasi lalu
 // gagal aneh di level Postgres saat di-cast ke numeric.
+// Bug hunt (Issue 9): .max() — cegah nilai ekstrem yang berisiko presisi float.
 const assetSchema = z.object({
   namaAset: z.string().min(1),
-  jumlah: z.number().positive().finite(),
-  hargaBeliRataRata: z.number().min(0).finite(),
+  jumlah: z.number().positive().max(MAX_MONETARY_VALUE).finite(),
+  hargaBeliRataRata: z.number().min(0).max(MAX_MONETARY_VALUE).finite(),
 });
 
 // ─── Liquid Assets (Aset Setara Kas / Investasi) ─────────────────────────────
@@ -53,7 +64,7 @@ assetRoutes.get("/liquid/summary", async (c) => {
   return c.json(calculateAssetSummary(rows, untungRugiRows));
 });
 
-assetRoutes.post("/liquid", zValidator("json", assetSchema), async (c) => {
+assetRoutes.post("/liquid", zValidator("json", assetSchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const { namaAset, jumlah, hargaBeliRataRata } = c.req.valid("json");
   try {
@@ -61,6 +72,7 @@ assetRoutes.post("/liquid", zValidator("json", assetSchema), async (c) => {
       .insert(liquidAssets)
       .values({ userId, namaAset, jumlah: String(jumlah), hargaBeliRataRata: String(hargaBeliRataRata) })
       .returning();
+    snapshotWealthInBackground(userId);
     return c.json(row, 201);
   } catch (err) {
     if (isUniqueViolation(err, "idx_liquid_assets_user_nama_unique")) {
@@ -70,7 +82,7 @@ assetRoutes.post("/liquid", zValidator("json", assetSchema), async (c) => {
   }
 });
 
-assetRoutes.patch("/liquid/:id", zValidator("param", idParam), zValidator("json", assetSchema.partial()), async (c) => {
+assetRoutes.patch("/liquid/:id", zValidator("param", idParam, zodErrorHook), zValidator("json", assetSchema.partial(), zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
@@ -86,6 +98,7 @@ assetRoutes.patch("/liquid/:id", zValidator("param", idParam), zValidator("json"
       .where(and(eq(liquidAssets.id, id), eq(liquidAssets.userId, userId)))
       .returning();
     if (!row) return c.json({ error: "Not found" }, 404);
+    snapshotWealthInBackground(userId);
     return c.json(row);
   } catch (err) {
     if (isUniqueViolation(err, "idx_liquid_assets_user_nama_unique")) {
@@ -95,7 +108,7 @@ assetRoutes.patch("/liquid/:id", zValidator("param", idParam), zValidator("json"
   }
 });
 
-assetRoutes.delete("/liquid/:id", zValidator("param", idParam), async (c) => {
+assetRoutes.delete("/liquid/:id", zValidator("param", idParam, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
 
@@ -111,6 +124,7 @@ assetRoutes.delete("/liquid/:id", zValidator("param", idParam), async (c) => {
   }
 
   await db.delete(liquidAssets).where(and(eq(liquidAssets.id, id), eq(liquidAssets.userId, userId)));
+  snapshotWealthInBackground(userId);
   return c.body(null, 204);
 });
 
@@ -139,7 +153,7 @@ assetRoutes.get("/fixed/summary", async (c) => {
   return c.json(calculateAssetSummary(rows, untungRugiRows));
 });
 
-assetRoutes.post("/fixed", zValidator("json", assetSchema), async (c) => {
+assetRoutes.post("/fixed", zValidator("json", assetSchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const { namaAset, jumlah, hargaBeliRataRata } = c.req.valid("json");
   try {
@@ -147,6 +161,7 @@ assetRoutes.post("/fixed", zValidator("json", assetSchema), async (c) => {
       .insert(fixedAssets)
       .values({ userId, namaAset, jumlah: String(jumlah), hargaBeliRataRata: String(hargaBeliRataRata) })
       .returning();
+    snapshotWealthInBackground(userId);
     return c.json(row, 201);
   } catch (err) {
     if (isUniqueViolation(err, "idx_fixed_assets_user_nama_unique")) {
@@ -156,7 +171,7 @@ assetRoutes.post("/fixed", zValidator("json", assetSchema), async (c) => {
   }
 });
 
-assetRoutes.patch("/fixed/:id", zValidator("param", idParam), zValidator("json", assetSchema.partial()), async (c) => {
+assetRoutes.patch("/fixed/:id", zValidator("param", idParam, zodErrorHook), zValidator("json", assetSchema.partial(), zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
@@ -172,6 +187,7 @@ assetRoutes.patch("/fixed/:id", zValidator("param", idParam), zValidator("json",
       .where(and(eq(fixedAssets.id, id), eq(fixedAssets.userId, userId)))
       .returning();
     if (!row) return c.json({ error: "Not found" }, 404);
+    snapshotWealthInBackground(userId);
     return c.json(row);
   } catch (err) {
     if (isUniqueViolation(err, "idx_fixed_assets_user_nama_unique")) {
@@ -181,7 +197,7 @@ assetRoutes.patch("/fixed/:id", zValidator("param", idParam), zValidator("json",
   }
 });
 
-assetRoutes.delete("/fixed/:id", zValidator("param", idParam), async (c) => {
+assetRoutes.delete("/fixed/:id", zValidator("param", idParam, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
 
@@ -196,5 +212,6 @@ assetRoutes.delete("/fixed/:id", zValidator("param", idParam), async (c) => {
   }
 
   await db.delete(fixedAssets).where(and(eq(fixedAssets.id, id), eq(fixedAssets.userId, userId)));
+  snapshotWealthInBackground(userId);
   return c.body(null, 204);
 });

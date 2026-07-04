@@ -2,11 +2,19 @@ import { describe, it, expect, beforeAll } from "vitest";
 
 /**
  * Integration/concurrency tests for the three race conditions fixed in the
- * Fase 2 bug-hunt plan (Critical #1-3 in `docs`/the completion plan):
+ * Fase 2 bug-hunt plan (Critical #1-3 in `docs`/the completion plan), PLUS two
+ * more added in the Fase 2 follow-up bug-hunt pass (see docs/Fase2_Task_Breakdown.md):
  *
  *   1. Lost-update race in the Moving Average Cost engine (beli_investasi)
  *   2. TOCTOU bypass on the bayar_utang sisaSaldo guard
  *   3. Duplicate-row race on "find-or-create by name" (pinjaman_utang)
+ *   4. (follow-up Critical #1) Double-reversal on 2x concurrent DELETE of the
+ *      SAME transaction — the existence check used to run outside the
+ *      db.transaction, so both requests could see the row and both reverse it.
+ *   5. (follow-up Critical #2) TOCTOU bypass on the pinjaman_utang reversal
+ *      guard (DELETE vs. a concurrent bayar_utang cicilan on the same debt) —
+ *      same class of bug as #2 above, but in reverseTransactionEffects instead
+ *      of applyTransactionEffects.
  *
  * Unlike every other *.test.ts in this repo (pure-function tests with no
  * database), these fire real concurrent HTTP requests via `Promise.all`
@@ -158,5 +166,76 @@ describe.skipIf(!E2E_API_URL)("Concurrency (bug hunt Critical #1-3) — requires
     expect(matching.length).toBe(1);
     expect(Number(matching[0].saldoAwal)).toBe(120_000);
     expect(Number(matching[0].sisaSaldo)).toBe(120_000);
+  });
+
+  it("Critical #1 (follow-up): 2x DELETE konkuren pada transaksi yang SAMA — exactly one 204/one 404, balance dibalik tepat sekali (bukan dua kali)", async () => {
+    const post = await api(cookie, "/api/transactions", "POST", {
+      tanggal: "2026-01-01", type: "pendapatan", accountId, kategori: "Bonus", nominal: 50_000,
+    });
+    expect(post.status).toBe(201);
+    const trxId = (post.body as { id: string }).id;
+
+    const before = await api(cookie, "/api/accounts", "GET");
+    const balBefore = Number(
+      (before.body as { id: string; saldoCache: string }[]).find((a) => a.id === accountId)!.saldoCache,
+    );
+
+    const [r1, r2] = await Promise.all([
+      api(cookie, `/api/transactions/${trxId}`, "DELETE"),
+      api(cookie, `/api/transactions/${trxId}`, "DELETE"),
+    ]);
+
+    // Without the fix, both could return 204 (the second DELETE's `WHERE
+    // id=X` just quietly matches 0 rows) while still double-reversing the
+    // balance. The row lock (`.for("update")`) forces the second request to
+    // see the row is gone and 404 instead.
+    expect([r1.status, r2.status].sort()).toEqual([204, 404]);
+
+    const after = await api(cookie, "/api/accounts", "GET");
+    const balAfter = Number(
+      (after.body as { id: string; saldoCache: string }[]).find((a) => a.id === accountId)!.saldoCache,
+    );
+    // Reversed exactly once: balance drops by exactly the 50,000 pendapatan
+    // credit being undone. A double-reversal bug would drop it by 100,000.
+    expect(balBefore - balAfter).toBe(50_000);
+  });
+
+  it("Critical #2 (follow-up): DELETE pinjaman_utang vs. bayar_utang konkuren pada debt yang sama — hanya salah satu boleh berhasil, sisaSaldo tidak boleh negatif", async () => {
+    const pemberiUtang = `Bank Concurrency Reversal ${Date.now()}`;
+    const pinjam = await api(cookie, "/api/transactions", "POST", {
+      tanggal: "2026-01-01", type: "pinjaman_utang", accountId, pemberiUtang, nominal: 100_000,
+    });
+    expect(pinjam.status).toBe(201);
+    const pinjamId = (pinjam.body as { id: string }).id;
+    const debtId = (pinjam.body as { relatedEntityId: string }).relatedEntityId;
+
+    // Race: DELETE-ing the loan (reverses saldoAwal/sisaSaldo by -100,000) vs.
+    // a 60,000 cicilan (sisaSaldo -60,000) on the SAME debt row. Whichever
+    // commits first must make the other fail — sisaSaldo must never go
+    // negative (100,000 - 60,000 - 100,000 = -60,000 would be the bug).
+    const [delRes, payRes] = await Promise.all([
+      api(cookie, `/api/transactions/${pinjamId}`, "DELETE"),
+      api(cookie, "/api/transactions", "POST", {
+        tanggal: "2026-01-02", type: "bayar_utang", accountId, relatedDebtId: debtId, nominal: 60_000,
+      }),
+    ]);
+
+    const succeeded = [delRes.status === 204, payRes.status === 201].filter(Boolean).length;
+    expect(succeeded).toBe(1);
+
+    const { body: debts } = await api(cookie, "/api/debts", "GET");
+    const debt = (debts as { id: string; sisaSaldo: string }[]).find((d) => d.id === debtId)!;
+    expect(Number(debt.sisaSaldo)).toBeGreaterThanOrEqual(0);
+
+    if (delRes.status === 204) {
+      // Loan fully reversed first — cicilan then has nothing left to pay against.
+      expect(payRes.status).toBe(422);
+      expect(Number(debt.sisaSaldo)).toBe(0);
+    } else {
+      // Cicilan committed first — loan reversal correctly rejected with 409
+      // instead of the old stale-read guard driving sisaSaldo to -60,000.
+      expect(delRes.status).toBe(409);
+      expect(Number(debt.sisaSaldo)).toBe(40_000);
+    }
   });
 });

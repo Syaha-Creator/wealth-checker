@@ -2,11 +2,24 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { db, transactions, accounts, debts, receivables, liquidAssets, fixedAssets } from "@wealth/db";
-import { eq, and, desc, sql, isNotNull } from "drizzle-orm";
+import { eq, and, or, desc, sql, isNotNull } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { calculateMovingAverageCost, calculateProfitLoss, canSell, applySale } from "../services/movingAverageCost";
 import { canPayDebt, canReceiveReceivable } from "../services/debtReceivable";
+import { createWealthSnapshot } from "../services/wealth";
+import { DEBIT_TYPES, CREDIT_TYPES } from "../lib/transactionTypes";
+import { zodErrorHook } from "../lib/validation";
 import type { AppEnv } from "../types";
+
+// Sprint 16 (Fase 3) — fire-and-forget: gagal membuat snapshot tidak boleh
+// menggagalkan request utama (transaksi/CRUD sudah commit). Dipanggil SETELAH
+// mutasi utama commit, tidak di dalam db.transaction, karena ia membaca ulang
+// kekayaan bersih terkini lewat calculateWealthSummary().
+function snapshotWealthInBackground(userId: string): void {
+  createWealthSnapshot(db, userId).catch((err) => {
+    console.error("[wealth-snapshot] gagal membuat snapshot", err);
+  });
+}
 
 // Transaction-scoped handle for `db.transaction(async (tx) => ...)` — inferred
 // from `db.transaction` itself so the shared effect helpers below stay in sync
@@ -22,18 +35,8 @@ const KATEGORI_PENDAPATAN_DEFAULT = ["Gaji", "Proyek", "Dividen", "Bonus", "Hadi
 const KATEGORI_PENGELUARAN_DEFAULT = ["Makanan", "Transportasi", "Utilitas", "Belanja", "Kesehatan", "Hiburan", "Pendidikan", "Lainnya"];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-// Types that deduct from source account
-const DEBIT_TYPES = new Set([
-  "pengeluaran", "bayar_utang", "pemberian_piutang",
-  "beli_barang", "beli_investasi", "transfer",
-]);
-
-// Types that add to source account
-const CREDIT_TYPES = new Set([
-  "pendapatan", "pinjaman_utang", "penerimaan_piutang",
-  "jual_barang", "jual_investasi",
-]);
+// DEBIT_TYPES/CREDIT_TYPES live in ../lib/transactionTypes (shared with
+// accountMutation.ts — bug hunt Low #2, see that module for rationale).
 
 // Types that trigger the Moving Average Cost engine (Sprint 10) against
 // fixed_assets (barang) or liquid_assets (investasi)
@@ -64,14 +67,42 @@ async function reverseTransactionEffects(
   userId: string,
   trx: { type: string; accountId: string | null; relatedEntityId: string | null; nominal: string },
 ): Promise<void> {
-  // ── Reverse account balance; floor subtractions at 0 so a reversal never
-  // pushes the balance negative (e.g. credit was spent down before being reversed) ───
+  // ── Reverse account balance ─────────────────────────────────────────────
+  // Bug hunt High #1: reversing a CREDIT_TYPES transaction used to clamp with
+  // GREATEST(0, ...) if the balance had already been spent down below the
+  // reversal amount. That silently absorbed the shortfall into saldoCache
+  // instead of surfacing it — e.g. deleting a 1,000,000 pendapatan after
+  // 900,000 of it was already spent elsewhere quietly "loses" 900,000 from
+  // saldoCache (and therefore from totalKas/kekayaanBersih) instead of either
+  // reflecting the true (negative) shortfall or refusing the reversal. Fixed
+  // the same way as the pinjaman_utang/pemberian_piutang guard below: fold
+  // the "would this go negative" check into the UPDATE's WHERE clause itself
+  // (atomic — no separate stale-read guard) and reject with 409 instead of
+  // silently corrupting the balance.
   if (trx.accountId) {
     if (CREDIT_TYPES.has(trx.type)) {
-      await tx
+      const reversed = await tx
         .update(accounts)
-        .set({ saldoCache: sql`GREATEST(0, saldo_cache::numeric - ${trx.nominal})` })
-        .where(and(eq(accounts.id, trx.accountId), eq(accounts.userId, userId)));
+        .set({ saldoCache: sql`saldo_cache::numeric - ${trx.nominal}` })
+        .where(and(
+          eq(accounts.id, trx.accountId),
+          eq(accounts.userId, userId),
+          sql`saldo_cache::numeric >= ${trx.nominal}`,
+        ))
+        .returning({ id: accounts.id });
+
+      if (reversed.length === 0) {
+        const [acc] = await tx
+          .select({ id: accounts.id })
+          .from(accounts)
+          .where(and(eq(accounts.id, trx.accountId), eq(accounts.userId, userId)));
+
+        if (acc) {
+          throw Object.assign(new Error(
+            "Transaksi ini tidak bisa dihapus/diedit karena saldo rekening sudah terpakai transaksi lain sesudahnya — membalik transaksi ini akan membuat saldo negatif. Catat transaksi penyesuaian baru jika perlu.",
+          ), { status: 409 });
+        }
+      }
     } else if (DEBIT_TYPES.has(trx.type)) {
       await tx
         .update(accounts)
@@ -80,12 +111,31 @@ async function reverseTransactionEffects(
     }
   }
 
-  // ── Reverse transfer destination ──────────────────────────────────────
+  // ── Reverse transfer destination — same atomic reject-instead-of-clamp
+  // guard as the CREDIT_TYPES reversal above ─────────────────────────────
   if (trx.type === "transfer" && trx.relatedEntityId) {
-    await tx
+    const reversed = await tx
       .update(accounts)
-      .set({ saldoCache: sql`GREATEST(0, saldo_cache::numeric - ${trx.nominal})` })
-      .where(and(eq(accounts.id, trx.relatedEntityId), eq(accounts.userId, userId)));
+      .set({ saldoCache: sql`saldo_cache::numeric - ${trx.nominal}` })
+      .where(and(
+        eq(accounts.id, trx.relatedEntityId),
+        eq(accounts.userId, userId),
+        sql`saldo_cache::numeric >= ${trx.nominal}`,
+      ))
+      .returning({ id: accounts.id });
+
+    if (reversed.length === 0) {
+      const [acc] = await tx
+        .select({ id: accounts.id })
+        .from(accounts)
+        .where(and(eq(accounts.id, trx.relatedEntityId), eq(accounts.userId, userId)));
+
+      if (acc) {
+        throw Object.assign(new Error(
+          "Transaksi transfer ini tidak bisa dihapus/diedit karena saldo rekening tujuan sudah terpakai transaksi lain sesudahnya — membalik transaksi ini akan membuat saldo negatif. Catat transaksi penyesuaian baru jika perlu.",
+        ), { status: 409 });
+      }
+    }
   }
 
   // ── Reverse debt/receivable sisaSaldo; cap at saldoAwal so a reversal
@@ -116,49 +166,71 @@ async function reverseTransactionEffects(
   // already less than what we're about to subtract, reject instead of
   // silently corrupting the balance — consistent with the 409 block on
   // deleting/editing asset buy/sell transactions for the same class of reason.
+  //
+  // Bug hunt Critical #2 (follow-up): the guard above USED to be a plain
+  // SELECT-then-UPDATE — the SELECT's sisaSaldo could be stale by the time the
+  // UPDATE ran (e.g. a concurrent bayar_utang cicilan committed in between),
+  // so the guard could pass while the UPDATE still drove sisaSaldo negative.
+  // Fixed the same way as the bayar_utang/penerimaan_piutang guards above:
+  // fold the check into the UPDATE's own WHERE clause (atomic — Postgres
+  // re-evaluates it against the row's current value, not a stale read), then
+  // only fall back to a separate SELECT to build the 409 message.
   if (trx.type === "pinjaman_utang" && trx.relatedEntityId) {
-    const [debt] = await tx
-      .select({ sisaSaldo: debts.sisaSaldo })
-      .from(debts)
-      .where(and(eq(debts.id, trx.relatedEntityId), eq(debts.userId, userId)));
+    const reversed = await tx
+      .update(debts)
+      .set({
+        saldoAwal: sql`saldo_awal::numeric - ${trx.nominal}`,
+        sisaSaldo: sql`sisa_saldo::numeric - ${trx.nominal}`,
+      })
+      .where(and(
+        eq(debts.id, trx.relatedEntityId),
+        eq(debts.userId, userId),
+        sql`sisa_saldo::numeric >= ${trx.nominal}`,
+      ))
+      .returning({ id: debts.id });
 
-    if (debt && Number(debt.sisaSaldo) < Number(trx.nominal)) {
-      throw Object.assign(new Error(
-        "Transaksi pinjaman ini tidak bisa dihapus/diedit karena utang terkait sudah dicicil sebagian — membalik transaksi ini akan membuat sisa saldo utang tidak konsisten. Catat transaksi penyesuaian baru jika perlu.",
-      ), { status: 409 });
-    }
-
-    if (debt) {
-      await tx
-        .update(debts)
-        .set({
-          saldoAwal: sql`saldo_awal::numeric - ${trx.nominal}`,
-          sisaSaldo: sql`sisa_saldo::numeric - ${trx.nominal}`,
-        })
+    if (reversed.length === 0) {
+      const [debt] = await tx
+        .select({ id: debts.id })
+        .from(debts)
         .where(and(eq(debts.id, trx.relatedEntityId), eq(debts.userId, userId)));
+
+      // Debt tidak ditemukan (mis. sudah dihapus terpisah) — tidak ada apa pun
+      // untuk dibalik, aman untuk lanjut. Kalau ditemukan, berarti sisaSaldo
+      // memang kurang dari nominal yang mau dibalik — itulah yang diblokir.
+      if (debt) {
+        throw Object.assign(new Error(
+          "Transaksi pinjaman ini tidak bisa dihapus/diedit karena utang terkait sudah dicicil sebagian — membalik transaksi ini akan membuat sisa saldo utang tidak konsisten. Catat transaksi penyesuaian baru jika perlu.",
+        ), { status: 409 });
+      }
     }
   }
 
   if (trx.type === "pemberian_piutang" && trx.relatedEntityId) {
-    const [rec] = await tx
-      .select({ sisaSaldo: receivables.sisaSaldo })
-      .from(receivables)
-      .where(and(eq(receivables.id, trx.relatedEntityId), eq(receivables.userId, userId)));
+    const reversed = await tx
+      .update(receivables)
+      .set({
+        saldoAwal: sql`saldo_awal::numeric - ${trx.nominal}`,
+        sisaSaldo: sql`sisa_saldo::numeric - ${trx.nominal}`,
+      })
+      .where(and(
+        eq(receivables.id, trx.relatedEntityId),
+        eq(receivables.userId, userId),
+        sql`sisa_saldo::numeric >= ${trx.nominal}`,
+      ))
+      .returning({ id: receivables.id });
 
-    if (rec && Number(rec.sisaSaldo) < Number(trx.nominal)) {
-      throw Object.assign(new Error(
-        "Transaksi piutang ini tidak bisa dihapus/diedit karena piutang terkait sudah sebagian dibayar — membalik transaksi ini akan membuat sisa saldo piutang tidak konsisten. Catat transaksi penyesuaian baru jika perlu.",
-      ), { status: 409 });
-    }
-
-    if (rec) {
-      await tx
-        .update(receivables)
-        .set({
-          saldoAwal: sql`saldo_awal::numeric - ${trx.nominal}`,
-          sisaSaldo: sql`sisa_saldo::numeric - ${trx.nominal}`,
-        })
+    if (reversed.length === 0) {
+      const [rec] = await tx
+        .select({ id: receivables.id })
+        .from(receivables)
         .where(and(eq(receivables.id, trx.relatedEntityId), eq(receivables.userId, userId)));
+
+      if (rec) {
+        throw Object.assign(new Error(
+          "Transaksi piutang ini tidak bisa dihapus/diedit karena piutang terkait sudah sebagian dibayar — membalik transaksi ini akan membuat sisa saldo piutang tidak konsisten. Catat transaksi penyesuaian baru jika perlu.",
+        ), { status: 409 });
+      }
     }
   }
 }
@@ -178,6 +250,15 @@ async function applyTransactionEffects(
   data: { type: string; accountId?: string; toAccountId?: string },
   computedNominal: number,
   relatedEntityId: string | undefined,
+  // Bug hunt Medium #1: PATCH /:id passes these when accountId/toAccountId is
+  // exactly the SAME account already stored on the transaction being edited
+  // (not being redirected to a different one). In that case the isActive check
+  // below is skipped — an edit that doesn't move money to/from a *different*
+  // account shouldn't be blocked just because that same account was deactivated
+  // sometime after the transaction was originally created. POST / never passes
+  // this (defaults to false), so brand-new transactions still require the
+  // account to be active, as before.
+  options?: { accountIdUnchanged?: boolean; toAccountIdUnchanged?: boolean },
 ): Promise<void> {
   // ── Validate account ownership before any mutation; source account must also be active ────────
   if (data.accountId) {
@@ -189,7 +270,7 @@ async function applyTransactionEffects(
     if (!srcAcc) {
       throw Object.assign(new Error("Rekening asal tidak ditemukan"), { status: 404 });
     }
-    if (!srcAcc.isActive) {
+    if (!srcAcc.isActive && !options?.accountIdUnchanged) {
       throw Object.assign(new Error("Rekening asal tidak aktif"), { status: 422 });
     }
 
@@ -226,7 +307,9 @@ async function applyTransactionEffects(
     }
   }
 
-  // ── Validate toAccountId ownership for transfer; destination account must also be active ───────────────
+  // ── Validate toAccountId ownership for transfer; destination account must
+  // also be active, UNLESS it's the same destination the transaction already
+  // had (see `options` doc-comment above) ───────────────────────────────────
   if (data.type === "transfer" && data.toAccountId) {
     const credited = await tx
       .update(accounts)
@@ -234,7 +317,7 @@ async function applyTransactionEffects(
       .where(and(
         eq(accounts.id, data.toAccountId),
         eq(accounts.userId, userId),
-        eq(accounts.isActive, true),
+        options?.toAccountIdUnchanged ? undefined : eq(accounts.isActive, true),
       ))
       .returning({ id: accounts.id });
 
@@ -400,7 +483,7 @@ const listQuerySchema = z.object({
   accountId: z.string().uuid().optional(),
 });
 
-transactionRoutes.get("/", zValidator("query", listQuerySchema), async (c) => {
+transactionRoutes.get("/", zValidator("query", listQuerySchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const { limit, offset, accountId } = c.req.valid("query");
   const rows = await db
@@ -408,7 +491,16 @@ transactionRoutes.get("/", zValidator("query", listQuerySchema), async (c) => {
     .from(transactions)
     .where(and(
       eq(transactions.userId, userId),
-      accountId ? eq(transactions.accountId, accountId) : undefined,
+      // Bug hunt Medium #2: transfer masuk disimpan di relatedEntityId, bukan
+      // accountId (lihat accountMutation.ts) — filter accountId=X harus ikut
+      // menangkap transfer masuk KE rekening X, sama seperti GET /:id/mutasi
+      // di accounts.ts, supaya kedua endpoint tidak berbeda hasil.
+      accountId
+        ? or(
+            eq(transactions.accountId, accountId),
+            and(eq(transactions.type, "transfer"), eq(transactions.relatedEntityId, accountId)),
+          )
+        : undefined,
     ))
     .orderBy(desc(transactions.tanggal), desc(transactions.createdAt))
     .limit(limit)
@@ -537,7 +629,7 @@ const createSchema = z.object({
   }
 });
 
-transactionRoutes.post("/", zValidator("json", createSchema), async (c) => {
+transactionRoutes.post("/", zValidator("json", createSchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const {
     toAccountId, relatedDebtId, relatedReceivableId,
@@ -645,6 +737,7 @@ transactionRoutes.post("/", zValidator("json", createSchema), async (c) => {
       return [inserted];
     });
 
+    snapshotWealthInBackground(userId);
     return c.json(trx, 201);
   } catch (err: unknown) {
     const e = err as { status?: number; code?: string; message?: string; saldoTersedia?: number; nominal?: number; sisaSaldo?: number };
@@ -673,26 +766,37 @@ transactionRoutes.delete("/:id", async (c) => {
   // Validate UUID format
   if (!UUID_RE.test(id)) return c.json({ error: "ID tidak valid" }, 400);
 
-  const [trx] = await db
-    .select()
-    .from(transactions)
-    .where(and(eq(transactions.id, id), eq(transactions.userId, userId)));
-
-  if (!trx) return c.json({ error: "Not found" }, 404);
-
-  // Transaksi beli/jual aset mengubah harga rata-rata berjalan (moving average),
-  // yang tidak bisa "dibalik" secara akurat tanpa replay seluruh histori lot.
-  // Daripada mengizinkan penghapusan yang diam-diam merusak harga rata-rata,
-  // transaksi ini diblokir dari penghapusan — mengikuti praktik ledger akuntansi
-  // (koreksi lewat transaksi penyesuaian baru, bukan menghapus histori).
-  if (ASSET_TYPES.has(trx.type)) {
-    return c.json({
-      error: "Transaksi beli/jual aset tidak bisa dihapus karena mempengaruhi harga rata-rata berjalan. Catat transaksi penyesuaian baru jika diperlukan.",
-    }, 409);
-  }
-
   try {
     await db.transaction(async (tx) => {
+      // Bug hunt Critical #1: the existence check used to be a plain `db.select()`
+      // BEFORE this transaction opened. Two concurrent DELETE requests for the
+      // SAME id (double-click, two tabs, a retried request) could both pass
+      // that check while the row still existed, then both independently run
+      // reverseTransactionEffects — double-crediting the account/debt/receivable
+      // even though the row is only ever deleted once (the second `DELETE ...
+      // WHERE id=X` just quietly affects 0 rows, no error). `.for("update")`
+      // locks the row for the duration of this transaction: a second concurrent
+      // request blocks here until the first commits (row gone), then correctly
+      // sees 0 rows and 404s instead of re-applying the reversal.
+      const [trx] = await tx
+        .select()
+        .from(transactions)
+        .where(and(eq(transactions.id, id), eq(transactions.userId, userId)))
+        .for("update");
+
+      if (!trx) throw Object.assign(new Error("Not found"), { status: 404 });
+
+      // Transaksi beli/jual aset mengubah harga rata-rata berjalan (moving average),
+      // yang tidak bisa "dibalik" secara akurat tanpa replay seluruh histori lot.
+      // Daripada mengizinkan penghapusan yang diam-diam merusak harga rata-rata,
+      // transaksi ini diblokir dari penghapusan — mengikuti praktik ledger akuntansi
+      // (koreksi lewat transaksi penyesuaian baru, bukan menghapus histori).
+      if (ASSET_TYPES.has(trx.type)) {
+        throw Object.assign(new Error(
+          "Transaksi beli/jual aset tidak bisa dihapus karena mempengaruhi harga rata-rata berjalan. Catat transaksi penyesuaian baru jika diperlukan.",
+        ), { status: 409 });
+      }
+
       await reverseTransactionEffects(tx, userId, {
         type: trx.type,
         accountId: trx.accountId,
@@ -703,10 +807,12 @@ transactionRoutes.delete("/:id", async (c) => {
     });
   } catch (err: unknown) {
     const e = err as { status?: number; message?: string };
+    if (e.status === 404) return c.json({ error: e.message ?? "Not found" }, 404);
     if (e.status === 409) return c.json({ error: e.message }, 409);
     throw err; // re-throw unexpected errors as 500
   }
 
+  snapshotWealthInBackground(userId);
   return c.body(null, 204);
 });
 
@@ -725,92 +831,123 @@ const patchSchema = z.object({
   toAccountId: z.string().uuid().optional(),
 });
 
-transactionRoutes.patch("/:id", zValidator("json", patchSchema), async (c) => {
+transactionRoutes.patch("/:id", zValidator("json", patchSchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
-  const id = c.req.param("id");
+  // Chaining a second zValidator middleware onto this "/:id" route widens
+  // Hono's inferred path-pattern type, so `c.req.param("id")` degrades from
+  // `string` to `string | undefined` even though the router guarantees this
+  // route only ever matches with `id` present — hence the assertion.
+  const id = c.req.param("id") as string;
 
   if (!UUID_RE.test(id)) return c.json({ error: "ID tidak valid" }, 400);
 
-  const [existing] = await db
-    .select()
-    .from(transactions)
-    .where(and(eq(transactions.id, id), eq(transactions.userId, userId)));
-
-  if (!existing) return c.json({ error: "Not found" }, 404);
-
-  // Sama seperti DELETE — moving average cost tidak bisa di-replay secara akurat.
-  if (ASSET_TYPES.has(existing.type)) {
-    return c.json({
-      error: "Transaksi beli/jual aset tidak bisa diedit karena mempengaruhi harga rata-rata berjalan. Catat transaksi penyesuaian baru jika diperlukan.",
-    }, 409);
-  }
-
   const patch = c.req.valid("json");
-  const type = existing.type;
-
-  // Merge: field yang tidak dikirim di body tetap pakai nilai lama
-  const tanggal = patch.tanggal ?? existing.tanggal;
-  const kategori = patch.kategori !== undefined ? patch.kategori : existing.kategori ?? undefined;
-  const rincian = patch.rincian !== undefined ? patch.rincian : existing.rincian ?? undefined;
-  const accountId = patch.accountId ?? existing.accountId ?? undefined;
-  const computedNominal = patch.nominal ?? Number(existing.nominal);
-  // Untuk transfer, relatedEntityId LAMA menyimpan rekening tujuan (lihat POST /) —
-  // itulah default toAccountId di sini kalau body tidak mengirim toAccountId baru.
-  const toAccountId = type === "transfer" ? (patch.toAccountId ?? existing.relatedEntityId ?? undefined) : undefined;
-
-  if (type === "transfer") {
-    if (!accountId || !toAccountId || accountId === toAccountId) {
-      return c.json({
-        error: accountId === toAccountId && accountId
-          ? "Rekening asal dan tujuan tidak boleh sama"
-          : "accountId dan toAccountId diperlukan untuk transfer",
-        code: "VALIDATION_ERROR",
-      }, 422);
-    }
-  }
 
   try {
     const [updated] = await db.transaction(async (tx) => {
-      // 1) Reverse the OLD effects using the OLD stored values
-      await reverseTransactionEffects(tx, userId, {
-        type: existing.type,
-        accountId: existing.accountId,
-        relatedEntityId: existing.relatedEntityId,
-        nominal: existing.nominal,
-      });
+      // Bug hunt Critical #1 — same rationale as DELETE /:id above: locking
+      // the row here serializes concurrent PATCH/DELETE requests on the same
+      // id, so a second request reads the FIRST request's already-committed
+      // result (not a stale pre-edit snapshot) instead of independently
+      // reversing the same original effects a second time.
+      const [existing] = await tx
+        .select()
+        .from(transactions)
+        .where(and(eq(transactions.id, id), eq(transactions.userId, userId)))
+        .for("update");
 
-      // 2) Apply the NEW effects using the NEW (merged) values. If this throws
-      // (e.g. insufficient balance with the new nominal), db.transaction rolls
-      // back the reversal above too — the row ends up untouched, same as POST.
-      await applyTransactionEffects(
-        tx,
-        userId,
-        { type, accountId, toAccountId },
-        computedNominal,
-        existing.relatedEntityId ?? undefined,
-      );
+      if (!existing) throw Object.assign(new Error("Not found"), { status: 404 });
 
-      // pinjaman_utang / pemberian_piutang: the linked debt/receivable row
-      // itself can't be re-targeted on edit (pemberiUtang/peminjam aren't
-      // editable fields), so just re-apply the new nominal to that same row —
-      // symmetric to the reversal of the old nominal above.
-      if (type === "pinjaman_utang" && existing.relatedEntityId) {
-        await tx
-          .update(debts)
-          .set({
-            saldoAwal: sql`saldo_awal::numeric + ${String(computedNominal)}`,
-            sisaSaldo: sql`sisa_saldo::numeric + ${String(computedNominal)}`,
-          })
-          .where(and(eq(debts.id, existing.relatedEntityId), eq(debts.userId, userId)));
+      // Sama seperti DELETE — moving average cost tidak bisa di-replay secara akurat.
+      if (ASSET_TYPES.has(existing.type)) {
+        throw Object.assign(new Error(
+          "Transaksi beli/jual aset tidak bisa diedit karena mempengaruhi harga rata-rata berjalan. Catat transaksi penyesuaian baru jika diperlukan.",
+        ), { status: 409 });
       }
-      if (type === "pemberian_piutang" && existing.relatedEntityId) {
-        await tx
-          .update(receivables)
-          .set({
-            saldoAwal: sql`saldo_awal::numeric + ${String(computedNominal)}`,
-            sisaSaldo: sql`sisa_saldo::numeric + ${String(computedNominal)}`,
-          })
-          .where(and(eq(receivables.id, existing.relatedEntityId), eq(receivables.userId, userId)));
+
+      const type = existing.type;
+
+      // Merge: field yang tidak dikirim di body tetap pakai nilai lama
+      const tanggal = patch.tanggal ?? existing.tanggal;
+      const kategori = patch.kategori !== undefined ? patch.kategori : existing.kategori ?? undefined;
+      const rincian = patch.rincian !== undefined ? patch.rincian : existing.rincian ?? undefined;
+      const accountId = patch.accountId ?? existing.accountId ?? undefined;
+      const computedNominal = patch.nominal ?? Number(existing.nominal);
+      // Untuk transfer, relatedEntityId LAMA menyimpan rekening tujuan (lihat POST /) —
+      // itulah default toAccountId di sini kalau body tidak mengirim toAccountId baru.
+      const toAccountId = type === "transfer" ? (patch.toAccountId ?? existing.relatedEntityId ?? undefined) : undefined;
+
+      if (type === "transfer") {
+        if (!accountId || !toAccountId || accountId === toAccountId) {
+          throw Object.assign(new Error(
+            accountId === toAccountId && accountId
+              ? "Rekening asal dan tujuan tidak boleh sama"
+              : "accountId dan toAccountId diperlukan untuk transfer",
+          ), { status: 422, code: "VALIDATION_ERROR" });
+        }
+      }
+
+      // Bug hunt High #3: reverseTransactionEffects/applyTransactionEffects used
+      // to run unconditionally on every PATCH, even when only tanggal/kategori/
+      // rincian changed. For pinjaman_utang/pemberian_piutang that meant the
+      // "sisaSaldo already paid down" guard in reverseTransactionEffects (see
+      // above) rejected EVERY edit — including a pure typo fix in `rincian` —
+      // as soon as any cicilan existed, since the guard doesn't know the
+      // nominal isn't actually changing. Only touch the money-moving side
+      // effects when the nominal or the account(s) involved are truly changing;
+      // a metadata-only edit just updates the transactions row below.
+      const accountIdUnchanged = accountId === (existing.accountId ?? undefined);
+      const toAccountIdUnchanged = type !== "transfer" || toAccountId === (existing.relatedEntityId ?? undefined);
+      const effectsChanged =
+        computedNominal !== Number(existing.nominal) || !accountIdUnchanged || !toAccountIdUnchanged;
+
+      if (effectsChanged) {
+        // 1) Reverse the OLD effects using the OLD stored values
+        await reverseTransactionEffects(tx, userId, {
+          type: existing.type,
+          accountId: existing.accountId,
+          relatedEntityId: existing.relatedEntityId,
+          nominal: existing.nominal,
+        });
+
+        // 2) Apply the NEW effects using the NEW (merged) values. If this throws
+        // (e.g. insufficient balance with the new nominal), db.transaction rolls
+        // back the reversal above too — the row ends up untouched, same as POST.
+        // Bug hunt Medium #1: tell applyTransactionEffects which of these are
+        // the SAME account already on the transaction (not a redirect to a
+        // different one) so it doesn't demand isActive on an account that was
+        // merely deactivated after this transaction was originally created.
+        await applyTransactionEffects(
+          tx,
+          userId,
+          { type, accountId, toAccountId },
+          computedNominal,
+          existing.relatedEntityId ?? undefined,
+          { accountIdUnchanged, toAccountIdUnchanged },
+        );
+
+        // pinjaman_utang / pemberian_piutang: the linked debt/receivable row
+        // itself can't be re-targeted on edit (pemberiUtang/peminjam aren't
+        // editable fields), so just re-apply the new nominal to that same row —
+        // symmetric to the reversal of the old nominal above.
+        if (type === "pinjaman_utang" && existing.relatedEntityId) {
+          await tx
+            .update(debts)
+            .set({
+              saldoAwal: sql`saldo_awal::numeric + ${String(computedNominal)}`,
+              sisaSaldo: sql`sisa_saldo::numeric + ${String(computedNominal)}`,
+            })
+            .where(and(eq(debts.id, existing.relatedEntityId), eq(debts.userId, userId)));
+        }
+        if (type === "pemberian_piutang" && existing.relatedEntityId) {
+          await tx
+            .update(receivables)
+            .set({
+              saldoAwal: sql`saldo_awal::numeric + ${String(computedNominal)}`,
+              sisaSaldo: sql`sisa_saldo::numeric + ${String(computedNominal)}`,
+            })
+            .where(and(eq(receivables.id, existing.relatedEntityId), eq(receivables.userId, userId)));
+        }
       }
 
       const [row] = await tx
@@ -828,6 +965,7 @@ transactionRoutes.patch("/:id", zValidator("json", patchSchema), async (c) => {
       return [row];
     });
 
+    snapshotWealthInBackground(userId);
     return c.json(updated);
   } catch (err: unknown) {
     const e = err as { status?: number; code?: string; message?: string; saldoTersedia?: number; nominal?: number; sisaSaldo?: number };

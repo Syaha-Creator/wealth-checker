@@ -8,12 +8,22 @@ import { Input, PasswordInput } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
-function PasswordStrength({ password }: { password: string }) {
-  const checks = [
+// Bug hunt (Issue 11): dulu kriteria ini cuma kosmetik — password 8 karakter
+// tanpa huruf besar/angka tetap lolos daftar (Better Auth server-side cuma
+// mengecek panjang lewat minPasswordLength). Sekarang dipakai juga sebagai
+// syarat submit di handleSubmit, supaya apa yang ditampilkan sesuai dengan
+// yang benar-benar diwajibkan. (Enforcement ini di sisi client saja — API
+// Better Auth sendiri tetap hanya menegakkan panjang minimum.)
+function getPasswordChecks(password: string) {
+  return [
     { label: "Min. 8 karakter", ok: password.length >= 8 },
     { label: "Huruf besar", ok: /[A-Z]/.test(password) },
     { label: "Angka", ok: /[0-9]/.test(password) },
   ];
+}
+
+function PasswordStrength({ password }: { password: string }) {
+  const checks = getPasswordChecks(password);
   const score = checks.filter((c) => c.ok).length;
   const colors = ["", "bg-danger", "bg-warning", "bg-brand"];
 
@@ -62,20 +72,22 @@ export default function RegisterPage() {
     setLoading(true);
     setError("");
 
-    if (password.length < 8) {
-      setError("Password minimal 8 karakter.");
+    if (getPasswordChecks(password).some((c) => !c.ok)) {
+      setError("Password harus minimal 8 karakter, mengandung huruf besar, dan angka.");
       setLoading(false);
       return;
     }
 
-    const { error: err } = await signUp.email({
-      name,
-      email,
-      password,
-      callbackURL: "/dashboard",
-    });
+    const { error: err } = await signUp.email({ name, email, password });
 
     if (err) {
+      // Bug hunt (Issue 13): pesan spesifik "email sudah terdaftar" ini secara
+      // teknis membuka celah email enumeration (penyerang bisa cek email mana
+      // yang sudah punya akun). Trade-off UX vs security yang disengaja — untuk
+      // aplikasi personal finance non-sensitif seperti ini, UX pendaftaran yang
+      // jelas lebih diprioritaskan daripada mitigasi enumeration (yang dampaknya
+      // rendah di sini karena tidak ada data sensitif yang bocor, cuma status
+      // "email ini terdaftar atau tidak").
       if (err.code === "USER_ALREADY_EXISTS") {
         setError("Email ini sudah terdaftar. Coba masuk.");
       } else {
@@ -150,7 +162,7 @@ export default function RegisterPage() {
                 label="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Min. 8 karakter"
+                placeholder="Min. 8 karakter, huruf besar & angka"
                 autoComplete="new-password"
                 required
               />

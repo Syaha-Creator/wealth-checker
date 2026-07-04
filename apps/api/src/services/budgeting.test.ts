@@ -74,6 +74,25 @@ describe("calculateBudgetAllocation (Sprint 14 — Budgeting Advisor)", () => {
     expect(result.alokasi[0].nominal).toBe(333_300);
   });
 
+  it("bug hunt Medium #3: pembulatan per kategori tidak boleh membuat total melebihi rencana", () => {
+    // 9.999.999 × 35/35/20/10% dibulatkan independen: 3.500.000 + 3.500.000 +
+    // 2.000.000 + 1.000.000 = 10.000.000 — melebihi rencana sebesar 1 rupiah,
+    // dan sisaTidakTeralokasi lama akan clamp ke 0 alih-alih negatif (menyembunyikan
+    // kelebihan itu). Largest-remainder-style allocation harus menyerap
+    // pembulatan ini di dalam kategorinya sendiri, bukan overflow ke total.
+    const result = calculateBudgetAllocation(9_999_999, {
+      level: 5,
+      kategori1Nama: "Kebutuhan Pokok", kategori1Persen: "35",
+      kategori2Nama: "Investasi Pensiun", kategori2Persen: "35",
+      kategori3Nama: "Gaya Hidup", kategori3Persen: "20",
+      kategori4Nama: "Dana Warisan", kategori4Persen: "10",
+    });
+    const totalNominal = result.alokasi.reduce((s, a) => s + a.nominal, 0);
+    expect(totalNominal).toBeLessThanOrEqual(9_999_999);
+    expect(totalNominal).toBe(9_999_999);
+    expect(result.sisaTidakTeralokasi).toBe(0);
+  });
+
   it("semua kategori persentase 100 pas — konsisten untuk semua 7 level seed asli", () => {
     const levels: Record<number, { nama: (string | null)[]; persen: (string | null)[] }> = {
       0: { nama: ["Bayar Utang", "Kebutuhan Pokok", null, null], persen: ["70", "30", null, null] },

@@ -74,6 +74,29 @@ const navItems = [
     ),
   },
   {
+    // Fase 3 Sprint 20: Analisa terpadu (kekayaan bersih, laba rugi, budgeting,
+    // dana darurat, kebutuhan pokok, pemasukan).
+    href: "/analytics",
+    label: "Analisa",
+    icon: (active: boolean) => (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <line x1="18" y1="20" x2="18" y2="10" />
+        <line x1="12" y1="20" x2="12" y2="4" />
+        <line x1="6" y1="20" x2="6" y2="14" />
+      </svg>
+    ),
+  },
+  {
+    // Fase 3 Sprint 21: Dream Tracker.
+    href: "/dream-tracker",
+    label: "Impian",
+    icon: (active: boolean) => (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 21c-4.5-3-8-6.5-8-10.5A5.5 5.5 0 0112 6a5.5 5.5 0 018 4.5c0 4-3.5 7.5-8 10.5z" />
+      </svg>
+    ),
+  },
+  {
     href: "/profile",
     label: "Profil",
     icon: (active: boolean) => (

@@ -2,14 +2,25 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { db, accounts, transactions } from "@wealth/db";
-import { eq, and, or, count } from "drizzle-orm";
+import { eq, and, or, count, sql } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { calculateAccountMutations } from "../services/accountMutation";
+import { createWealthSnapshot } from "../services/wealth";
+import { isUniqueViolation } from "../lib/dbErrors";
+import { MAX_MONETARY_VALUE } from "../lib/validation";
 import type { AppEnv } from "../types";
 
 export const accountRoutes = new Hono<AppEnv>();
 
 accountRoutes.use("*", requireAuth);
+
+// Sprint 16 (Fase 3) — lihat catatan di transactions.ts: fire-and-forget,
+// dipanggil setelah koreksi saldo / hapus rekening commit.
+function snapshotWealthInBackground(userId: string): void {
+  createWealthSnapshot(db, userId).catch((err) => {
+    console.error("[wealth-snapshot] gagal membuat snapshot", err);
+  });
+}
 
 // Reusable UUID param schema
 const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
@@ -21,19 +32,30 @@ accountRoutes.get("/", async (c) => {
 });
 
 // Medium #8 (bug hunt): .finite() — cegah Infinity lolos validasi.
+// Bug hunt (Issue 9): .max() — cegah nilai ekstrem yang berisiko presisi float.
 const createSchema = z.object({
   nama: z.string().min(1),
-  saldoAwal: z.number().min(0).finite().default(0),
+  saldoAwal: z.number().min(0).max(MAX_MONETARY_VALUE).finite().default(0),
 });
 
 accountRoutes.post("/", zValidator("json", createSchema), async (c) => {
   const userId = c.get("userId") as string;
   const { nama, saldoAwal } = c.req.valid("json");
-  const [account] = await db
-    .insert(accounts)
-    .values({ userId, nama, saldoCache: String(saldoAwal) })
-    .returning();
-  return c.json(account, 201);
+  try {
+    const [account] = await db
+      .insert(accounts)
+      .values({ userId, nama, saldoCache: String(saldoAwal) })
+      .returning();
+    snapshotWealthInBackground(userId);
+    return c.json(account, 201);
+  } catch (err) {
+    // Bug hunt (Issue 4): accounts dulu satu-satunya tabel CRUD tanpa
+    // pelindung nama duplikat — lihat migration 0009.
+    if (isUniqueViolation(err, "idx_accounts_user_nama_unique")) {
+      return c.json({ error: `Rekening dengan nama "${nama}" sudah ada — edit saldo rekening yang sudah ada, atau catat lewat transaksi agar otomatis digabung` }, 409);
+    }
+    throw err;
+  }
 });
 
 accountRoutes.patch(
@@ -46,18 +68,66 @@ accountRoutes.patch(
     // (lihat docs/API.md untuk peringatan soal ini). Nama field tetap `saldo`
     // di API publik agar konsisten dengan `saldoAwal` di POST, walau kolom
     // di tabel accounts bernama `saldoCache`.
-    saldo: z.number().min(0).finite().optional(),
+    saldo: z.number().min(0).max(MAX_MONETARY_VALUE).finite().optional(),
   })),
   async (c) => {
     const userId = c.get("userId") as string;
     const { id } = c.req.valid("param");
     const { saldo, ...data } = c.req.valid("json");
-    const [account] = await db
-      .update(accounts)
-      .set({ ...data, ...(saldo !== undefined ? { saldoCache: String(saldo) } : {}) })
-      .where(and(eq(accounts.id, id), eq(accounts.userId, userId)))
-      .returning();
-    if (!account) return c.json({ error: "Not found" }, 404);
+
+    // Bug hunt High #2: calculateWealthSummary only sums saldoCache of
+    // isActive=true accounts (matches the "Total Saldo Aktif" shown on this
+    // page), so deactivating an account that still holds money made that
+    // money silently vanish from totalKas/kekayaanBersih — the balance itself
+    // was untouched, it just stopped being counted. Kalau `saldo` juga dikirim
+    // di request yang sama, nilai barunya sudah literal (bukan hasil baca DB),
+    // jadi dicek langsung di sini tanpa perlu query tambahan.
+    if (data.isActive === false && saldo !== undefined && saldo !== 0) {
+      return c.json({
+        error: `Saldo baru harus Rp 0 untuk menonaktifkan rekening (saat ini diisi Rp ${saldo.toLocaleString("id-ID")}).`,
+      }, 409);
+    }
+
+    let account;
+    try {
+      [account] = await db
+        .update(accounts)
+        .set({ ...data, ...(saldo !== undefined ? { saldoCache: String(saldo) } : {}) })
+        .where(and(
+          eq(accounts.id, id),
+          eq(accounts.userId, userId),
+          // Guard atomic (hindari TOCTOU) — hanya diterapkan kalau isActive diset
+          // false DAN saldo TIDAK ikut dikoreksi di request ini (kalau ikut,
+          // sudah divalidasi = 0 di atas, jadi tidak perlu dicek lagi di WHERE).
+          data.isActive === false && saldo === undefined
+            ? sql`saldo_cache::numeric = 0`
+            : undefined,
+        ))
+        .returning();
+    } catch (err) {
+      // Bug hunt (Issue 4): ganti nama rekening ke nama yang sudah dipakai
+      // rekening lain milik user yang sama.
+      if (isUniqueViolation(err, "idx_accounts_user_nama_unique")) {
+        return c.json({ error: `Nama rekening "${data.nama}" sudah dipakai rekening lain` }, 409);
+      }
+      throw err;
+    }
+
+    if (!account) {
+      // Dibedakan lewat SELECT terpisah HANYA untuk pesan error yang jelas —
+      // sama seperti pola guard atomic lainnya di transactions.ts.
+      const [existing] = await db
+        .select({ saldoCache: accounts.saldoCache })
+        .from(accounts)
+        .where(and(eq(accounts.id, id), eq(accounts.userId, userId)));
+
+      if (!existing) return c.json({ error: "Not found" }, 404);
+      return c.json({
+        error: `Rekening masih memiliki saldo Rp ${Number(existing.saldoCache).toLocaleString("id-ID")} — pindahkan/tarik saldo ke Rp 0 dahulu (lewat transaksi atau Koreksi Saldo) sebelum menonaktifkan rekening ini.`,
+      }, 409);
+    }
+
+    if (saldo !== undefined) snapshotWealthInBackground(userId);
     return c.json(account);
   }
 );
@@ -100,12 +170,19 @@ accountRoutes.delete("/:id", zValidator("param", idParam), async (c) => {
   const { id } = c.req.valid("param");
 
   // Also check relatedEntityId (transfer destination), scoped to this user's own transactions.
+  // Bug hunt Low #1: relatedEntityId is polymorphic (transfer destination
+  // account, or a debt/receivable/asset id for other types) — scope this
+  // branch to type='transfer' so the guard only ever matches it against an
+  // actual account reference, not an unrelated entity id from another table.
   const [{ total }] = await db
     .select({ total: count() })
     .from(transactions)
     .where(and(
       eq(transactions.userId, userId),
-      or(eq(transactions.accountId, id), eq(transactions.relatedEntityId, id)),
+      or(
+        eq(transactions.accountId, id),
+        and(eq(transactions.type, "transfer"), eq(transactions.relatedEntityId, id)),
+      ),
     ));
 
   if (Number(total) > 0) {
@@ -113,5 +190,6 @@ accountRoutes.delete("/:id", zValidator("param", idParam), async (c) => {
   }
 
   await db.delete(accounts).where(and(eq(accounts.id, id), eq(accounts.userId, userId)));
+  snapshotWealthInBackground(userId);
   return c.body(null, 204);
 });

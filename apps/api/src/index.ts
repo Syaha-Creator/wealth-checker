@@ -1,3 +1,8 @@
+// Bug hunt (Issue 10): harus jadi import PALING ATAS — lihat komentar di
+// lib/env.ts. Modul ini melempar error (fail-fast) kalau env var wajib
+// (DATABASE_URL/BETTER_AUTH_SECRET) belum diset, SEBELUM modul lain di bawah
+// (yang membuat koneksi DB/instance better-auth saat di-import) sempat jalan.
+import "./lib/env";
 import { Hono } from "hono";
 import type { AppEnv } from "./types";
 import { cors } from "hono/cors";
@@ -10,6 +15,8 @@ import { assetRoutes } from "./routes/assets";
 import { debtRoutes } from "./routes/debts";
 import { profileRoutes } from "./routes/profile";
 import { budgetRoutes } from "./routes/budget";
+import { analyticsRoutes } from "./routes/analytics";
+import { dreamGoalRoutes } from "./routes/dreamGoals";
 
 const ALLOWED_ORIGINS = [
   "https://wealth.velrox.cloud",
@@ -54,6 +61,8 @@ app.route("/api/assets", assetRoutes);
 app.route("/api/debts", debtRoutes);
 app.route("/api/profile", profileRoutes);
 app.route("/api", budgetRoutes);
+app.route("/api/analytics", analyticsRoutes);
+app.route("/api/dream-goals", dreamGoalRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 

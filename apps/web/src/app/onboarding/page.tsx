@@ -24,6 +24,14 @@ const STEPS = [
 
 const OPTIONAL_STEPS = [3, 4, 5, 6];
 
+// Bug hunt (Issue 3): step 2 (Rekening) sengaja TIDAK dipaksa harus diisi —
+// dulu ini membuat user yang skip step ini (0 rekening) terjebak: login akan
+// selalu melempar mereka balik ke /onboarding karena "sudah onboarding" hanya
+// dicek dari jumlah rekening. Sekarang "sudah onboarding" ditentukan dari
+// wealthLevel (lihat /auth/login), yang juga menghitung aset likuid/tidak
+// lancar/utang — jadi user yang hanya mengisi aset/utang tanpa rekening bank
+// tetap dianggap sudah onboarding dan tidak diminta ulang.
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function apiFetch(path: string, method: string, body?: unknown) {
@@ -33,7 +41,13 @@ async function apiFetch(path: string, method: string, body?: unknown) {
     credentials: "include",
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    // Bug hunt (Issue 6): dulu melempar raw response text (bisa berupa JSON
+    // error Zod yang teknis) langsung sebagai error message — samakan dengan
+    // pola apiFetch di halaman profil (parse JSON, ambil field `error`).
+    const errBody = await res.json().catch(() => null);
+    throw new Error(errBody?.error ?? "Terjadi kesalahan. Coba lagi.");
+  }
   return res.json();
 }
 
@@ -515,9 +529,12 @@ export default function OnboardingPage() {
               <button
                 type="button"
                 className="w-full py-2 text-sm font-medium text-brand bg-brand-soft hover:bg-brand-soft-border/60 rounded-lg transition-colors disabled:opacity-50"
-                disabled={!namaLiquid || !jumlahLiquid}
+                // Bug hunt (Issue 5): API mewajibkan jumlah > 0 (positive()) — kalau
+                // cuma dicek truthy, "0"/"-5" lolos ke daftar lalu gagal saat disimpan
+                // dan macet permanen (item gagal tidak pernah ke-remove dari list).
+                disabled={!namaLiquid || !(Number(jumlahLiquid) > 0)}
                 onClick={() => {
-                  if (!namaLiquid || !jumlahLiquid) return;
+                  if (!namaLiquid || !(Number(jumlahLiquid) > 0)) return;
                   setLiquidList((p) => [...p, { nama: namaLiquid, jumlah: jumlahLiquid, harga: hargaLiquid }]);
                   setNamaLiquid(""); setJumlahLiquid(""); setHargaLiquid("");
                 }}
@@ -578,9 +595,10 @@ export default function OnboardingPage() {
               <button
                 type="button"
                 className="w-full py-2 text-sm font-medium text-brand bg-brand-soft hover:bg-brand-soft-border/60 rounded-lg transition-colors disabled:opacity-50"
-                disabled={!namaFixed || !jumlahFixed}
+                // Bug hunt (Issue 5): sama seperti aset likuid — jumlah harus > 0.
+                disabled={!namaFixed || !(Number(jumlahFixed) > 0)}
                 onClick={() => {
-                  if (!namaFixed || !jumlahFixed) return;
+                  if (!namaFixed || !(Number(jumlahFixed) > 0)) return;
                   setFixedList((p) => [...p, { nama: namaFixed, jumlah: jumlahFixed, harga: hargaFixed }]);
                   setNamaFixed(""); setJumlahFixed(""); setHargaFixed("");
                 }}

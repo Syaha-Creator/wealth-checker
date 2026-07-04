@@ -862,3 +862,329 @@ Compute the recommended budget allocation for a given month, based on the user's
 | `hasPlan` | `false` if no budget plan has been saved for the requested month yet — `alokasi` will still reflect the level's percentages, but every `nominal` will be `0` (`rencanaPemasukanBulanan` defaults to `0`) |
 | `alokasi` | Only includes categories with a non-null name and > 0 percentage — some levels have fewer than 4 active categories (e.g. level 0 "Pailit" only has 2) |
 | `wealthLevel: -1` | When the user has no financial data yet, `alokasi` is `[]` and all totals are `0` (never a `404`) |
+
+---
+
+### GET `/api/wealth/wealth-history`
+
+**Fase 3 Sprint 16 — Wealth Snapshots Engine.** Historical net worth time series, sourced from `wealth_snapshots` (a daily snapshot row per user, upserted automatically by `createWealthSnapshot()` as a fire-and-forget side effect after any mutation to transactions/debts/assets/accounts — see Sprint 16 hooks). Also backfilled retroactively for pre-existing data via `bun run backfill:wealth-snapshots`.
+
+**Query params**
+
+| Param | Type | Required | Notes |
+|-------|------|----------|-------|
+| `from` | string (YYYY-MM-DD) | Yes | |
+| `to` | string (YYYY-MM-DD) | Yes | |
+
+**Response `200`**
+
+```json
+{
+  "history": [
+    { "tanggal": "2026-06-01", "kekayaanBersih": 10000000 },
+    { "tanggal": "2026-07-01", "kekayaanBersih": 12500000 }
+  ],
+  "delta": 2500000
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `history` | One row per day that has a snapshot (not every calendar day) within `[from, to]`, chronological order |
+| `delta` | `history[last].kekayaanBersih - history[0].kekayaanBersih`, or `0` if fewer than 2 points |
+
+**Error `422`** — `from` is after `to`.
+
+---
+
+### GET `/api/wealth/retirement-plan`
+
+**Fase 3 Sprint 22 — Rencana Pensiun & Warisan Terintegrasi Penuh.** Computes the full retirement/inheritance fund plan from the user's profile (`tanggalLahir`, `rencanaUsiaPensiun`, `rencanaUsiaWarisan`, planned income/expense) plus current wealth summary. Uses a linear projection (not present-value/inflation-adjusted), matching PRD 3.1.8.
+
+**Response `200` — profile incomplete**
+
+```json
+{
+  "hasProfile": false,
+  "error": "Lengkapi tanggal lahir, rencana usia pensiun, dan rencana usia warisan di halaman Profil untuk melihat rencana pensiun."
+}
+```
+
+**Response `200` — profile complete**
+
+```json
+{
+  "hasProfile": true,
+  "plan": {
+    "tahunMenujuPensiun": 29,
+    "tahunMenujuWarisan": 54,
+    "danaDibutuhkanSebelumPensiun": 1740000000,
+    "danaDibutuhkanSelamaPensiun": 1500000000,
+    "totalDanaPensiunWarisan": 3240000000
+  },
+  "sisaUangBulanan": 5000000,
+  "danaTerkumpulSaatIni": 42500000,
+  "selisihMenujuTarget": 3197500000,
+  "collectedFunds": {
+    "danaDaruratTerkumpul": 42500000,
+    "danaPensiunTerkumpul": 0,
+    "danaWarisanTerkumpul": 0
+  },
+  "debtPayoff": {
+    "bisaLunasSekarang": true,
+    "bulanLunasDenganKas": 0,
+    "bulanLunasDenganSisaGaji": 0
+  },
+  "realizedPL": {
+    "untungRugiJualBarang": 250000,
+    "untungRugiInvestasi": -100000
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `plan.tahunMenujuPensiun` / `tahunMenujuWarisan` | Years from today to the planned retirement/inheritance age (`tanggalLahir + rencanaUsia*`), can be negative if that age has already passed |
+| `plan.danaDibutuhkanSebelumPensiun` | `tahunMenujuPensiun × 12 × sisaUangBulanan`, clamped to `0` if negative |
+| `plan.danaDibutuhkanSelamaPensiun` | `(rencanaUsiaWarisan − rencanaUsiaPensiun) × 12 × sisaUangBulanan` |
+| `sisaUangBulanan` | `pemasukanBulananRataRata − pengeluaranBulananRataRata` from `/api/profile` (planned figures, not actuals) |
+| `collectedFunds` | Waterfall allocation of current `kekayaanBersih`: fills `danaDaruratTerkumpul` up to `danaDibutuhkanSebelumPensiun` first, then `danaPensiunTerkumpul` up to `danaDibutuhkanSelamaPensiun`, remainder becomes `danaWarisanTerkumpul` |
+| `debtPayoff.bulanLunasDenganKas` | Months to pay off all debt using current cash + monthly surplus; `null` if `sisaUangBulanan ≤ 0` and cash alone isn't enough |
+| `debtPayoff.bulanLunasDenganSisaGaji` | Months to pay off all debt using only the monthly surplus (no cash) — `⌈totalUtang / sisaUangBulanan⌉`; `null` if `sisaUangBulanan ≤ 0` |
+| `realizedPL` | Lifetime realized profit/loss from `jual_barang` / `jual_investasi` transactions (`SUM(untungRugi)`), independent of current holdings |
+
+---
+
+## 9. Analytics (Analisa)
+
+Base path: `/api/analytics` · **Auth required** · **Fase 3 Sprint 17-19**
+
+Powers the unified `/analytics` dashboard (6 sub-reports + shared date range filter). Every endpoint below is fetched independently by its own UI component (`Promise.allSettled`-style), so one report failing/loading never blocks the others.
+
+### GET `/api/analytics/monthly-pl`
+
+Monthly income/expense/savings breakdown, grouped by calendar month within the date range.
+
+**Query params**: `from`, `to` (both required, `YYYY-MM-DD`).
+
+**Response `200`**
+
+```json
+[
+  {
+    "bulan": "2026-06",
+    "pendapatan": 10000000,
+    "pinjamanMasuk": 0,
+    "bayarUtang": 500000,
+    "piutangTerbayar": 0,
+    "pengeluaran": 7500000,
+    "tabungan": 2500000,
+    "tabunganNegatif": false
+  }
+]
+```
+
+`tabungan = pendapatan − pengeluaran`; `tabunganNegatif` flags months where it went below zero (rendered in red in the UI).
+
+**Error `422`** — `from` after `to`.
+
+---
+
+### GET `/api/analytics/budget-vs-actual`
+
+Compares the user's planned budget allocation (from Budgeting Advisor, Fase 2 Sprint 14 — percentages driven by `wealthLevel` via `budget_allocation_reference`) against actual transaction totals in the date range, per category.
+
+**Query params**
+
+| Param | Type | Required | Notes |
+|-------|------|----------|-------|
+| `from` / `to` | string (YYYY-MM-DD) | Yes | |
+| `bulanTahun` | string (YYYY-MM) | No | Which month's budget plan to compare against; defaults to current month |
+| `kategoriPokok` | string | No | Comma-separated category list overriding the default "kebutuhan pokok" set, same semantics as `essential-expenses`'s `kategori` |
+
+**Response `200`**
+
+```json
+{
+  "wealthLevel": 5,
+  "hasPlan": true,
+  "pendapatan": { "rencanaNominal": 10000000, "aktualNominal": 9500000 },
+  "alokasi": [
+    {
+      "kategori": "Kebutuhan Pokok",
+      "rencanaNominal": 3500000,
+      "aktualNominal": 3800000,
+      "selisih": 300000,
+      "selisihPersen": 8.6,
+      "overBudget": true
+    }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `wealthLevel: -1` | No financial data yet — `hasPlan: false`, `pendapatan: null`, `alokasi: []` |
+| `alokasi[].selisih` | `aktualNominal − rencanaNominal` |
+| `alokasi[].selisihPersen` | `null` if `rencanaNominal` is `0` (division by zero) |
+| `alokasi[].overBudget` | `true` when `aktualNominal > rencanaNominal` (rendered red in the UI) |
+
+Actual amounts are mapped to plan categories by a fixed dictionary (`kebutuhan pokok`→pengeluaran esensial, `bayar utang`→`bayar_utang` transactions, `investasi`/`investasi pensiun`→`beli_investasi`, `gaya hidup`→non-essential pengeluaran, `dana warisan`→not yet mapped to a transaction source, always `0`) — not fuzzy-matched, so custom category names won't match.
+
+**Error `422`** — `from` after `to`.
+
+---
+
+### GET `/api/analytics/emergency-fund`
+
+Emergency fund adequacy check: `danaDarurat = totalUangLikuid (kas + investasi) − totalUtang`, evaluated against the user's planned monthly expense (`pengeluaranBulananRataRata` from `/api/profile`). Not affected by date range filters — reflects the user's current state.
+
+**Response `200`**
+
+```json
+{ "danaDarurat": 15000000, "status": "cukup", "bulanTertanggung": 5.5 }
+```
+
+| Field | Description |
+|-------|-------------|
+| `status` | `"cukup"` if `danaDarurat > 0` and covers ≥ 3 months of planned expenses, else `"belum_cukup"` |
+| `bulanTertanggung` | `danaDarurat / pengeluaranBulananRataRata`, rounded to 1 decimal; `null` if no planned expense figure is set |
+
+No financial data yet → `{ "danaDarurat": 0, "status": "belum_cukup", "bulanTertanggung": null }`.
+
+---
+
+### GET `/api/analytics/essential-expenses`
+
+Two-level breakdown (category → detail/`rincian`) of essential ("kebutuhan pokok") spending in the date range.
+
+**Query params**
+
+| Param | Type | Required | Notes |
+|-------|------|----------|-------|
+| `from` / `to` | string (YYYY-MM-DD) | Yes | |
+| `kategori` | string | No | Comma-separated category override; defaults to `Konsumsi,Transportasi,Utilitas,Kesehatan,Pendidikan`. Custom categories are managed client-side (`localStorage`), no server-side persistence |
+
+**Response `200`**
+
+```json
+{
+  "categories": ["Konsumsi", "Transportasi", "Utilitas", "Kesehatan", "Pendidikan"],
+  "items": [
+    {
+      "kategori": "Konsumsi",
+      "rincianList": [{ "rincian": "Makan siang", "total": 500000 }],
+      "subtotal": 500000
+    }
+  ],
+  "grandTotal": 500000
+}
+```
+
+`items` sorted by `subtotal` descending; `rincianList` sorted by `total` descending. Rows with no `rincian` are grouped under `"(Tanpa rincian)"`.
+
+**Error `422`** — `from` after `to`.
+
+---
+
+### GET `/api/analytics/income`
+
+Income breakdown by category in the date range, with percentage-of-total and a "largest source" flag.
+
+**Query params**: `from`, `to` (both required, `YYYY-MM-DD`).
+
+**Response `200`**
+
+```json
+{
+  "items": [
+    { "kategori": "Gaji", "total": 9000000, "persentaseDariTotal": 90, "isTerbesar": true },
+    { "kategori": "Bonus", "total": 1000000, "persentaseDariTotal": 10, "isTerbesar": false }
+  ],
+  "grandTotal": 10000000
+}
+```
+
+Sorted by `total` descending; rows with no `kategori` are grouped under `"(Tanpa kategori)"`.
+
+**Error `422`** — `from` after `to`.
+
+---
+
+## 10. Dream Goals (Dream Tracker)
+
+Base path: `/api/dream-goals` · **Auth required** · **Fase 3 Sprint 21**
+
+Savings goals that can either track a linked account's live balance, or a manually-updated balance.
+
+### GET `/api/dream-goals`
+
+List all goals with computed progress, sorted by `persentase` descending.
+
+**Response `200`**
+
+```json
+[
+  {
+    "id": "uuid",
+    "namaGoal": "Liburan ke Jepang",
+    "accountId": "uuid",
+    "targetNominal": 20000000,
+    "saldoSaatIni": 12000000,
+    "persentase": 60,
+    "tercapai": false,
+    "sisaMenujuTarget": 8000000
+  }
+]
+```
+
+| Field | Description |
+|-------|-------------|
+| `saldoSaatIni` | Live `accounts.saldoCache` if `accountId` is set, otherwise the goal's own `saldoManual` column |
+| `persentase` | `min(100, round(saldoSaatIni / targetNominal × 1000) / 10)` |
+| `tercapai` | `true` once `saldoSaatIni >= targetNominal` (and `targetNominal > 0`) |
+
+---
+
+### POST `/api/dream-goals`
+
+Create a new goal.
+
+**Request body**
+
+```json
+{ "namaGoal": "Liburan ke Jepang", "targetNominal": 20000000, "accountId": "uuid" }
+```
+
+Or, without a linked account:
+
+```json
+{ "namaGoal": "Dana Pendidikan", "targetNominal": 50000000, "saldoManual": 5000000 }
+```
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `namaGoal` | string | Yes | Min length 1 |
+| `targetNominal` | number | Yes | Must be > 0 |
+| `accountId` | string (UUID) | No | If set, progress tracks that account's live balance |
+| `saldoManual` | number | No | Only valid when `accountId` is **not** set — rejected (`422`) if both are provided |
+
+**Response `201`** — the created goal row (raw DB shape, not the computed progress shape from `GET /`).
+
+**Error `404`** — `accountId` provided but not found / doesn't belong to user.
+
+**Error `422`** — both `accountId` and `saldoManual` provided.
+
+---
+
+### PATCH `/api/dream-goals/:id`
+
+Update a goal. All fields optional; same validation as `POST`. Passing `accountId: null` explicitly unlinks the account (goal reverts to manual balance tracking).
+
+**Response `200`** — the updated goal row. **`404`** if not found or `accountId` invalid.
+
+---
+
+### DELETE `/api/dream-goals/:id`
+
+**Response `204`** — no content. **`404`** if not found.

@@ -5,15 +5,43 @@ import { db, debts, receivables, transactions } from "@wealth/db";
 import { eq, and, count } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { calculateDebtSummary, calculateReceivableSummary } from "../services/debtReceivable";
+import { createWealthSnapshot } from "../services/wealth";
 import { isUniqueViolation } from "../lib/dbErrors";
+import { zodErrorHook, MAX_MONETARY_VALUE } from "../lib/validation";
 import type { AppEnv } from "../types";
 
 export const debtRoutes = new Hono<AppEnv>();
 
 debtRoutes.use("*", requireAuth);
 
+// Sprint 16 (Fase 3) — lihat catatan di transactions.ts: fire-and-forget,
+// dipanggil setelah mutasi CRUD utang/piutang commit.
+function snapshotWealthInBackground(userId: string): void {
+  createWealthSnapshot(db, userId).catch((err) => {
+    console.error("[wealth-snapshot] gagal membuat snapshot", err);
+  });
+}
+
 // Reusable UUID param schema
 const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
+
+// High #1 (bug hunt): reverseTransactionEffects (transactions.ts) untuk
+// bayar_utang/penerimaan_piutang mengasumsikan sisaSaldo HANYA pernah berubah
+// lewat transaksi tersebut — PATCH manual yang mengubah saldoAwal/sisaSaldo di
+// luar itu mendesinkronisasi asumsi itu, sehingga penghapusan/edit transaksi
+// lama nanti menghitung ulang sisaSaldo dari basis yang sudah salah. Guard ini
+// dipanggil sebelum PATCH yang mengubah field tersebut diterapkan.
+async function hasPaymentHistory(userId: string, entityId: string, type: "bayar_utang" | "penerimaan_piutang"): Promise<boolean> {
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(transactions)
+    .where(and(
+      eq(transactions.userId, userId),
+      eq(transactions.relatedEntityId, entityId),
+      eq(transactions.type, type),
+    ));
+  return Number(total) > 0;
+}
 
 // ─── GET /summary — ringkasan "Pemberi Utang vs Sisa Utang" (Sprint 8) ──────
 // PENTING: didaftarkan sebelum "/:id" implisit dari route lain agar path literal
@@ -31,11 +59,12 @@ debtRoutes.get("/summary", async (c) => {
 // progress % pembayaran jadi negatif di UI. Base object kept separate from POST's
 // `.refine()` so PATCH can still use `.partial()` (ZodEffects has no `.partial()`);
 // PATCH re-checks the cross-field constraint manually against the merged row instead.
+// Bug hunt (Issue 9): .max() — cegah nilai ekstrem yang berisiko presisi float.
 const debtBaseSchema = z.object({
   pemberiUtang: z.string().min(1),
   tipe: z.enum(["utang_biasa", "kartu_kredit"]).default("utang_biasa"),
-  saldoAwal: z.number().min(0).finite(),
-  sisaSaldo: z.number().min(0).finite().optional(),
+  saldoAwal: z.number().min(0).max(MAX_MONETARY_VALUE).finite(),
+  sisaSaldo: z.number().min(0).max(MAX_MONETARY_VALUE).finite().optional(),
 });
 const debtSchema = debtBaseSchema.refine((val) => val.sisaSaldo === undefined || val.sisaSaldo <= val.saldoAwal, {
   message: "sisaSaldo tidak boleh melebihi saldoAwal",
@@ -47,7 +76,7 @@ debtRoutes.get("/", async (c) => {
   return c.json(await db.select().from(debts).where(eq(debts.userId, userId)));
 });
 
-debtRoutes.post("/", zValidator("json", debtSchema), async (c) => {
+debtRoutes.post("/", zValidator("json", debtSchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const { pemberiUtang, tipe, saldoAwal, sisaSaldo } = c.req.valid("json");
   try {
@@ -61,6 +90,7 @@ debtRoutes.post("/", zValidator("json", debtSchema), async (c) => {
         sisaSaldo: String(sisaSaldo ?? saldoAwal),
       })
       .returning();
+    snapshotWealthInBackground(userId);
     return c.json(row, 201);
   } catch (err) {
     if (isUniqueViolation(err, "idx_debts_user_pemberi_unique")) {
@@ -70,13 +100,20 @@ debtRoutes.post("/", zValidator("json", debtSchema), async (c) => {
   }
 });
 
-debtRoutes.patch("/:id", zValidator("param", idParam), zValidator("json", debtBaseSchema.partial()), async (c) => {
+debtRoutes.patch("/:id", zValidator("param", idParam, zodErrorHook), zValidator("json", debtBaseSchema.partial(), zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
 
   const [existing] = await db.select().from(debts).where(and(eq(debts.id, id), eq(debts.userId, userId)));
   if (!existing) return c.json({ error: "Not found" }, 404);
+
+  if (
+    (data.saldoAwal !== undefined || data.sisaSaldo !== undefined) &&
+    (await hasPaymentHistory(userId, id, "bayar_utang"))
+  ) {
+    return c.json({ error: "saldoAwal/sisaSaldo tidak bisa diedit langsung karena utang ini sudah punya histori pembayaran (bayar_utang) — edit lewat transaksi cicilan, bukan lewat form ini" }, 409);
+  }
 
   const nextSaldoAwal = data.saldoAwal !== undefined ? data.saldoAwal : Number(existing.saldoAwal);
   const nextSisaSaldo = data.sisaSaldo !== undefined ? data.sisaSaldo : Number(existing.sisaSaldo);
@@ -95,6 +132,7 @@ debtRoutes.patch("/:id", zValidator("param", idParam), zValidator("json", debtBa
       })
       .where(and(eq(debts.id, id), eq(debts.userId, userId)))
       .returning();
+    snapshotWealthInBackground(userId);
     return c.json(row);
   } catch (err) {
     if (isUniqueViolation(err, "idx_debts_user_pemberi_unique")) {
@@ -104,7 +142,7 @@ debtRoutes.patch("/:id", zValidator("param", idParam), zValidator("json", debtBa
   }
 });
 
-debtRoutes.delete("/:id", zValidator("param", idParam), async (c) => {
+debtRoutes.delete("/:id", zValidator("param", idParam, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
 
@@ -120,6 +158,7 @@ debtRoutes.delete("/:id", zValidator("param", idParam), async (c) => {
   }
 
   await db.delete(debts).where(and(eq(debts.id, id), eq(debts.userId, userId)));
+  snapshotWealthInBackground(userId);
   return c.body(null, 204);
 });
 
@@ -128,8 +167,8 @@ debtRoutes.delete("/:id", zValidator("param", idParam), async (c) => {
 // Medium #6 (bug hunt): sama seperti debtBaseSchema — sisaSaldo <= saldoAwal.
 const receivableBaseSchema = z.object({
   peminjam: z.string().min(1),
-  saldoAwal: z.number().min(0).finite(),
-  sisaSaldo: z.number().min(0).finite().optional(),
+  saldoAwal: z.number().min(0).max(MAX_MONETARY_VALUE).finite(),
+  sisaSaldo: z.number().min(0).max(MAX_MONETARY_VALUE).finite().optional(),
 });
 const receivableSchema = receivableBaseSchema.refine((val) => val.sisaSaldo === undefined || val.sisaSaldo <= val.saldoAwal, {
   message: "sisaSaldo tidak boleh melebihi saldoAwal",
@@ -149,7 +188,7 @@ debtRoutes.get("/receivables/summary", async (c) => {
   return c.json(calculateReceivableSummary(rows));
 });
 
-debtRoutes.post("/receivables", zValidator("json", receivableSchema), async (c) => {
+debtRoutes.post("/receivables", zValidator("json", receivableSchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const { peminjam, saldoAwal, sisaSaldo } = c.req.valid("json");
   try {
@@ -162,6 +201,7 @@ debtRoutes.post("/receivables", zValidator("json", receivableSchema), async (c) 
         sisaSaldo: String(sisaSaldo ?? saldoAwal),
       })
       .returning();
+    snapshotWealthInBackground(userId);
     return c.json(row, 201);
   } catch (err) {
     if (isUniqueViolation(err, "idx_receivables_user_peminjam_unique")) {
@@ -171,13 +211,20 @@ debtRoutes.post("/receivables", zValidator("json", receivableSchema), async (c) 
   }
 });
 
-debtRoutes.patch("/receivables/:id", zValidator("param", idParam), zValidator("json", receivableBaseSchema.partial()), async (c) => {
+debtRoutes.patch("/receivables/:id", zValidator("param", idParam, zodErrorHook), zValidator("json", receivableBaseSchema.partial(), zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
 
   const [existing] = await db.select().from(receivables).where(and(eq(receivables.id, id), eq(receivables.userId, userId)));
   if (!existing) return c.json({ error: "Not found" }, 404);
+
+  if (
+    (data.saldoAwal !== undefined || data.sisaSaldo !== undefined) &&
+    (await hasPaymentHistory(userId, id, "penerimaan_piutang"))
+  ) {
+    return c.json({ error: "saldoAwal/sisaSaldo tidak bisa diedit langsung karena piutang ini sudah punya histori penerimaan (penerimaan_piutang) — edit lewat transaksi penerimaan, bukan lewat form ini" }, 409);
+  }
 
   const nextSaldoAwal = data.saldoAwal !== undefined ? data.saldoAwal : Number(existing.saldoAwal);
   const nextSisaSaldo = data.sisaSaldo !== undefined ? data.sisaSaldo : Number(existing.sisaSaldo);
@@ -195,6 +242,7 @@ debtRoutes.patch("/receivables/:id", zValidator("param", idParam), zValidator("j
       })
       .where(and(eq(receivables.id, id), eq(receivables.userId, userId)))
       .returning();
+    snapshotWealthInBackground(userId);
     return c.json(row);
   } catch (err) {
     if (isUniqueViolation(err, "idx_receivables_user_peminjam_unique")) {
@@ -204,7 +252,7 @@ debtRoutes.patch("/receivables/:id", zValidator("param", idParam), zValidator("j
   }
 });
 
-debtRoutes.delete("/receivables/:id", zValidator("param", idParam), async (c) => {
+debtRoutes.delete("/receivables/:id", zValidator("param", idParam, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const { id } = c.req.valid("param");
 
@@ -219,5 +267,6 @@ debtRoutes.delete("/receivables/:id", zValidator("param", idParam), async (c) =>
   }
 
   await db.delete(receivables).where(and(eq(receivables.id, id), eq(receivables.userId, userId)));
+  snapshotWealthInBackground(userId);
   return c.body(null, 204);
 });

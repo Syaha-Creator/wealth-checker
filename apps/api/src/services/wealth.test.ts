@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { calculateWealthLevel, buildHealthCheckup } from "./wealth";
+import {
+  calculateWealthLevel,
+  buildHealthCheckup,
+  computeNetWorthDelta,
+  computeBackfillPoints,
+  calculateRetirementPlan,
+  calculateCollectedFundsBreakdown,
+  calculateDebtPayoffEstimate,
+} from "./wealth";
 
 // Helper untuk membuat parameter lengkap
 function params(overrides: {
@@ -7,12 +15,14 @@ function params(overrides: {
   totalUtang?: number;
   uang?: number;
   kekayaanBersih?: number;
+  totalLiquidAssets?: number;
 }) {
   const totalAset = overrides.totalAset ?? 0;
   const totalUtang = overrides.totalUtang ?? 0;
   const uang = overrides.uang ?? totalAset;
   const kekayaanBersih = overrides.kekayaanBersih ?? totalAset - totalUtang;
-  return { totalAset, totalUtang, uang, kekayaanBersih };
+  const totalLiquidAssets = overrides.totalLiquidAssets ?? 0;
+  return { totalAset, totalUtang, uang, kekayaanBersih, totalLiquidAssets };
 }
 
 describe("calculateWealthLevel", () => {
@@ -72,111 +82,99 @@ describe("calculateWealthLevel", () => {
   });
 
   // ── Level 3: Gaji ke Gaji ─────────────────────────────────────────────────
+  // High #2 fix: level 3-6 sekarang digerakkan oleh uangBersih (uang - totalUtang)
+  // dan totalLiquidAssets (investasi aktif) — bukan kekayaanBersih (yang ikut
+  // menjumlahkan aset tidak lancar/barang, lihat komentar di wealth.ts).
 
-  it("level 3: kekayaanBersih positif tapi kecil, uang >= utang, dan kekayaan < uang", () => {
-    // Level 3 tercapai jika: aset >= utang, 2*utang <= aset, uang >= utang, kekayaan <= 0
-    // Dalam praktik ini terjadi saat utang kecil dan kekayaan bersih sangat kecil positif
-    // Gunakan kasus: aset 1000, utang 499, uang 502, kekayaan 501 → lewati 0,1,2 → cek level 3 (501 > 0)
-    // → level 4 karena kekayaan (501) < uang (502)
+  it("level 3: uangBersih tepat 0 (uang == totalUtang) → belum ada dana darurat cair", () => {
     expect(calculateWealthLevel(params({
-      totalAset: 1000,
-      totalUtang: 0,
-      uang: 1000,
-      kekayaanBersih: 1000, // > 0, dan kekayaan == uang → bukan level 4 (kekayaan < uang?)
-    }))).toBeGreaterThanOrEqual(3);
+      totalAset: 1_000_000,
+      totalUtang: 500_000,
+      uang: 500_000,             // uang == utang → uangBersih = 0
+      kekayaanBersih: 500_000,   // positif, tapi tetap level 3 karena uangBersih <= 0
+    }))).toBe(3);
   });
 
-  it("level 3: kekayaanBersih positif tapi < uang", () => {
-    // Ini sebenarnya level 4, tapi test ini memastikan batas bawah level 4
+  it("level 3: uangBersih sedikit positif → sudah lewat level 3 (masuk level 4+)", () => {
     expect(calculateWealthLevel(params({
-      totalAset: 50_000_000,
-      totalUtang: 5_000_000,
-      uang: 30_000_000,
-      kekayaanBersih: 45_000_000, // kekayaan > uang (30jt) → level 5 atau 6?
+      totalAset: 1_000_001,
+      totalUtang: 500_000,
+      uang: 500_001,             // uangBersih = 1 → sudah > 0
+      kekayaanBersih: 500_001,
     }))).toBeGreaterThanOrEqual(4);
   });
 
   // ── Level 4: Punya Dana Darurat ───────────────────────────────────────────
 
-  it("level 4: kekayaanBersih positif dan < uang", () => {
+  it("level 4: uangBersih positif, belum ada investasi (totalLiquidAssets = 0)", () => {
     expect(calculateWealthLevel(params({
       totalAset: 80_000_000,
       totalUtang: 5_000_000,
-      uang: 50_000_000,
-      kekayaanBersih: 75_000_000, // 0 < 75jt < 50jt*3=150jt → level 5
-    }))).toBe(5);
+      uang: 50_000_000,          // uangBersih = 45jt
+      kekayaanBersih: 75_000_000,
+      totalLiquidAssets: 0,      // belum berinvestasi → level 4, bukan 5
+    }))).toBe(4);
   });
 
-  it("level 4: kekayaan bersih lebih kecil dari uang → level 4", () => {
-    expect(calculateWealthLevel(params({
-      totalAset: 40_000_000,
-      totalUtang: 5_000_000,
-      uang: 40_000_000,
-      kekayaanBersih: 15_000_000, // kekayaan 15jt < uang 40jt → level 4
-    }))).toBe(4);
+  it("bug hunt High #2 regresi: rumah mahal + kas nyaris nol + tanpa investasi TIDAK boleh lagi jadi level 6", () => {
+    // Skenario asli dari bug hunt report: totalFixedAssets (barang tidak
+    // lancar) 100jt, tapi uang cair cuma 1jt dan belum pernah berinvestasi
+    // sepeser pun. kekayaanBersih (101jt) dulu bikin ini lompat ke level 6
+    // "Punya Warisan" — sekarang harus level 4 (uangBersih > 0, tapi belum
+    // ada investasi aktif).
+    const uang = 1_000_000;
+    const totalFixedAssets = 100_000_000;
+    expect(calculateWealthLevel({
+      totalAset: uang + totalFixedAssets,
+      totalUtang: 0,
+      uang,
+      kekayaanBersih: uang + totalFixedAssets,
+      totalLiquidAssets: 0,
+    })).toBe(4);
   });
 
   // ── Level 5: Dana Pensiun ─────────────────────────────────────────────────
 
-  it("level 5: kekayaanBersih >= uang dan < uang*3", () => {
+  it("level 5: sudah berinvestasi tapi totalLiquidAssets masih < uangBersih", () => {
     expect(calculateWealthLevel(params({
       totalAset: 200_000_000,
       totalUtang: 10_000_000,
-      uang: 100_000_000,
-      kekayaanBersih: 190_000_000, // uang <= 190jt < 100jt*3=300jt → level 5
+      uang: 100_000_000,          // uangBersih = 90jt
+      kekayaanBersih: 190_000_000,
+      totalLiquidAssets: 40_000_000, // 0 < 40jt < 90jt → level 5
     }))).toBe(5);
   });
 
-  it("level 5: tepat di batas bawah (kekayaan == uang) → level 5", () => {
+  it("level 5: batas atas — totalLiquidAssets tepat di bawah uangBersih", () => {
     expect(calculateWealthLevel(params({
       totalAset: 100_000_000,
       totalUtang: 0,
-      uang: 100_000_000,
-      kekayaanBersih: 100_000_000, // kekayaan == uang → cek kondisi: kekayaan < uang? NO → kekayaan < uang*3? YES (100jt < 300jt) → level 5
+      uang: 100_000_000,           // uangBersih = 100jt
+      kekayaanBersih: 100_000_000,
+      totalLiquidAssets: 99_999_999, // < uangBersih → masih level 5
     }))).toBe(5);
   });
 
   // ── Level 6: Punya Warisan ────────────────────────────────────────────────
 
-  it("level 6: kekayaanBersih >= uang*3", () => {
-    expect(calculateWealthLevel(params({
-      totalAset: 1_000_000_000,
-      totalUtang: 0,
-      uang: 300_000_000,
-      kekayaanBersih: 1_000_000_000, // 1M >= 300jt*3=900jt → level 6
-    }))).toBe(6);
-  });
-
-  it("level 6: tepat di batas (kekayaan == uang*3)", () => {
+  it("level 6: totalLiquidAssets == uangBersih (investasi menyamai dana darurat cair)", () => {
     expect(calculateWealthLevel(params({
       totalAset: 300_000_000,
       totalUtang: 0,
-      uang: 100_000_000,
-      kekayaanBersih: 300_000_000, // 300jt == 100jt*3 → level 6
+      uang: 100_000_000,            // uangBersih = 100jt
+      kekayaanBersih: 300_000_000,  // termasuk 200jt aset tidak lancar — tidak lagi relevan untuk level
+      totalLiquidAssets: 100_000_000, // == uangBersih → level 6
     }))).toBe(6);
   });
 
-  // ── Edge cases ────────────────────────────────────────────────────────────
-
-  it("edge: hanya punya investasi (bukan kas), tidak ada utang → level 5 atau 6", () => {
-    // Dengan uang=1M dan kekayaan=1M: kekayaan < uang*3 (1M < 3M) → level 5
-    const level = calculateWealthLevel({
+  it("level 6: totalLiquidAssets > uangBersih (investasi mendominasi)", () => {
+    expect(calculateWealthLevel(params({
       totalAset: 1_000_000_000,
       totalUtang: 0,
-      uang: 1_000_000_000,
+      uang: 300_000_000,             // uangBersih = 300jt
       kekayaanBersih: 1_000_000_000,
-    });
-    expect(level).toBe(5); // kekayaan (1M) < uang*3 (3M) → dana pensiun
-  });
-
-  it("edge: kekayaan 3x lipat dari uang → level 6", () => {
-    // Untuk level 6: kekayaan >= uang * 3
-    expect(calculateWealthLevel({
-      totalAset: 3_000_000_000,
-      totalUtang: 0,
-      uang: 1_000_000_000,
-      kekayaanBersih: 3_000_000_000,
-    })).toBe(6);
+      totalLiquidAssets: 300_000_000, // >= uangBersih → level 6
+    }))).toBe(6);
   });
 
   it("edge: nilai sangat kecil, tidak nol — harus tetap menghasilkan level yang valid (0-6)", () => {
@@ -257,5 +255,190 @@ describe("buildHealthCheckup (Sprint 13: Financial Health Check-up)", () => {
     expect(result.diagnosa).toBe("");
     expect(result.saran).toBe("");
     expect(result.ciri).toEqual([]);
+  });
+});
+
+describe("computeNetWorthDelta (Sprint 16: Wealth Snapshots backfill)", () => {
+  it("pendapatan menambah kekayaan bersih sebesar nominal", () => {
+    expect(computeNetWorthDelta({ type: "pendapatan", nominal: "500000" })).toBe(500000);
+  });
+
+  it("pengeluaran mengurangi kekayaan bersih sebesar nominal", () => {
+    expect(computeNetWorthDelta({ type: "pengeluaran", nominal: "200000" })).toBe(-200000);
+  });
+
+  it("jual_barang/jual_investasi hanya untung/rugi yang berpengaruh, bukan nominal jual", () => {
+    expect(computeNetWorthDelta({ type: "jual_barang", nominal: "1000000", untungRugi: "150000" })).toBe(150000);
+    expect(computeNetWorthDelta({ type: "jual_investasi", nominal: "1000000", untungRugi: "-50000" })).toBe(-50000);
+  });
+
+  it("jual_barang tanpa untungRugi (null) dianggap 0", () => {
+    expect(computeNetWorthDelta({ type: "jual_barang", nominal: "1000000", untungRugi: null })).toBe(0);
+  });
+
+  it.each([
+    "pinjaman_utang", "bayar_utang", "pemberian_piutang", "penerimaan_piutang",
+    "beli_barang", "beli_investasi", "transfer",
+  ])("%s net-worth-neutral (delta 0) — kas dan komponen lain bergerak berlawanan senilai sama", (type) => {
+    expect(computeNetWorthDelta({ type, nominal: "1000000" })).toBe(0);
+  });
+});
+
+describe("computeBackfillPoints (Sprint 16: Wealth Snapshots backfill)", () => {
+  it("hasil akhir replay harus persis sama dengan kekayaan bersih hari ini", () => {
+    const txs = [
+      { tanggal: "2026-01-05", type: "pendapatan", nominal: "1000000" },
+      { tanggal: "2026-01-10", type: "pengeluaran", nominal: "300000" },
+      { tanggal: "2026-02-01", type: "jual_investasi", nominal: "500000", untungRugi: "50000" },
+    ];
+    const points = computeBackfillPoints(txs, 2_000_000);
+    expect(points[points.length - 1].kekayaanBersih).toBe(2_000_000);
+  });
+
+  it("urutan titik hasil harus kronologis sesuai tanggal unik input", () => {
+    const txs = [
+      { tanggal: "2026-01-01", type: "pendapatan", nominal: "100000" },
+      { tanggal: "2026-01-15", type: "pengeluaran", nominal: "50000" },
+      { tanggal: "2026-02-01", type: "pendapatan", nominal: "200000" },
+    ];
+    const points = computeBackfillPoints(txs, 250_000);
+    expect(points.map((p) => p.tanggal)).toEqual(["2026-01-01", "2026-01-15", "2026-02-01"]);
+  });
+
+  it("beberapa transaksi di tanggal yang sama hanya menghasilkan satu titik (nilai akhir hari itu)", () => {
+    const txs = [
+      { tanggal: "2026-01-01", type: "pendapatan", nominal: "100000" },
+      { tanggal: "2026-01-01", type: "pengeluaran", nominal: "30000" },
+      { tanggal: "2026-01-01", type: "pendapatan", nominal: "20000" },
+    ];
+    const points = computeBackfillPoints(txs, 90_000);
+    expect(points).toHaveLength(1);
+    expect(points[0]).toEqual({ tanggal: "2026-01-01", kekayaanBersih: 90_000 });
+  });
+
+  it("transaksi net-worth-neutral (mis. transfer) tidak mengubah nilai titik", () => {
+    const txs = [
+      { tanggal: "2026-01-01", type: "pendapatan", nominal: "100000" },
+      { tanggal: "2026-01-02", type: "transfer", nominal: "50000" },
+    ];
+    const points = computeBackfillPoints(txs, 100_000);
+    expect(points).toEqual([
+      { tanggal: "2026-01-01", kekayaanBersih: 100_000 },
+      { tanggal: "2026-01-02", kekayaanBersih: 100_000 },
+    ]);
+  });
+
+  it("tidak ada transaksi → tidak ada titik", () => {
+    expect(computeBackfillPoints([], 500_000)).toEqual([]);
+  });
+});
+
+describe("calculateRetirementPlan (Sprint 22 — formula PRD 3.1.8)", () => {
+  const referenceDate = new Date("2026-01-01T00:00:00");
+
+  it("dana dibutuhkan selama pensiun = (usiaWarisan - usiaPensiun) x 12 x sisaUangBulanan (tidak bergantung tanggal referensi)", () => {
+    const plan = calculateRetirementPlan(
+      { tanggalLahir: "2000-01-01", usiaPensiun: 55, usiaWarisan: 80, sisaUangBulanan: 5_000_000 },
+      referenceDate,
+    );
+    expect(plan.danaDibutuhkanSelamaPensiun).toBe(25 * 12 * 5_000_000);
+  });
+
+  it("dana dibutuhkan sebelum pensiun = tahunMenujuPensiun x 12 x sisaUangBulanan", () => {
+    const plan = calculateRetirementPlan(
+      { tanggalLahir: "2000-01-01", usiaPensiun: 55, usiaWarisan: 80, sisaUangBulanan: 5_000_000 },
+      referenceDate,
+    );
+    // Lahir 2000-01-01 + 55 tahun = pensiun di 2055-01-01; referenceDate 2026-01-01 → ~29 tahun
+    expect(plan.tahunMenujuPensiun).toBeCloseTo(29, 0);
+    expect(plan.danaDibutuhkanSebelumPensiun).toBeCloseTo(29 * 12 * 5_000_000, -5);
+  });
+
+  it("totalDanaPensiunWarisan = jumlah danaDibutuhkanSebelumPensiun + danaDibutuhkanSelamaPensiun", () => {
+    const plan = calculateRetirementPlan(
+      { tanggalLahir: "2000-01-01", usiaPensiun: 55, usiaWarisan: 80, sisaUangBulanan: 5_000_000 },
+      referenceDate,
+    );
+    expect(plan.totalDanaPensiunWarisan).toBe(plan.danaDibutuhkanSebelumPensiun + plan.danaDibutuhkanSelamaPensiun);
+  });
+
+  it("usia pensiun sudah terlewat (tahunMenujuPensiun negatif) → danaDibutuhkanSebelumPensiun di-clamp 0, bukan negatif", () => {
+    const plan = calculateRetirementPlan(
+      { tanggalLahir: "1960-01-01", usiaPensiun: 55, usiaWarisan: 80, sisaUangBulanan: 5_000_000 },
+      referenceDate, // sudah lewat usia 55 sejak 2015
+    );
+    expect(plan.tahunMenujuPensiun).toBeLessThan(0);
+    expect(plan.danaDibutuhkanSebelumPensiun).toBe(0);
+  });
+
+  it("sisaUangBulanan negatif (defisit) → target dana tetap dihitung (bisa negatif), tidak error", () => {
+    const plan = calculateRetirementPlan(
+      { tanggalLahir: "2000-01-01", usiaPensiun: 55, usiaWarisan: 80, sisaUangBulanan: -1_000_000 },
+      referenceDate,
+    );
+    expect(plan.danaDibutuhkanSelamaPensiun).toBe(25 * 12 * -1_000_000);
+  });
+});
+
+describe("calculateCollectedFundsBreakdown (Sprint 22 — waterfall dana darurat/pensiun/warisan)", () => {
+  it("kekayaan bersih cukup untuk darurat + pensiun + sisa jadi warisan", () => {
+    const result = calculateCollectedFundsBreakdown(100_000_000, 30_000_000, 50_000_000);
+    expect(result.danaDaruratTerkumpul).toBe(30_000_000);
+    expect(result.danaPensiunTerkumpul).toBe(50_000_000);
+    expect(result.danaWarisanTerkumpul).toBe(20_000_000);
+  });
+
+  it("kekayaan bersih hanya cukup sebagian untuk dana darurat → pensiun & warisan 0", () => {
+    const result = calculateCollectedFundsBreakdown(10_000_000, 30_000_000, 50_000_000);
+    expect(result.danaDaruratTerkumpul).toBe(10_000_000);
+    expect(result.danaPensiunTerkumpul).toBe(0);
+    expect(result.danaWarisanTerkumpul).toBe(0);
+  });
+
+  it("kekayaan bersih cukup darurat penuh + sebagian pensiun → warisan 0", () => {
+    const result = calculateCollectedFundsBreakdown(50_000_000, 30_000_000, 50_000_000);
+    expect(result.danaDaruratTerkumpul).toBe(30_000_000);
+    expect(result.danaPensiunTerkumpul).toBe(20_000_000);
+    expect(result.danaWarisanTerkumpul).toBe(0);
+  });
+
+  it("kekayaan bersih negatif → semua bucket 0, bukan negatif", () => {
+    const result = calculateCollectedFundsBreakdown(-5_000_000, 30_000_000, 50_000_000);
+    expect(result.danaDaruratTerkumpul).toBe(0);
+    expect(result.danaPensiunTerkumpul).toBe(0);
+    expect(result.danaWarisanTerkumpul).toBe(0);
+  });
+
+  it("target darurat/pensiun 0 (belum isi profil) → seluruh kekayaan bersih jadi 'warisan terkumpul'", () => {
+    const result = calculateCollectedFundsBreakdown(20_000_000, 0, 0);
+    expect(result.danaDaruratTerkumpul).toBe(0);
+    expect(result.danaPensiunTerkumpul).toBe(0);
+    expect(result.danaWarisanTerkumpul).toBe(20_000_000);
+  });
+});
+
+describe("calculateDebtPayoffEstimate (Sprint 22 — PRD 3.2 kapan utang lunas)", () => {
+  it("tidak ada utang → bisa lunas sekarang, 0 bulan untuk keduanya", () => {
+    const result = calculateDebtPayoffEstimate(10_000_000, 0, 2_000_000);
+    expect(result).toEqual({ bisaLunasSekarang: true, bulanLunasDenganKas: 0, bulanLunasDenganSisaGaji: 0 });
+  });
+
+  it("kas >= utang → bisa lunas sekarang (0 bulan dengan kas)", () => {
+    const result = calculateDebtPayoffEstimate(10_000_000, 8_000_000, 1_000_000);
+    expect(result.bisaLunasSekarang).toBe(true);
+    expect(result.bulanLunasDenganKas).toBe(0);
+  });
+
+  it("kas < utang, sisa gaji positif → ROUNDUP((utang-kas)/sisaGaji) bulan", () => {
+    const result = calculateDebtPayoffEstimate(5_000_000, 20_000_000, 3_000_000);
+    expect(result.bisaLunasSekarang).toBe(false);
+    expect(result.bulanLunasDenganKas).toBe(5); // (20jt-5jt)/3jt = 5 pas
+    expect(result.bulanLunasDenganSisaGaji).toBe(7); // 20jt/3jt = 6.67 -> roundup 7
+  });
+
+  it("sisa gaji <= 0 (defisit bulanan) → tidak bisa dihitung, null (bukan Infinity)", () => {
+    const result = calculateDebtPayoffEstimate(5_000_000, 20_000_000, 0);
+    expect(result.bulanLunasDenganKas).toBeNull();
+    expect(result.bulanLunasDenganSisaGaji).toBeNull();
   });
 });

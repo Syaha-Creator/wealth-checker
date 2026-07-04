@@ -6,6 +6,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { calculateWealthSummary } from "../services/wealth";
 import { calculateBudgetAllocation } from "../services/budgeting";
+import { zodErrorHook } from "../lib/validation";
 import type { AppEnv } from "../types";
 
 export const budgetRoutes = new Hono<AppEnv>();
@@ -28,7 +29,7 @@ const planSchema = z.object({
 // Atomic upsert (ON CONFLICT (user_id, bulan_tahun)) — lihat migration 0006 &
 // unique index di packages/db/src/schema/reference.ts. Mencegah baris rencana
 // duplikat kalau form disubmit dua kali konkuren untuk bulan yang sama.
-budgetRoutes.post("/budget-plans", zValidator("json", planSchema), async (c) => {
+budgetRoutes.post("/budget-plans", zValidator("json", planSchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const { rencanaPemasukanBulanan, bulanTahun } = c.req.valid("json");
   const ym = bulanTahun ?? currentYm();
