@@ -49,6 +49,11 @@ services:
       # web-e2e's browser-facing origin — required so better-auth's trustedOrigins
       # and the API's CORS allow-list accept requests from the E2E web app
       ADDITIONAL_TRUSTED_ORIGINS: http://localhost:4000
+      # E2E test suites register many users rapidly from the same runner IP —
+      # better-auth's default sign-up/sign-in rate limit (3 req/10s) has no
+      # real value here (isolated, torn-down-after-run stack) and only causes
+      # flaky 429s unrelated to actual bugs. See lib/auth.ts.
+      DISABLE_AUTH_RATE_LIMIT: "true"
     ports:
       - "4001:4001"
     depends_on:

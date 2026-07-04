@@ -46,6 +46,19 @@ export const auth = betterAuth({
   trustedOrigins: [productionOrigin, devOrigin, ...extraOrigins],
 
   secret: process.env.BETTER_AUTH_SECRET!,
+
+  // Bug hunt (CI flake): better-auth's built-in default rate limit untuk
+  // /sign-up, /sign-in, dst adalah 3 request per 10 detik PER IP — cukup
+  // longgar untuk trafik pengguna asli, tapi E2E test suite (wealth.e2e.test.ts
+  // + transactions.concurrency.test.ts) sengaja registrasi banyak user baru
+  // beruntun dari IP yang sama (runner) dalam hitungan milidetik, jadi mudah
+  // melewati batas itu dan gagal dengan 429 "Too many requests" yang tidak
+  // ada hubungannya dengan bug aplikasi. Dimatikan HANYA kalau
+  // DISABLE_AUTH_RATE_LIMIT diset (lihat docker-compose.e2e.yml) — production
+  // tetap memakai rate limit default better-auth apa adanya.
+  rateLimit: {
+    enabled: process.env.DISABLE_AUTH_RATE_LIMIT !== "true",
+  },
 });
 
 export type Auth = typeof auth;
