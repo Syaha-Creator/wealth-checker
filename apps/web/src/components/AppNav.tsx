@@ -38,6 +38,19 @@ const navItems = [
     ),
   },
   {
+    // Sprint 11/12: satu item gabungan "Aset" untuk barang & investasi (bukan
+    // dua item terpisah) — lihat catatan Medium #10 di bug-hunt plan soal nav
+    // mobile yang sudah padat.
+    href: "/assets",
+    label: "Aset",
+    icon: (active: boolean) => (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M21 8l-9-5-9 5v8l9 5 9-5V8z" />
+        <path d="M3 8l9 5 9-5M12 13v8" />
+      </svg>
+    ),
+  },
+  {
     href: "/transactions/new",
     label: "Catat",
     icon: () => (

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateWealthLevel } from "./wealth";
+import { calculateWealthLevel, buildHealthCheckup } from "./wealth";
 
 // Helper untuk membuat parameter lengkap
 function params(overrides: {
@@ -188,5 +188,74 @@ describe("calculateWealthLevel", () => {
     }));
     expect(level).toBeGreaterThanOrEqual(0);
     expect(level).toBeLessThanOrEqual(6);
+  });
+});
+
+describe("buildHealthCheckup (Sprint 13: Financial Health Check-up)", () => {
+  function refFor(level: number) {
+    return {
+      namaLevel: `Level ${level} Nama`,
+      diagnosa: `Level ${level} diagnosa`,
+      saran: `Level ${level} saran`,
+      ciri1: `Level ${level} ciri1`,
+      ciri2: `Level ${level} ciri2`,
+      ciri3: `Level ${level} ciri3`,
+    };
+  }
+
+  function summaryFor(level: number) {
+    return {
+      wealthLevel: level,
+      wealthLevelName: `Level ${level} Nama`,
+      kekayaanBersih: 1000,
+      totalAset: 2000,
+      totalUtang: 1000,
+    };
+  }
+
+  it("wealthLevel -1 (belum ada data) → payload kosong, bukan error/404", () => {
+    const result = buildHealthCheckup(
+      { wealthLevel: -1, wealthLevelName: "", kekayaanBersih: 0, totalAset: 0, totalUtang: 0 },
+      undefined,
+    );
+    expect(result.wealthLevel).toBe(-1);
+    expect(result.diagnosa).toBe("");
+    expect(result.saran).toBe("");
+    expect(result.ciri).toEqual([]);
+  });
+
+  // Tiap level 0-6 harus mengembalikan konten (diagnosa/saran/ciri) yang benar dan lengkap.
+  for (let level = 0; level <= 6; level++) {
+    it(`level ${level}: mengembalikan diagnosa, saran, dan 3 ciri dari referensi yang benar`, () => {
+      const result = buildHealthCheckup(summaryFor(level), refFor(level));
+      expect(result.wealthLevel).toBe(level);
+      expect(result.wealthLevelName).toBe(`Level ${level} Nama`);
+      expect(result.diagnosa).toBe(`Level ${level} diagnosa`);
+      expect(result.saran).toBe(`Level ${level} saran`);
+      expect(result.ciri).toEqual([`Level ${level} ciri1`, `Level ${level} ciri2`, `Level ${level} ciri3`]);
+      expect(result.kekayaanBersih).toBe(1000);
+      expect(result.totalAset).toBe(2000);
+      expect(result.totalUtang).toBe(1000);
+    });
+  }
+
+  it("ciri null (kolom opsional kosong) difilter, tidak muncul sebagai null di array", () => {
+    const result = buildHealthCheckup(summaryFor(3), {
+      namaLevel: "Gaji ke Gaji",
+      diagnosa: "diagnosa",
+      saran: "saran",
+      ciri1: "ciri satu",
+      ciri2: null,
+      ciri3: null,
+    });
+    expect(result.ciri).toEqual(["ciri satu"]);
+  });
+
+  it("levelRef undefined (data referensi tidak ditemukan) → fallback ke wealthLevelName dari summary, diagnosa/saran kosong", () => {
+    const result = buildHealthCheckup(summaryFor(4), undefined);
+    expect(result.wealthLevelName).toBe("Level 4 Nama");
+    expect(result.diagnosa).toBe("");
+    expect(result.saran).toBe("");
+    expect(result.ciri).toEqual([]);
   });
 });

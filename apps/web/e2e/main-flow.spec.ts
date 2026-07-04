@@ -176,4 +176,62 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
     // 1.000.000 - 50.000 = 950.000 → formatRp(950000) = "Rp 950rb"
     await expect(page.locator("text=950rb").first()).toBeVisible({ timeout: 10_000 });
   });
+
+  // ── Step 7-10 (Sprint 15 regression): halaman Fase 2 baru harus render
+  // tanpa error untuk user yang sudah memiliki data dasar (rekening + 1
+  // transaksi) dari langkah-langkah di atas — Sprint 11-14.
+  await test.step("Halaman Aset (Sprint 11/12) tampil tanpa error", async () => {
+    await page.goto("/assets");
+    await expect(page.locator('[role="tab"]:has-text("Barang")')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[role="tab"]:has-text("Investasi")')).toBeVisible();
+    await page.waitForTimeout(500);
+    await assertNoErrorAlert(page);
+    await expect(page.locator("text=Belum ada barang tercatat")).toBeVisible({ timeout: 10_000 });
+  });
+
+  await test.step("Halaman Utang & Piutang (Sprint 8/9) tampil tanpa error", async () => {
+    await page.goto("/debts");
+    await expect(page.locator("text=Utang & Piutang")).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(500);
+    await assertNoErrorAlert(page);
+    await expect(page.locator("text=Belum ada utang tercatat")).toBeVisible({ timeout: 10_000 });
+  });
+
+  await test.step("Financial Health Check-up (Sprint 13) menampilkan level yang benar", async () => {
+    await page.goto("/health-checkup");
+    await expect(page.locator("text=Financial Health Check-up")).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(500);
+    await assertNoErrorAlert(page);
+    // Rekening 950.000 kas, tanpa utang → kekayaanBersih < uang*3 → level 5 (Dana Pensiun)
+    await expect(page.locator("text=Dana Pensiun")).toBeVisible({ timeout: 10_000 });
+  });
+
+  await test.step("Budgeting Advisor (Sprint 14) — atur rencana lalu lihat alokasi", async () => {
+    await page.goto("/budgeting");
+    await expect(page.locator("text=Budgeting Advisor")).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(500);
+    await assertNoErrorAlert(page);
+
+    // Belum punya rencana → tombol di empty state ("Atur Sekarang"), bukan tombol
+    // "Atur" di hero card, agar tidak ambigu (keduanya cocok dengan substring "Atur").
+    await page.click('button:has-text("Atur Sekarang")');
+    await page.fill("#pemasukan", "5000000");
+    await page.click('button[type="submit"]:has-text("Simpan")');
+    await page.waitForTimeout(700);
+    await assertNoErrorAlert(page);
+
+    // Level 5 (Dana Pensiun): kategori "Kebutuhan Pokok" 35% dari 5.000.000 = 1.750.000
+    await expect(page.locator("text=Kebutuhan Pokok")).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("text=1.750.000").first()).toBeVisible({ timeout: 10_000 });
+  });
+
+  await test.step("Mutasi Rekening (Sprint 15) menampilkan riwayat transaksi rekening", async () => {
+    await page.goto("/accounts");
+    await page.click('a[aria-label="Lihat mutasi rekening BCA Tabungan"]');
+    await page.waitForURL(/\/accounts\/.+\/mutasi/, { timeout: 10_000, waitUntil: "commit" });
+    await page.waitForTimeout(500);
+    await assertNoErrorAlert(page);
+    await expect(page.locator("text=Saldo Saat Ini")).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("text=Pengeluaran").first()).toBeVisible({ timeout: 10_000 });
+  });
 });

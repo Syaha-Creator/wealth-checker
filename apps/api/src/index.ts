@@ -9,6 +9,7 @@ import { wealthRoutes } from "./routes/wealth";
 import { assetRoutes } from "./routes/assets";
 import { debtRoutes } from "./routes/debts";
 import { profileRoutes } from "./routes/profile";
+import { budgetRoutes } from "./routes/budget";
 
 const ALLOWED_ORIGINS = [
   "https://wealth.velrox.cloud",
@@ -52,6 +53,7 @@ app.route("/api/wealth", wealthRoutes);
 app.route("/api/assets", assetRoutes);
 app.route("/api/debts", debtRoutes);
 app.route("/api/profile", profileRoutes);
+app.route("/api", budgetRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 

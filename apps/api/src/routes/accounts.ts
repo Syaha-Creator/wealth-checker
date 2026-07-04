@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db, accounts, transactions } from "@wealth/db";
 import { eq, and, or, count } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
+import { calculateAccountMutations } from "../services/accountMutation";
 import type { AppEnv } from "../types";
 
 export const accountRoutes = new Hono<AppEnv>();
@@ -60,6 +61,39 @@ accountRoutes.patch(
     return c.json(account);
   }
 );
+
+// ─── GET /:id/mutasi — Mutasi Rekening (Sprint 15) ───────────────────────────
+// Read-only: histori transaksi yang menyentuh rekening ini (baik sebagai
+// accountId maupun toAccountId transfer) + saldo berjalan (running balance).
+// Murni query baca, tidak ada logika bisnis baru — lihat accountMutation.ts.
+accountRoutes.get("/:id/mutasi", zValidator("param", idParam), async (c) => {
+  const userId = c.get("userId") as string;
+  const { id } = c.req.valid("param");
+
+  const [account] = await db.select().from(accounts).where(and(eq(accounts.id, id), eq(accounts.userId, userId)));
+  if (!account) return c.json({ error: "Rekening tidak ditemukan" }, 404);
+
+  const txs = await db
+    .select()
+    .from(transactions)
+    .where(and(
+      eq(transactions.userId, userId),
+      or(
+        eq(transactions.accountId, id),
+        and(eq(transactions.type, "transfer"), eq(transactions.relatedEntityId, id)),
+      ),
+    ));
+
+  const result = calculateAccountMutations(id, Number(account.saldoCache), txs);
+
+  return c.json({
+    account: { id: account.id, nama: account.nama, saldoCache: Number(account.saldoCache) },
+    saldoAwalTurunan: result.saldoAwalTurunan,
+    konsisten: result.konsisten,
+    // Ditampilkan terbaru dulu (pola umum "mutasi rekening" di app finansial)
+    mutasi: [...result.rows].reverse(),
+  });
+});
 
 accountRoutes.delete("/:id", zValidator("param", idParam), async (c) => {
   const userId = c.get("userId") as string;

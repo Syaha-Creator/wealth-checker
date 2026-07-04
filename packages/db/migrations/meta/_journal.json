@@ -43,6 +43,13 @@
       "when": 1782865200003,
       "tag": "0005_unique_name_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782865200004,
+      "tag": "0006_budget_plans_unique",
+      "breakpoints": true
     }
   ]
 }

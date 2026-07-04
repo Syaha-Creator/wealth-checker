@@ -2,8 +2,9 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { db, liquidAssets, fixedAssets, transactions } from "@wealth/db";
-import { eq, and, count } from "drizzle-orm";
+import { eq, and, count, sql } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
+import { calculateAssetSummary } from "../services/assetSummary";
 import type { AppEnv } from "../types";
 
 export const assetRoutes = new Hono<AppEnv>();
@@ -21,11 +22,34 @@ const assetSchema = z.object({
   hargaBeliRataRata: z.number().min(0).finite(),
 });
 
-// ─── Liquid Assets (Aset Setara Kas) ─────────────────────────────────────────
+// ─── Liquid Assets (Aset Setara Kas / Investasi) ─────────────────────────────
+// PENTING: "/liquid/summary" didaftarkan sebelum "/liquid/:id" implisit dari
+// PATCH/DELETE agar path literal ini tidak pernah ditangkap sebagai parameter id
+// (pola yang sama dengan "/categories" di transactions.ts).
 
+// Sprint 11/12 (bug hunt catatan desain): default hanya tampilkan jumlah > 0
+// (kepemilikan aktif) — aset yang sudah terjual habis (jumlah=0) disembunyikan
+// kecuali ?all=true diminta (mis. untuk lihat histori/riwayat kepemilikan).
 assetRoutes.get("/liquid", async (c) => {
   const userId = c.get("userId") as string;
-  return c.json(await db.select().from(liquidAssets).where(eq(liquidAssets.userId, userId)));
+  const showAll = c.req.query("all") === "true";
+  return c.json(
+    await db
+      .select()
+      .from(liquidAssets)
+      .where(and(eq(liquidAssets.userId, userId), showAll ? undefined : sql`jumlah::numeric > 0`)),
+  );
+});
+
+// ─── GET /liquid/summary — ringkasan nilai & untung/rugi investasi (Sprint 12) ──
+assetRoutes.get("/liquid/summary", async (c) => {
+  const userId = c.get("userId") as string;
+  const rows = await db.select().from(liquidAssets).where(and(eq(liquidAssets.userId, userId), sql`jumlah::numeric > 0`));
+  const untungRugiRows = await db
+    .select({ untungRugi: transactions.untungRugi })
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.type, "jual_investasi")));
+  return c.json(calculateAssetSummary(rows, untungRugiRows));
 });
 
 assetRoutes.post("/liquid", zValidator("json", assetSchema), async (c) => {
@@ -75,11 +99,29 @@ assetRoutes.delete("/liquid/:id", zValidator("param", idParam), async (c) => {
   return c.body(null, 204);
 });
 
-// ─── Fixed Assets (Aset Tidak Lancar) ─────────────────────────────────────────
+// ─── Fixed Assets (Aset Tidak Lancar / Barang) ───────────────────────────────
+// "/fixed/summary" didaftarkan sebelum "/fixed/:id" — sama seperti liquid di atas.
 
 assetRoutes.get("/fixed", async (c) => {
   const userId = c.get("userId") as string;
-  return c.json(await db.select().from(fixedAssets).where(eq(fixedAssets.userId, userId)));
+  const showAll = c.req.query("all") === "true";
+  return c.json(
+    await db
+      .select()
+      .from(fixedAssets)
+      .where(and(eq(fixedAssets.userId, userId), showAll ? undefined : sql`jumlah::numeric > 0`)),
+  );
+});
+
+// ─── GET /fixed/summary — ringkasan nilai & untung/rugi barang (Sprint 11) ────
+assetRoutes.get("/fixed/summary", async (c) => {
+  const userId = c.get("userId") as string;
+  const rows = await db.select().from(fixedAssets).where(and(eq(fixedAssets.userId, userId), sql`jumlah::numeric > 0`));
+  const untungRugiRows = await db
+    .select({ untungRugi: transactions.untungRugi })
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.type, "jual_barang")));
+  return c.json(calculateAssetSummary(rows, untungRugiRows));
 });
 
 assetRoutes.post("/fixed", zValidator("json", assetSchema), async (c) => {

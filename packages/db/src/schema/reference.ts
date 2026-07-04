@@ -1,4 +1,4 @@
-import { pgTable, integer, uuid, text, varchar, numeric, date, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, integer, uuid, text, varchar, numeric, date, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { authUser } from "./auth";
 
 export const wealthLevelReference = pgTable("wealth_level_reference", {
@@ -49,4 +49,9 @@ export const budgetPlans = pgTable("budget_plans", {
   rencanaPemasukanBulanan: numeric("rencana_pemasukan_bulanan", { precision: 20, scale: 2 }).notNull(),
   bulanTahun: varchar("bulan_tahun", { length: 7 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  // Sprint 14 (bug hunt pattern): satu rencana per user per bulan — unique index
+  // jadi conflict target untuk INSERT...ON CONFLICT DO UPDATE (atomic upsert),
+  // mencegah duplikat baris rencana kalau form disubmit dua kali konkuren.
+  userBulanUniqueIdx: uniqueIndex("idx_budget_plans_user_bulan_unique").on(t.userId, t.bulanTahun),
+}));

@@ -216,6 +216,9 @@ export default function DashboardPage() {
                 <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full bg-white/20 text-white">
                   Level {level} · {levelCfg.label}
                 </span>
+                <Link href="/health-checkup" className="text-xs font-medium text-white/80 hover:text-white underline transition-colors">
+                  Lihat diagnosa lengkap →
+                </Link>
               </div>
             )}
           </div>
@@ -355,6 +358,30 @@ export default function DashboardPage() {
                 ))}
               </div>
             </div>
+          )}
+
+          {/* Insights — Sprint 13/14: health checkup & budgeting advisor */}
+          {!isNoData && (
+            <Card padding="none" className="overflow-hidden">
+              <Link href="/health-checkup" className="flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-surface-hover transition-colors border-b border-border">
+                <div className="flex items-center gap-3">
+                  <span className="w-9 h-9 rounded-full bg-brand-soft text-brand flex items-center justify-center shrink-0" aria-hidden="true">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 10-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z" /></svg>
+                  </span>
+                  <span className="text-sm font-medium text-text-primary">Financial Health Check-up</span>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-text-muted shrink-0" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
+              </Link>
+              <Link href="/budgeting" className="flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-surface-hover transition-colors">
+                <div className="flex items-center gap-3">
+                  <span className="w-9 h-9 rounded-full bg-info-soft text-info-text flex items-center justify-center shrink-0" aria-hidden="true">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M21 12V7H5a2 2 0 010-4h14v4" /><path d="M3 5v14a2 2 0 002 2h16v-5" /><path d="M18 12a2 2 0 000 4h4v-4z" /></svg>
+                  </span>
+                  <span className="text-sm font-medium text-text-primary">Budgeting Advisor</span>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-text-muted shrink-0" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
+              </Link>
+            </Card>
           )}
 
           {/* Quick actions */}

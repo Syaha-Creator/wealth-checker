@@ -16,15 +16,17 @@ Stack: sama dengan Fase 1 (Next.js, Hono.js/Bun, Drizzle ORM, PostgreSQL, Better
 | 8 — Utang | ✅ Selesai | Backend + UI + test lengkap |
 | 9 — Piutang | ✅ Selesai | Backend + UI + test lengkap |
 | 10 — Moving Average Cost Engine | ✅ Selesai | Engine + wiring + guard + test lengkap |
-| 11 — Beli/Jual Barang | 🔄 Sebagian | Endpoint transaksi jalan (lewat wiring Sprint 10), **UI & endpoint summary belum** |
-| 12 — Investasi | 🔄 Sebagian | Endpoint transaksi jalan (lewat wiring Sprint 10), **UI & endpoint summary belum** |
-| 13 — Financial Health Check-up | ⏳ Belum mulai | |
-| 14 — Budgeting Advisor | ⏳ Belum mulai | |
-| 15 — Integrasi, Polish & Rilis | ⏳ Belum mulai | |
+| 11 — Beli/Jual Barang | ✅ Selesai | Endpoint summary + UI halaman `/assets` (tab Barang) + avg cost otomatis |
+| 12 — Investasi | ✅ Selesai | Endpoint summary + UI halaman `/assets` (tab Investasi) + avg cost otomatis |
+| 13 — Financial Health Check-up | ✅ Selesai | Endpoint + UI `/health-checkup` |
+| 14 — Budgeting Advisor | ✅ Selesai | Endpoint + UI `/budgeting` |
+| 15 — Integrasi, Polish & Rilis | ✅ Selesai | Mutasi Rekening, end-to-end regression test, docs, bug-hunt hardening |
 
-Kode terkait Sprint 8/9/10: `apps/api/src/services/movingAverageCost.ts`, `apps/api/src/services/debtReceivable.ts`, `apps/api/src/routes/transactions.ts`, `apps/api/src/routes/debts.ts`, `apps/web/src/app/(app)/debts/page.tsx`. Commit: `feat(api,web): Fase 2 - Moving Average Cost engine, Utang & Piutang tracking`.
+Selain 5 sprint fitur di atas, satu putaran **bug-proofing** (Critical #1-3, High #4-5, Medium #6-12 dari rencana bug-hunt) dikerjakan lebih dulu untuk menutup race condition & data-integrity issue di fondasi Sprint 8/9/10 sebelum Sprint 11-15 dibangun di atasnya — lihat `apps/api/src/routes/transactions.concurrency.test.ts` dan migration `0005_unique_name_constraints.sql`.
 
-**Next up yang disarankan**: Sprint 11 & 12 — tinggal bangun endpoint `/fixed-assets/summary` & `/liquid-assets/summary` (portfolio + akumulasi untung/rugi) dan UI halaman Aset Tidak Lancar/Investasi (list + form beli/jual + tampilkan harga rata-rata otomatis). Endpoint POST transaksinya sudah tidak perlu dikerjakan lagi karena sudah aktif via `/api/transactions`.
+Kode terkait: `apps/api/src/services/{movingAverageCost,debtReceivable,assetSummary,wealth,budgeting,accountMutation}.ts`, `apps/api/src/routes/{transactions,debts,assets,accounts,wealth,budget}.ts`, `apps/web/src/app/(app)/{debts,assets,health-checkup,budgeting,accounts/[id]/mutasi}/page.tsx`.
+
+**Fase 2 selesai.** Lihat `docs/API.md` untuk dokumentasi lengkap seluruh endpoint baru.
 
 ---
 
@@ -85,84 +87,72 @@ Ini adalah service layer paling kritis di Fase 2 — menjadi fondasi untuk dua s
 
 ---
 
-## Sprint 11 — Modul Beli/Jual Barang (Fixed Asset Tracker) 🔄 Sebagian
+## Sprint 11 — Modul Beli/Jual Barang (Fixed Asset Tracker) ✅ Selesai
 
 Menggantikan sheet "Catat - Beli Jual Barang". Bergantung pada Sprint 10.
 
-- [x] Endpoint POST `/transactions` type=`beli_barang` — catat pembelian aset tidak lancar (tanggal, nama_barang via `namaAset`, jumlah, hargaSatuan, account_id, total dihitung server-side), trigger `calculateMovingAverageCost()` pada `fixed_assets` — **sudah aktif** lewat wiring generik di Sprint 10 (`transactions.ts`), belum ada form UI khusus
-- [x] Endpoint POST `/transactions` type=`jual_barang` — catat penjualan (tanggal, nama_barang, harga_jual_satuan via `hargaSatuan`, jumlah, account_id), trigger `calculateProfitLoss()` + update `fixed_assets`, simpan `untung_rugi` ke `transactions` — **sudah aktif**, termasuk guard anti-oversell
-- [x] Endpoint GET `/fixed-assets` — sudah ada sejak Fase 1 sebagai `GET /api/assets/fixed` (list semua aset tidak lancar dengan `harga_beli_rata_rata`); **belum** difilter `jumlah > 0` atau menghitung `total nilai = jumlah × avg_cost` di response
-- [ ] Endpoint GET `/fixed-assets/summary` — total nilai aset + akumulasi untung/rugi jual (agregasi `SUM(untung_rugi)` dari `transactions` type=`jual_barang`) — **belum dikerjakan**
-- [ ] UI halaman Aset Tidak Lancar: list aset yang dimiliki + total nilai portfolio — **belum dikerjakan**
-- [ ] UI form beli barang + form jual barang (tampilkan harga_beli_rata_rata otomatis saat pilih nama barang, biar pengguna tahu HPP-nya sebelum jual) — **belum dikerjakan**, bisa ditambahkan sebagai tipe baru di `transactions/new` atau halaman aset tersendiri
-- [ ] UI history transaksi beli/jual per nama barang — **belum dikerjakan**
-- [~] Unit test integrasi: skenario beli 3x dengan harga berbeda → jual 2x → cek avg_cost dan profit_loss benar — engine murni sudah di-unit-test menyeluruh (`movingAverageCost.test.ts`), tapi belum ada test integrasi lewat route/DB nyata (proyek ini tidak punya Postgres lokal untuk test, mengikuti pola `accounts.test.ts`/`wealth.test.ts` yang pure-function)
+- [x] Endpoint POST `/transactions` type=`beli_barang` — catat pembelian aset tidak lancar (tanggal, nama_barang via `namaAset`, jumlah, hargaSatuan, account_id, total dihitung server-side), trigger `calculateMovingAverageCost()` pada `fixed_assets` — lewat wiring generik Sprint 10 (`transactions.ts`)
+- [x] Endpoint POST `/transactions` type=`jual_barang` — catat penjualan (tanggal, nama_barang, harga_jual_satuan via `hargaSatuan`, jumlah, account_id), trigger `calculateProfitLoss()` + update `fixed_assets`, simpan `untung_rugi` ke `transactions`, termasuk guard anti-oversell
+- [x] Endpoint GET `/api/assets/fixed` — default hanya `jumlah > 0`, opsi `?all=true` untuk histori/autocomplete
+- [x] Endpoint GET `/api/assets/fixed/summary` — total nilai aset (`SUM(jumlah × harga_beli_rata_rata)`) + akumulasi untung/rugi jual (`SUM(untung_rugi)` dari `transactions` type=`jual_barang`) — `assetSummary.ts`
+- [x] UI halaman Aset (`/assets`, tab "Barang"): list aset yang dimiliki + total nilai portfolio + untung/rugi terealisasi
+- [x] UI form beli barang + form jual barang per item — menampilkan harga_beli_rata_rata & kepemilikan sebagai referensi saat nama aset yang sudah ada dipilih/diketik (datalist autocomplete)
+- [x] Unit test murni untuk kalkulasi summary — `assetSummary.test.ts`. Integrasi race-condition (beli konkuren pada nama sama) diuji di `transactions.concurrency.test.ts` (Critical #1/#3 bug-hunt)
 
 ---
 
-## Sprint 12 — Modul Investasi (Liquid Asset Tracker) 🔄 Sebagian
+## Sprint 12 — Modul Investasi (Liquid Asset Tracker) ✅ Selesai
 
 Menggantikan sheet "Catat - Investasi". Struktur identik dengan Sprint 11, tapi untuk `liquid_assets`. Bergantung pada Sprint 10.
 
-- [x] Endpoint POST `/transactions` type=`beli_investasi` — catat pembelian instrumen investasi (Emas, Saham, Reksadana, Obligasi, dll), trigger `calculateMovingAverageCost()` pada `liquid_assets` — **sudah aktif** lewat wiring generik di Sprint 10
-- [x] Endpoint POST `/transactions` type=`jual_investasi` — catat penjualan, trigger `calculateProfitLoss()` + update `liquid_assets`, simpan `untung_rugi` — **sudah aktif**
-- [x] Endpoint GET `/liquid-assets` — sudah ada sejak Fase 1 sebagai `GET /api/assets/liquid`; **belum** difilter `jumlah > 0`
-- [ ] Endpoint GET `/liquid-assets/summary` — total nilai investasi + akumulasi untung/rugi — **belum dikerjakan**
-- [ ] UI halaman Investasi: list instrumen + total nilai portfolio — **belum dikerjakan**
-- [ ] UI form beli investasi + form jual investasi (tampilkan harga_beli_rata_rata otomatis) — **belum dikerjakan**
-- [x] Sinkronisasi ke Wealth Dashboard: total `liquid_assets` (jumlah × avg_cost) otomatis masuk ke komponen "Aset Setara Kas" di kalkulasi kekayaan bersih — **sudah terjadi otomatis**: `calculateWealthSummary()` (`wealth.ts`) sudah `SUM(jumlah * harga_beli_rata_rata)` langsung dari tabel `liquid_assets`/`fixed_assets` setiap dipanggil (bukan snapshot statis onboarding), jadi begitu Sprint 10 menulis baris baru, Dashboard otomatis ikut berubah — tidak perlu kerjaan tambahan
-- [~] Unit test integrasi: sama seperti Sprint 11 — status sama, engine teruji penuh tapi belum ada integration test lewat route/DB nyata
+- [x] Endpoint POST `/transactions` type=`beli_investasi` — catat pembelian instrumen investasi (Emas, Saham, Reksadana, Obligasi, dll), trigger `calculateMovingAverageCost()` pada `liquid_assets`
+- [x] Endpoint POST `/transactions` type=`jual_investasi` — catat penjualan, trigger `calculateProfitLoss()` + update `liquid_assets`, simpan `untung_rugi`
+- [x] Endpoint GET `/api/assets/liquid` — default hanya `jumlah > 0`, opsi `?all=true`
+- [x] Endpoint GET `/api/assets/liquid/summary` — total nilai investasi + akumulasi untung/rugi — `assetSummary.ts`
+- [x] UI halaman Aset (`/assets`, tab "Investasi"): list instrumen + total nilai portfolio
+- [x] UI form beli investasi + form jual investasi (menampilkan harga_beli_rata_rata otomatis)
+- [x] Sinkronisasi ke Wealth Dashboard: total `liquid_assets` (jumlah × avg_cost) otomatis masuk ke komponen "Aset Setara Kas" — `calculateWealthSummary()` (`wealth.ts`) `SUM(jumlah * harga_beli_rata_rata)` langsung dari tabel setiap dipanggil, jadi otomatis ikut berubah tanpa kerjaan tambahan
+- [x] Unit test murni (`assetSummary.test.ts`) + integrasi race-condition (`transactions.concurrency.test.ts`)
 
 ---
 
-## Sprint 13 — Modul Financial Health Check-up
+## Sprint 13 — Modul Financial Health Check-up ✅ Selesai
 
 Menggantikan sheet "Financial Check Up". Bergantung pada `calculateWealthLevel()` dari Sprint 4 Fase 1.
 
-- [ ] Seed data `wealth_level_reference` sudah ada sejak Sprint 1 Fase 1 — pastikan kolom diagnosa, saran, ciri_1, ciri_2, ciri_3 terisi lengkap untuk semua 7 level (0–6) sesuai tabel PRD Bagian 3.3
-- [ ] Endpoint GET `/health-checkup` — mengembalikan level kekayaan pengguna saat ini + data lengkap dari `wealth_level_reference` (diagnosa, saran, ciri-ciri) sesuai level tersebut
-- [ ] UI halaman Financial Health Check-up:
-  - Tampilkan level kekayaan sebagai badge/label yang menonjol (mis. "Level 3 — Gaji ke Gaji")
-  - Section diagnosa: teks penjelasan kondisi saat ini
-  - Section ciri-ciri: 3 poin kondisi yang menggambarkan level ini
-  - Section saran: rekomendasi langkah perbaikan
-- [ ] Animasi/transisi halus saat level berubah (karena level bisa naik seiring pengguna konsisten mencatat dan melunasi utang)
-- [ ] Unit test: pastikan setiap level (0–6) mengembalikan konten yang benar dari lookup table
+- [x] Seed data `wealth_level_reference` — kolom diagnosa, saran, ciri_1, ciri_2, ciri_3 terisi lengkap untuk semua 7 level (0–6) sejak migration `0003_indexes_seed_profile.sql`
+- [x] Endpoint GET `/api/wealth/health-checkup` — mengembalikan level kekayaan pengguna saat ini + data lengkap dari `wealth_level_reference` (diagnosa, saran, ciri-ciri); `wealthLevel: -1` (belum ada data) mengembalikan payload kosong, bukan error — `wealth.ts` (`buildHealthCheckup`)
+- [x] UI halaman Financial Health Check-up (`/health-checkup`):
+  - Level kekayaan sebagai badge/hero yang menonjol ("Level 5 · Dana Pensiun") + progress bar 0-6
+  - Section diagnosa, ciri-ciri (checklist), dan saran
+  - Link masuk dari Dashboard ("Lihat diagnosa lengkap →" di hero kekayaan bersih)
+- [x] Unit test: setiap level 0-6 + level -1 (belum ada data) + fallback referensi kosong — `wealth.test.ts` (`buildHealthCheckup`)
 
 ---
 
-## Sprint 14 — Modul Budgeting Advisor (Saran Budgeting)
+## Sprint 14 — Modul Budgeting Advisor (Saran Budgeting) ✅ Selesai
 
 Menggantikan sheet "Saran Budgeting". Bergantung pada Sprint 13.
 
-- [ ] Seed data `budget_allocation_reference` untuk 7 level (0–6): nama kategori budget (4 per level) + persentase alokasi — sesuai tabel PRD Bagian 3.4
-- [ ] Endpoint POST `/budget-plans` — simpan rencana pemasukan bulanan pengguna (nominal + bulan_tahun)
-- [ ] Endpoint GET `/budget-plans/current` — ambil rencana bulan ini
-- [ ] Endpoint GET `/budgeting-advice` — mengembalikan:
-  - Level kekayaan saat ini
-  - Rencana pemasukan bulanan
-  - Breakdown 4 kategori budget: nama kategori (per level) + persentase + nominal (= pemasukan × persentase)
-  - Teks saran/penjelasan metode budgeting yang disarankan per level (mis. metode Snowball/Avalanche untuk level 1, 50/30/20 untuk level 3–4, dst)
-- [ ] UI halaman Budgeting Advisor:
-  - Input field "Rencana Pemasukan Bulanan" (bisa diubah sewaktu-waktu)
-  - 4 kartu/bar alokasi budget (nama kategori + % + nominal Rupiah)
-  - Section teks saran budgeting sesuai level
-- [ ] Sinkronisasi: jika level kekayaan berubah (mis. naik dari level 2 ke 3), halaman ini otomatis menampilkan alokasi budget yang sesuai level baru
-- [ ] Unit test: pastikan perhitungan nominal (pemasukan × persentase) akurat untuk semua level
+- [x] Seed data `budget_allocation_reference` untuk 7 level (0–6): 4 kategori + persentase — sejak migration `0003_indexes_seed_profile.sql`
+- [x] Endpoint POST `/api/budget-plans` — simpan/update rencana pemasukan bulanan (upsert atomic per `(userId, bulanTahun)`, unique index di migration `0006_budget_plans_unique.sql`)
+- [x] Endpoint GET `/api/budget-plans/current` — ambil rencana bulan tertentu (default bulan ini)
+- [x] Endpoint GET `/api/budgeting-advice` — level kekayaan, rencana pemasukan, breakdown kategori (nama + persen + nominal) — `budgeting.ts` (`calculateBudgetAllocation`)
+- [x] UI halaman Budgeting Advisor (`/budgeting`): hero rencana pemasukan + tombol atur/ubah, kartu alokasi per kategori dengan progress bar
+- [x] Sinkronisasi: alokasi selalu dihitung ulang dari `wealthLevel` terkini setiap load halaman — otomatis ikut level baru tanpa cache
+- [x] Unit test: kalkulasi nominal akurat untuk semua level referensi asli + edge case (kategori null difilter, pemasukan 0, rounding) — `budgeting.test.ts`
 
 ---
 
-## Sprint 15 — Integrasi, Polish & Rilis Fase 2
+## Sprint 15 — Integrasi, Polish & Rilis Fase 2 ✅ Selesai
 
-- [ ] **Integrasi Wealth Dashboard** — pastikan semua komponen baru (saldo utang, piutang, aset, investasi) terefleksi di kalkulasi kekayaan bersih dan level kekayaan secara real-time:
-  - `Total Utang` = `debts.sisa_saldo` (aggregate) + `receivables` diabaikan dari sisi utang
-  - `Uang (Aset Likuid)` = `accounts.saldo_cache` (aggregate) + `liquid_assets (jumlah × avg_cost)` + `receivables.sisa_saldo`
-  - `Barang (Aset Tidak Likuid)` = `fixed_assets (jumlah × avg_cost)`
-- [ ] **Mutasi Rekening** — implementasi view read-only histori transaksi per rekening dengan running balance, filter rentang tanggal dan pilihan rekening (menggantikan sheet "Mutasi Rekening") — query dari `transactions` yang menyentuh `account_id` tersebut, diurutkan kronologis
-- [ ] Regression test Fase 1: pastikan tidak ada yang rusak dari fitur Fase 1 (onboarding, dashboard dasar, transaksi pendapatan/pengeluaran/transfer)
-- [ ] Review UX mobile keseluruhan Fase 2 — prioritaskan form input cepat untuk utang/piutang/beli/jual
-- [ ] Update dokumentasi API (endpoint baru Fase 2)
-- [ ] Deploy Fase 2 ke production
+- [x] **Integrasi Wealth Dashboard** — `calculateWealthSummary()` (`wealth.ts`) sudah mengagregasi seluruh komponen (kas, `liquid_assets`, `fixed_assets`, `receivables.sisa_saldo`, `debts.sisa_saldo`) secara real-time setiap request; diverifikasi end-to-end dengan data lengkap (utang+piutang+aset+investasi sekaligus) di `wealth.e2e.test.ts`
+- [x] **Mutasi Rekening** — `GET /api/accounts/:id/mutasi` (read-only, running balance turunan dari `saldoCache − total delta`, termasuk sisi tujuan `transfer`) + UI `/accounts/[id]/mutasi`, diakses dari tombol riwayat di setiap kartu rekening — `accountMutation.ts`
+- [x] Regression test Fase 1 + Fase 2: `apps/web/e2e/main-flow.spec.ts` (register → onboarding → dashboard → transaksi → verifikasi saldo) diperluas mencakup halaman Aset, Utang & Piutang, Health Check-up, Budgeting Advisor, dan Mutasi Rekening
+- [x] Review UX mobile: nav bawah ditambah 1 entry gabungan "Aset" (bukan 2 entry terpisah) mengikuti catatan Medium #10 bug-hunt soal nav yang sudah padat
+- [x] Update dokumentasi API — `docs/API.md` mencakup seluruh endpoint baru Fase 2 (`/assets/*/summary`, `?all=true`, `/wealth/health-checkup`, `/budget-plans`, `/budgeting-advice`, `/accounts/:id/mutasi`)
+- [x] Bug-proofing tambahan (di luar rencana awal, ditemukan lewat deep bug hunt): Critical #1-3 (race condition), High #4-5 (delete guard, reversal clamp), Medium #6-12 (validasi, quick wins) — lihat commit checkpoint & `transactions.concurrency.test.ts`
+- [ ] Deploy Fase 2 ke production — menunggu konfirmasi commit/push dari user (deploy otomatis terjadi lewat CI saat push ke `main`, lihat `.github/workflows/deploy.yml`)
 
 ---
 
@@ -180,7 +170,7 @@ Sprint 14 (Budgeting) ─────────┘
 
 Sprint 8 dan 9 bisa paralel. Sprint 11 dan 12 bisa paralel **setelah** Sprint 10 selesai. Sprint 13 dan 14 bisa paralel setelah `calculateWealthLevel()` dari Fase 1 sudah stabil.
 
-**Status per 3 Jul 2026**: Sprint 8, 9, 10 ✅ selesai. Sisi backend (endpoint transaksi) Sprint 11 & 12 juga sudah aktif karena dibangun bersamaan dengan Sprint 10 (satu handler generik `POST /transactions` menangani semua tipe termasuk beli/jual barang & investasi). Yang tersisa dari Sprint 11/12 murni endpoint summary + seluruh UI-nya. Sprint 13, 14, 15 belum disentuh sama sekali.
+**Status per 3 Jul 2026**: Seluruh Sprint 8-15 ✅ selesai, didahului satu putaran bug-proofing (Critical #1-3, High #4-5, Medium #6-12) untuk menutup race condition di fondasi Sprint 8/9/10 sebelum Sprint 11-15 dibangun di atasnya. Fase 2 lengkap — lihat `docs/API.md` untuk dokumentasi endpoint.
 
 ---
 

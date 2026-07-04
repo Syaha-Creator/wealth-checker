@@ -226,6 +226,51 @@ export async function calculateMonthlyCashFlow(
   };
 }
 
+export interface HealthCheckup {
+  wealthLevel: number;
+  wealthLevelName: string;
+  diagnosa: string;
+  saran: string;
+  ciri: string[];
+  kekayaanBersih: number;
+  totalAset: number;
+  totalUtang: number;
+}
+
+/**
+ * Sprint 13 (Financial Health Check-up) — pure mapper dari hasil summary +
+ * baris `wealth_level_reference` ke payload UI. Dipisah dari route agar bisa
+ * di-unit-test tanpa database (levelRef di-mock).
+ */
+export function buildHealthCheckup(
+  summary: { wealthLevel: number; wealthLevelName: string; kekayaanBersih: number; totalAset: number; totalUtang: number },
+  levelRef: { namaLevel: string; diagnosa: string; saran: string; ciri1: string | null; ciri2: string | null; ciri3: string | null } | undefined,
+): HealthCheckup {
+  if (summary.wealthLevel === -1) {
+    return {
+      wealthLevel: -1,
+      wealthLevelName: "",
+      diagnosa: "",
+      saran: "",
+      ciri: [],
+      kekayaanBersih: summary.kekayaanBersih,
+      totalAset: summary.totalAset,
+      totalUtang: summary.totalUtang,
+    };
+  }
+
+  return {
+    wealthLevel: summary.wealthLevel,
+    wealthLevelName: levelRef?.namaLevel ?? summary.wealthLevelName,
+    diagnosa: levelRef?.diagnosa ?? "",
+    saran: levelRef?.saran ?? "",
+    ciri: [levelRef?.ciri1, levelRef?.ciri2, levelRef?.ciri3].filter((c): c is string => Boolean(c)),
+    kekayaanBersih: summary.kekayaanBersih,
+    totalAset: summary.totalAset,
+    totalUtang: summary.totalUtang,
+  };
+}
+
 export function calculateWealthLevel({
   kekayaanBersih,
   totalUtang,

@@ -116,6 +116,16 @@ jobs:
           E2E_API_URL: http://localhost:4001
         run: bunx vitest run src/routes/transactions.concurrency.test.ts
 
+      - name: Run wealth end-to-end regression test
+        # Sprint 15 — audit ulang calculateWealthSummary() dengan data lengkap
+        # (utang+piutang+aset+investasi sekaligus) via HTTP asli terhadap
+        # api-e2e, termasuk health-checkup, budgeting-advice, dan mutasi
+        # rekening. See wealth.e2e.test.ts.
+        working-directory: apps/api
+        env:
+          E2E_API_URL: http://localhost:4001
+        run: bunx vitest run src/routes/wealth.e2e.test.ts
+
       - name: Install Playwright browsers
         working-directory: apps/web
         run: bunx playwright install chromium --with-deps

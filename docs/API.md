@@ -177,6 +177,43 @@ Account cannot be deleted while it has linked transactions. Deactivate it instea
 
 ---
 
+### GET `/api/accounts/:id/mutasi`
+
+**Fase 2 Sprint 15 — Mutasi Rekening.** Read-only transaction history for a single account with a running balance, newest first. Includes the destination side of `transfer` transactions (where this account is the recipient), which the generic `GET /api/transactions?accountId=` filter does **not** cover.
+
+**Response `200`**
+
+```json
+{
+  "account": { "id": "uuid", "nama": "BCA Tabungan", "saldoCache": 950000 },
+  "saldoAwalTurunan": 1000000,
+  "konsisten": true,
+  "mutasi": [
+    {
+      "id": "uuid",
+      "tanggal": "2026-07-01",
+      "type": "pengeluaran",
+      "kategori": "Makanan",
+      "rincian": "Makan siang",
+      "nominal": 50000,
+      "delta": -50000,
+      "saldoSetelah": 950000
+    }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `saldoAwalTurunan` | Starting balance **derived** from `saldoCache − sum(all deltas)` — `accounts` has no separate `saldoAwal` column after creation, so this is reconstructed from history rather than read directly. |
+| `konsisten` | Sanity flag; should always be `true` (the running balance is guaranteed to reconcile with `saldoCache` by construction — see `accountMutation.ts`). A `false` value would indicate a bug in the delta logic itself. |
+| `mutasi[].delta` | Signed amount this transaction added/subtracted from *this* account (negative for debits, positive for credits/incoming transfers) |
+| `mutasi[].saldoSetelah` | Running balance immediately after this transaction, in chronological order (even though the array itself is newest-first) |
+
+**Error `404`** — account not found or does not belong to user.
+
+---
+
 ## 3. Transactions (Transaksi)
 
 Base path: `/api/transactions` · **Auth required**
@@ -362,7 +399,13 @@ Base path: `/api/assets` · **Auth required**
 
 #### GET `/api/assets/liquid`
 
-List all liquid assets.
+List liquid assets. **Fase 2 Sprint 11/12:** by default only returns assets with `jumlah > 0` (active holdings) — fully sold-off assets (`jumlah = 0`) are hidden unless `?all=true` is passed (e.g. to populate a name autocomplete that should still suggest previously-owned asset names).
+
+**Query params**
+
+| Param | Type | Default | Notes |
+|-------|------|---------|-------|
+| `all` | `"true"` \| — | omitted | When `"true"`, includes assets with `jumlah = 0` |
 
 **Response `200`**
 
@@ -378,6 +421,27 @@ List all liquid assets.
   }
 ]
 ```
+
+#### GET `/api/assets/liquid/summary`
+
+**Fase 2 Sprint 12.** Aggregated current value + realized profit/loss across all liquid assets (`jumlah > 0` only).
+
+**Response `200`**
+
+```json
+{
+  "totalNilai": 1150000,
+  "totalUntungRugi": 250000,
+  "items": [
+    { "id": "uuid", "namaAset": "Reksa Dana Saham", "jumlah": 10, "hargaBeliRataRata": 15000, "nilaiSaatIni": 150000 }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `totalNilai` | `SUM(jumlah × hargaBeliRataRata)` across current holdings, items sorted by `nilaiSaatIni` descending |
+| `totalUntungRugi` | `SUM(untungRugi)` from all past `jual_investasi` transactions — realized gain/loss history, unaffected by current holdings (asset buy/sell transactions can't be deleted/edited, so this is always a complete, accurate total) |
 
 #### POST `/api/assets/liquid`
 
@@ -411,11 +475,15 @@ Update a liquid asset. All body fields are optional.
 
 ---
 
-### Fixed Assets (Aset Tidak Lancar)
+### Fixed Assets (Aset Tidak Lancar / Barang)
 
 #### GET `/api/assets/fixed`
 
-List all fixed assets.
+List fixed assets. Same `?all=true` default-filter behavior as `/api/assets/liquid` above (Fase 2 Sprint 11).
+
+#### GET `/api/assets/fixed/summary`
+
+**Fase 2 Sprint 11.** Same shape as `/api/assets/liquid/summary`, but `totalUntungRugi` sums realized profit/loss from `jual_barang` transactions instead.
 
 #### POST `/api/assets/fixed`
 
@@ -692,3 +760,105 @@ Return income/expense analysis for the current and previous month, plus a 3-mont
 | `rataRata3Bulan` | Average `pemasukan`/`pengeluaran`/`sisaUangBulanan` across the current + previous 2 months |
 | `hidupTanpaGajiBulan` | Estimated months the user can survive on current net cash (`totalKas − totalUtang`) without any income, based on `rataRata3Bulan.pengeluaran`; `null` if net cash ≤ 0 or average expense is 0 |
 | `usedProfileFallback` | `true` if the user has no transaction data at all yet, in which case `bulanIni`/`rataRata3Bulan` fall back to the planned figures from `/api/profile` (`pemasukanBulananRataRata` / `pengeluaranBulananRataRata`) instead of `0` |
+
+---
+
+### GET `/api/wealth/health-checkup`
+
+**Fase 2 Sprint 13 — Financial Health Check-up.** Calls `calculateWealthSummary` internally, then joins the resulting `wealthLevel` against `wealth_level_reference` for the full diagnosis/advice content.
+
+**Response `200`**
+
+```json
+{
+  "wealthLevel": 3,
+  "wealthLevelName": "Gaji ke Gaji",
+  "diagnosa": "Kekayaan bersih positif, namun Anda belum memiliki bantalan dana darurat yang cukup...",
+  "saran": "Bangun dana darurat 3–6 bulan pengeluaran di rekening terpisah...",
+  "ciri": ["Kekayaan bersih positif", "Belum ada dana darurat memadai", "Hidup bergantung pada gaji bulanan"],
+  "kekayaanBersih": 5000000,
+  "totalAset": 6000000,
+  "totalUtang": 1000000
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `wealthLevel` | Same as `/api/wealth/summary`; `-1` when the user has no financial data yet |
+| `diagnosa` / `saran` / `ciri` | Empty string / empty array when `wealthLevel` is `-1` (no matching reference row) — **not** a `404`, the endpoint always returns `200` |
+
+---
+
+## 8. Budgeting Advisor
+
+Base path: `/api` · **Auth required** · **Fase 2 Sprint 14**
+
+### POST `/api/budget-plans`
+
+Save (or update, if one already exists for the given month) the user's planned monthly income. Upserts atomically on `(userId, bulanTahun)` — safe to call twice for the same month without creating duplicate rows.
+
+**Request body**
+
+```json
+{
+  "rencanaPemasukanBulanan": 10000000,
+  "bulanTahun": "2026-07"
+}
+```
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `rencanaPemasukanBulanan` | number | Yes | Must be > 0 |
+| `bulanTahun` | string (`YYYY-MM`) | No | Defaults to the current calendar month |
+
+**Response `201`** — the created/updated budget plan row.
+
+---
+
+### GET `/api/budget-plans/current`
+
+Fetch the budget plan for a given month (defaults to the current month).
+
+**Query params**
+
+| Param | Type | Default |
+|-------|------|---------|
+| `bulanTahun` | string (`YYYY-MM`) | current month |
+
+**Response `200`** — the plan object, or `null` if none exists yet for that month.
+
+---
+
+### GET `/api/budgeting-advice`
+
+Compute the recommended budget allocation for a given month, based on the user's current `wealthLevel` (via `calculateWealthSummary`) and `budget_allocation_reference` (up to 4 categories with fixed percentages per level).
+
+**Query params**
+
+| Param | Type | Default |
+|-------|------|---------|
+| `bulanTahun` | string (`YYYY-MM`) | current month |
+
+**Response `200`**
+
+```json
+{
+  "wealthLevel": 3,
+  "hasPlan": true,
+  "rencanaPemasukanBulanan": 10000000,
+  "alokasi": [
+    { "kategori": "Kebutuhan Pokok", "persen": 50, "nominal": 5000000 },
+    { "kategori": "Tabungan Darurat", "persen": 30, "nominal": 3000000 },
+    { "kategori": "Investasi", "persen": 10, "nominal": 1000000 },
+    { "kategori": "Gaya Hidup", "persen": 10, "nominal": 1000000 }
+  ],
+  "totalPersen": 100,
+  "sisaTidakTeralokasi": 0
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `hasPlan` | `false` if no budget plan has been saved for the requested month yet — `alokasi` will still reflect the level's percentages, but every `nominal` will be `0` (`rencanaPemasukanBulanan` defaults to `0`) |
+| `alokasi` | Only includes categories with a non-null name and > 0 percentage — some levels have fewer than 4 active categories (e.g. level 0 "Pailit" only has 2) |
+| `wealthLevel: -1` | When the user has no financial data yet, `alokasi` is `[]` and all totals are `0` (never a `404`) |
