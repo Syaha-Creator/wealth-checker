@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { Card } from "@/components/ui/Card";
 import { formatCurrency, formatCurrencyShort, formatMonthShort } from "@/lib/format";
 import { useApiResource } from "@/lib/useApiResource";
+import { useMediaQuery } from "@/lib/useMediaQuery";
 import type { DateRange } from "@/lib/dateRange";
 import { ReportSkeleton, ReportError, ReportEmpty } from "./ReportStates";
 
@@ -23,20 +24,29 @@ export function MonthlyPLReport({ range }: { range: DateRange }) {
   const { data, loading, error, reload } = useApiResource<MonthlyPLRow[]>(
     `/api/analytics/monthly-pl?from=${range.from}&to=${range.to}`,
   );
+  const isNarrow = useMediaQuery("(max-width: 639px)");
 
   if (loading) return <ReportSkeleton />;
   if (error) return <ReportError message={error} onRetry={reload} />;
   if (!data || data.length === 0) return <ReportEmpty />;
 
+  // Teks alternatif untuk screen reader — meniru pola sr-only di WealthHistoryReport.
+  const first = data[0];
+  const last = data[data.length - 1];
+  const summaryText = data.length === 1
+    ? `Laba rugi bulan ${formatMonthShort(first.bulan)}: pendapatan ${formatCurrency(first.pendapatan)}, pengeluaran ${formatCurrency(first.pengeluaran)}, tabungan ${formatCurrency(first.tabungan)}.`
+    : `Laba rugi dari ${formatMonthShort(first.bulan)} hingga ${formatMonthShort(last.bulan)}: pendapatan terakhir ${formatCurrency(last.pendapatan)}, pengeluaran terakhir ${formatCurrency(last.pengeluaran)}, tabungan terakhir ${formatCurrency(last.tabungan)}.`;
+
   return (
     <div className="space-y-3">
       <Card>
-        <div className="h-56" aria-hidden="true">
+        <p className="sr-only">{summaryText}</p>
+        <div className="h-48 sm:h-56 lg:h-64" aria-hidden="true">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis dataKey="bulan" tickFormatter={formatMonthShort} tick={{ fontSize: 11, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} />
-              <YAxis tickFormatter={(v) => formatCurrencyShort(v)} tick={{ fontSize: 11, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} width={64} />
+              <YAxis tickFormatter={(v) => formatCurrencyShort(v)} tick={{ fontSize: 11, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} width={isNarrow ? 42 : 64} />
               <Tooltip
                 formatter={(value, name) => [formatCurrency(Number(value)), String(name)]}
                 labelFormatter={(label) => formatMonthShort(String(label))}

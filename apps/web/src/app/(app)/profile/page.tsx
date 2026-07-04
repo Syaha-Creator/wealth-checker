@@ -7,10 +7,12 @@ import { ConfirmModal } from "@/components/ConfirmModal";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { InputRupiah } from "@/components/ui/Input";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { formatCurrency, parseRupiahInput } from "@/lib/format";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
+import { NotificationSettings } from "./_components/NotificationSettings";
+import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { HouseholdSettings } from "./_components/HouseholdSettings";
 
 type Profile = {
   id: string;
@@ -32,7 +34,7 @@ function formatRupiahDisplay(val: string) {
 }
 
 async function apiFetch(path: string, method = "GET", body?: unknown) {
-  const res = await fetch(`${API}${path}`, {
+  const res = await apiFetchRaw(`${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -118,8 +120,35 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" aria-label="Memuat..." />
+      <div className="max-w-5xl">
+        <div className="flex items-center justify-between mb-6">
+          <Skeleton className="h-6 w-20" />
+          <Skeleton className="h-9 w-20 rounded-lg" />
+        </div>
+        <Card className="mb-6">
+          <div className="flex items-center gap-3">
+            <Skeleton className="w-12 h-12 rounded-full shrink-0" />
+            <div className="space-y-1.5">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-40" />
+            </div>
+          </div>
+        </Card>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card className="space-y-4">
+            <Skeleton className="h-4 w-28 mb-2" />
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <div className="grid grid-cols-2 gap-3">
+              <Skeleton className="h-10 rounded-lg" />
+              <Skeleton className="h-10 rounded-lg" />
+            </div>
+          </Card>
+          <Card className="space-y-4">
+            <Skeleton className="h-4 w-32 mb-2" />
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <Skeleton className="h-10 w-full rounded-lg" />
+          </Card>
+        </div>
       </div>
     );
   }
@@ -142,7 +171,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-5xl">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold text-text-primary">Profil</h1>
         <ThemeToggle variant="pill" />
@@ -164,7 +193,7 @@ export default function ProfilePage() {
       </Card>
 
       <form onSubmit={handleSave}>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 items-start">
           {/* Data Pribadi */}
           <Card>
             <h2 className="text-base font-semibold text-text-primary mb-4">Data Pribadi</h2>
@@ -278,6 +307,14 @@ export default function ProfilePage() {
           </Button>
         </div>
       </form>
+
+      <div className="mb-6">
+        <NotificationSettings />
+      </div>
+
+      <div className="mb-6">
+        <HouseholdSettings />
+      </div>
 
       {/* Quick links + sign out */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

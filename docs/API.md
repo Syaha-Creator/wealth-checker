@@ -4,14 +4,24 @@ Base URL: `http://localhost:4000` (development) · configured via `NEXT_PUBLIC_A
 
 All authenticated endpoints require an active session cookie (`better-auth` session). Use `credentials: "include"` in all fetch calls from the frontend.
 
+### Household context (Sprint 27 / Fase 4)
+
+Every endpoint that touches financial data (accounts, transactions, debts/receivables, assets, dream goals, budget plans, wealth summary/history, analytics, export) is now scoped to the caller's **active household**, not the caller's `userId` directly — see [§13. Households](#13-households-multi-userfamily-sharing-sprint-27--fase-4).
+
+- Send an `X-Household-Id: <uuid>` header to operate on a specific household. The server **always validates** the caller is a member of that household (looked up fresh from the DB on every request) before honoring it — a spoofed/foreign household id in this header returns `403`, never someone else's data.
+- If the header is omitted, the server falls back to the caller's first/primary household (auto-created on first use for users who don't have one yet — e.g. pre-Sprint-27 accounts backfilled into a personal "Keluarga {nama}" household).
+- `userProfile` and `retirementAssumptions` (birthdate, retirement age, income/expense plan, inflation/return assumptions) remain **per-individual** — deliberately **not** household-scoped, since retirement planning is a personal decision even within a shared household.
+
 ---
 
 ## Common Error Responses
 
 | Status | Body | Meaning |
 |--------|------|---------|
+| `400 Bad Request` | `{ "error": "..." }` | Malformed input (e.g. invalid `X-Household-Id` header format) |
 | `401 Unauthorized` | `{ "error": "Unauthorized" }` | No valid session |
-| `404 Not Found` | `{ "error": "Not found" }` | Resource does not exist or belongs to another user |
+| `403 Forbidden` | `{ "error": "Anda bukan anggota household ini" }` or `{ "error": "Anda tidak memiliki izin untuk melakukan aksi ini" }` | Caller is not a member of the requested household, or their role (`viewer`) doesn't allow the requested mutation (`owner`/`editor` only) |
+| `404 Not Found` | `{ "error": "Not found" }` | Resource does not exist or belongs to another household |
 | `409 Conflict` | `{ "error": "..." }` | Action blocked by a business rule constraint |
 | `422 Unprocessable Entity` | `{ "error": "...", "code": "..." }` | Validation or domain rule violation |
 
@@ -899,7 +909,15 @@ Compute the recommended budget allocation for a given month, based on the user's
 
 ### GET `/api/wealth/retirement-plan`
 
-**Fase 3 Sprint 22 — Rencana Pensiun & Warisan Terintegrasi Penuh.** Computes the full retirement/inheritance fund plan from the user's profile (`tanggalLahir`, `rencanaUsiaPensiun`, `rencanaUsiaWarisan`, planned income/expense) plus current wealth summary. Uses a linear projection (not present-value/inflation-adjusted), matching PRD 3.1.8.
+**Fase 3 Sprint 22 — Rencana Pensiun & Warisan Terintegrasi Penuh.** Computes the full retirement/inheritance fund plan from the user's profile (`tanggalLahir`, `rencanaUsiaPensiun`, `rencanaUsiaWarisan`, planned income/expense) plus current wealth summary.
+
+**Query params**
+
+| Param | Type | Default | Notes |
+|-------|------|---------|-------|
+| `mode` | `"simple" \| "advanced"` | `"simple"` | **Fase 4 Sprint 26.** `simple` uses the original linear projection (no inflation/present-value, matching PRD 3.1.8 exactly — kept as default for backward compatibility with old clients). `advanced` uses `calculateRetirementPlanAdvanced()`: inflates each future funding target by the user's `retirementAssumptions.inflasiPersen` (compounded annually over the years-to-target), then present-values that inflated target back to today using `returnInvestasiPersen` as the discount rate — produces a **larger** `totalDanaPensiunWarisan` than `simple` given the same inputs, since it also accounts for the eroding effect of inflation on far-future goals. |
+
+The response body gains one extra top-level field versus the legacy shape:
 
 **Response `200` — profile incomplete**
 
@@ -915,6 +933,7 @@ Compute the recommended budget allocation for a given month, based on the user's
 ```json
 {
   "hasProfile": true,
+  "mode": "simple",
   "plan": {
     "tahunMenujuPensiun": 29,
     "tahunMenujuWarisan": 54,
@@ -952,6 +971,39 @@ Compute the recommended budget allocation for a given month, based on the user's
 | `debtPayoff.bulanLunasDenganKas` | Months to pay off all debt using current cash + monthly surplus; `null` if `sisaUangBulanan ≤ 0` and cash alone isn't enough |
 | `debtPayoff.bulanLunasDenganSisaGaji` | Months to pay off all debt using only the monthly surplus (no cash) — `⌈totalUtang / sisaUangBulanan⌉`; `null` if `sisaUangBulanan ≤ 0` |
 | `realizedPL` | Lifetime realized profit/loss from `jual_barang` / `jual_investasi` transactions (`SUM(untungRugi)`), independent of current holdings |
+| `mode` | Echoes back the resolved `mode` query param (`"simple"` or `"advanced"`) |
+
+---
+
+### GET `/api/wealth/retirement-assumptions`
+
+**Fase 4 Sprint 26.** Returns the current user's inflation/return assumptions used by `mode=advanced` above. **Per-individual**, not household-scoped (see note in [Household context](#household-context-sprint-27--fase-4)).
+
+**Response `200`** — defaults returned (not persisted) if the user has never set assumptions before:
+
+```json
+{ "userId": "uuid", "inflasiPersen": "5", "returnInvestasiPersen": "8", "useAdvancedFormula": false }
+```
+
+---
+
+### PATCH `/api/wealth/retirement-assumptions`
+
+Upsert the caller's assumptions. All fields optional (partial update).
+
+**Request body**
+
+```json
+{ "inflasiPersen": 4.5, "returnInvestasiPersen": 9, "useAdvancedFormula": true }
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `inflasiPersen` | number | `0`–`100` |
+| `returnInvestasiPersen` | number | `0`–`100` |
+| `useAdvancedFormula` | boolean | Drives which mode the frontend defaults to on the Rencana Pensiun page; the API itself always respects the explicit `?mode=` query param above regardless of this flag |
+
+**Response `200`** — the upserted row (numeric fields returned as strings, per Postgres `numeric` → Drizzle convention used throughout this API).
 
 ---
 
@@ -1188,3 +1240,187 @@ Update a goal. All fields optional; same validation as `POST`. Passing `accountI
 ### DELETE `/api/dream-goals/:id`
 
 **Response `204`** — no content. **`404`** if not found.
+
+---
+
+## 11. Notifications (Pengingat Harian)
+
+Base path: `/api/notifications` · **Auth required** · **Fase 4 Sprint 24** · Per-individual (not household-scoped — reminders are about the caller's own transaction logging habit, not the household's).
+
+Backed by a BullMQ repeatable job per user (`apps/api/src/services/notificationScheduler.ts`), run by a separate `worker` process (see [Architecture & Deployment Runbook](./ARCHITECTURE.md)) — the HTTP API only registers/deregisters jobs, it never sends push notifications itself except for `POST /test`.
+
+### POST `/api/notifications/subscribe`
+
+Register a push subscription for the current device/browser. Upserts by `endpoint` (safe to call again after browser refresh/SW re-registration).
+
+**Request body**
+
+```json
+{ "platform": "web", "endpoint": "https://fcm.googleapis.com/...", "p256dh": "base64...", "auth": "base64..." }
+```
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `platform` | `"web" \| "android" \| "ios"` | Yes | Only `"web"` (Web Push VAPID) is actually wired to a live adapter today; `android`/`ios` are accepted and stored for a future FCM/APNs adapter (see `apps/api/src/lib/push/fcm.ts`) but currently no-op if there's no FCM credentials configured |
+| `endpoint` | string | Yes | Push service URL (web) or device token (mobile) — unique across all users |
+| `p256dh` / `auth` | string | Required for `platform: "web"` only | Web Push encryption keys from `PushSubscription.toJSON().keys` |
+
+**Response `201`** — the created/updated subscription row.
+
+---
+
+### DELETE `/api/notifications/subscribe`
+
+Unsubscribe a specific device. **Request body:** `{ "endpoint": "..." }`. **Response `204`.**
+
+---
+
+### GET `/api/notifications/preferences`
+
+**Response `200`** — defaults returned (not persisted) if never set: `{ "userId", "reminderEnabled": true, "reminderTime": "20:00", "timezone": "Asia/Jakarta", "lastNotifiedAt": null }`.
+
+---
+
+### PATCH `/api/notifications/preferences`
+
+Update reminder preferences. All fields optional.
+
+**Request body**
+
+```json
+{ "reminderEnabled": true, "reminderTime": "20:30", "timezone": "Asia/Jakarta" }
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `reminderEnabled` | boolean | Toggles whether the daily reminder job runs at all |
+| `reminderTime` | string | `"HH:MM"` or `"HH:MM:SS"`, 24h — validated against a real cron expression before saving (see error case below) |
+| `timezone` | string | IANA timezone name (e.g. `"Asia/Jakarta"`), used as the BullMQ job's `tz` so the reminder fires at the right **local** time regardless of server timezone |
+
+On success, the API immediately re-registers the caller's BullMQ repeatable job (`upsertReminderJob`) — old job removed, new one scheduled with the updated cron/timezone. **This is fail-soft**: if Redis/the worker is unreachable at save time, the preference row is still persisted and a `console.error` is logged; the boot-time reconciliation in `worker.ts` (re-registers jobs for all `reminderEnabled=true` users on startup) will pick it up once the worker is back online — the request itself never fails because of this.
+
+**Response `200`** — the updated preferences row.
+
+**Error `400`** — `reminderTime`/`timezone` combination doesn't produce a valid cron expression.
+
+---
+
+### POST `/api/notifications/test`
+
+Send one test push notification immediately to all of the caller's active subscriptions (bypasses the BullMQ queue entirely — synchronous).
+
+**Response `200`** — `{ "sent": 1, "failed": 0 }`.
+
+**Error `404`** — no active subscriptions registered for this browser/device yet.
+
+**Error `502`** — delivery failed for every registered subscription (e.g. invalid/expired VAPID keys, push service rejected the request).
+
+---
+
+## 12. Export (Laporan PDF & Excel)
+
+Base path: `/api/export` · **Auth required**, household-scoped · **Fase 4 Sprint 25**
+
+Both endpoints aggregate data through a single shared `buildReportData()` service (`apps/api/src/services/reportData.ts`) so the numbers in the PDF and Excel are always consistent with each other, and with the corresponding dashboard/analytics pages they're derived from.
+
+**Design constraint:** headless-Chromium rendering (Puppeteer) was deliberately rejected — the `api` container is capped at 256MB RAM in production, far below what Chromium needs. PDFs are generated programmatically with `pdf-lib` (cover page, wealth summary, monthly P/L table, budget-vs-actual, debt/receivable summary, asset summary, and a raw transaction list **only if** the requested range is ≤ 3 months — to keep the PDF from growing unbounded). Excel uses `exceljs` (5 sheets, no row-count limit since spreadsheets handle large tables natively).
+
+### GET `/api/export/pdf?from=&to=`
+
+### GET `/api/export/excel?from=&to=`
+
+| Query param | Type | Required | Notes |
+|-------------|------|----------|-------|
+| `from` / `to` | string (`YYYY-MM-DD`) | Yes | Inclusive date range for the report |
+
+**Rate limit:** max **1 export request per minute per user** (`SET export:ratelimit:{userId} 1 EX 60 NX` in Redis) — export generation is comparatively heavy (many aggregation queries + in-memory file generation), so this caps abuse from repeated clicking/scripted retries. **Fails open**: if Redis itself is unreachable, the request is allowed through rather than breaking the export feature entirely due to unrelated infra issues.
+
+**Response `200`** — binary file stream.
+- PDF: `Content-Type: application/pdf`, `Content-Disposition: attachment; filename="wealth-checker-{from}_{to}.pdf"`
+- Excel: `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, `Content-Disposition: attachment; filename="wealth-checker-{from}_{to}.xlsx"`
+
+**Error `422`** — `from` is after `to`.
+
+**Error `429`** — `{ "error": "Tunggu sebentar sebelum export lagi (maks. 1x per menit)" }` — rate limited.
+
+---
+
+## 13. Households (Multi-User/Family Sharing, Sprint 27 — Fase 4)
+
+Base path: `/api/households` · **Auth required**
+
+Introduces shared ownership of financial data: a `household` has 1..N members (`owner | editor | viewer` roles), and 9 data tables (`accounts`, `transactions`, `debts`, `receivables`, `liquid_assets`, `fixed_assets`, `wealth_snapshots`, `dream_goals`, `budget_plans`) are scoped by `household_id` rather than `user_id` directly (`user_id`/`created_by` is still recorded per row for attribution, but no longer used for access control). `user_profile` and `retirement_assumptions` remain per-individual. See [Architecture & ERD](./ARCHITECTURE.md) for the full entity diagram.
+
+**Roles:** `owner` (full control: invite/remove/change roles, all data mutations) · `editor` (can create/edit/delete data, cannot manage members) · `viewer` (read-only — enforced by `requireRole("owner", "editor")` on every mutating route across the whole API, not just here).
+
+### GET `/api/households`
+
+List every household the caller is a member of (personal + shared), each with `role` and `memberCount`. Used to populate the household switcher.
+
+**Response `200`**
+
+```json
+[{ "id": "uuid", "nama": "Keluarga Jane", "role": "owner", "createdAt": "...", "memberCount": 2 }]
+```
+
+---
+
+### GET `/api/households/members`
+
+Members + pending invites of the **active** household (resolved the same way as any other household-scoped route — see [Household context](#household-context-sprint-27--fase-4)).
+
+**Response `200`** — `{ "householdId", "currentUserRole", "members": [{ "userId", "role", "joinedAt", "name", "email" }], "invites": [{ "id", "invitedEmail", "role", "createdAt", "expiresAt" }] }`.
+
+---
+
+### POST `/api/households/invite`
+
+**Owner-only.** Invite a new member by email. There is currently **no email provider wired up** in this codebase (`better-auth` doesn't have verification email configured either) — as an interim measure, the invite link is returned directly in the response body for the owner to share manually (WhatsApp, etc.) until an email provider (e.g. Resend/SMTP) is set up as separate work.
+
+**Request body:** `{ "email": "friend@example.com", "role": "editor" }` — `role` is `"editor" | "viewer"` only (`owner` can't be granted via invite; use `PATCH /members/:userId` to transfer ownership instead).
+
+**Response `201`** — the invite row plus `inviteUrl` (`{WEB_APP_URL}/household/accept-invite?token=...`), valid for **7 days**.
+
+**Error `409`** — a user with that email is already a member of this household.
+
+---
+
+### DELETE `/api/households/invites/:id`
+
+**Owner-only.** Revoke a pending invite. **Response `204`.** **`404`** if not found / already accepted/revoked.
+
+---
+
+### POST `/api/households/accept-invite/:token`
+
+Accept an invite (requires being logged in). The invite's `invitedEmail` must match the caller's account email **exactly** — prevents a forwarded/leaked token from being redeemed by the wrong person.
+
+**Response `201`** — `{ "householdId", "alreadyMember": false }` (or `200`-equivalent shape with `alreadyMember: true` if the caller was already a member — the invite is still marked `accepted` either way, idempotent).
+
+**Error `404`** — token not found. **Error `409`** — invite already accepted/revoked, or expired (auto-revoked on this check). **Error `403`** — invite is for a different email address.
+
+---
+
+### PATCH `/api/households/members/:userId`
+
+**Owner-only.** Change a member's role, including transferring ownership (`role: "owner"`) to someone else. **Response `200`** — updated membership row. **`404`** if target isn't a member of this household.
+
+---
+
+### DELETE `/api/households/members/:userId`
+
+**Owner-only.** Remove a member from the active household.
+
+**Error `409`** cases (edge cases from the Sprint 27 plan, both enforced here):
+- Household would be left with zero members (`total members ≤ 1`).
+- Caller is trying to remove **themselves** while still `owner` and other members remain — must transfer ownership via `PATCH /members/:userId` first, so a household never ends up without an owner.
+
+**Response `204`** on success.
+
+---
+
+### POST `/api/households/switch`
+
+Validate that the caller is a member of the target household (`{ "householdId": "uuid" }`) before the frontend switches its active `X-Household-Id`. **Stateless by design** — nothing is persisted server-side; the frontend stores the active household id (`localStorage`) and sends it as the `X-Household-Id` header on subsequent requests.
+
+**Response `200`** — the household row plus the caller's `role` in it. **Error `403`** — not a member. **Error `404`** — household doesn't exist.

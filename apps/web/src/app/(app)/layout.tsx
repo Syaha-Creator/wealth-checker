@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { AppNav } from "@/components/AppNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { HouseholdSwitcher } from "@/components/HouseholdSwitcher";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = useSession();
@@ -30,11 +31,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-bg">
       <AppNav />
 
-      {/* Mobile top bar: brand + theme toggle (sidebar carries these on desktop) */}
-      <div className="md:hidden flex items-center justify-between px-4 py-3 bg-surface border-b border-border sticky top-0 z-30">
-        <div className="flex items-center gap-2">
+      {/* Mobile top bar: brand + household switcher + theme toggle (sidebar carries these on desktop) */}
+      <div className="md:hidden flex items-center justify-between gap-2 px-4 py-3 bg-surface border-b border-border sticky top-0 z-30">
+        <div className="flex items-center gap-2 shrink-0">
           <div className="w-6 h-6 rounded-md bg-brand flex items-center justify-center text-brand-text-on font-bold text-[11px]" aria-hidden="true">W</div>
-          <span className="text-sm font-bold text-text-primary">Wealth Checker</span>
+          <span className="text-sm font-bold text-text-primary hidden sm:inline">Wealth Checker</span>
+        </div>
+        <div className="flex-1 max-w-[55%]">
+          <HouseholdSwitcher />
         </div>
         <ThemeToggle />
       </div>

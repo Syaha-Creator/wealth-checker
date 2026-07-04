@@ -29,7 +29,10 @@ export interface WealthSummary {
   wealthLevelName: string;
 }
 
-export async function calculateWealthSummary(db: DB, userId: string): Promise<WealthSummary> {
+// Sprint 27 (Fase 4): komponen keuangan (kas/aset/utang) di-scope per
+// household (dibagikan seluruh anggota) — hanya userName/userEmail yang masih
+// diambil per-individu (nama pengguna yang men-generate laporan/lihat summary).
+export async function calculateWealthSummary(db: DB, householdId: string, userId: string): Promise<WealthSummary> {
   // Get user from Better Auth's user table
   const [user] = await db.select({ name: authUser.name, email: authUser.email })
     .from(authUser)
@@ -40,15 +43,15 @@ export async function calculateWealthSummary(db: DB, userId: string): Promise<We
   const [[accRes], [liqRes], [fixRes], [debtRes], [recRes]] = await Promise.all([
     // Only count active accounts, matching the accounts page total
     db.select({ total: sql<string>`coalesce(sum(saldo_cache::numeric), 0)` })
-      .from(accounts).where(and(eq(accounts.userId, userId), eq(accounts.isActive, true))),
+      .from(accounts).where(and(eq(accounts.householdId, householdId), eq(accounts.isActive, true))),
     db.select({ total: sql<string>`coalesce(sum(jumlah * harga_beli_rata_rata), 0)` })
-      .from(liquidAssets).where(eq(liquidAssets.userId, userId)),
+      .from(liquidAssets).where(eq(liquidAssets.householdId, householdId)),
     db.select({ total: sql<string>`coalesce(sum(jumlah * harga_beli_rata_rata), 0)` })
-      .from(fixedAssets).where(eq(fixedAssets.userId, userId)),
+      .from(fixedAssets).where(eq(fixedAssets.householdId, householdId)),
     db.select({ total: sql<string>`coalesce(sum(sisa_saldo::numeric), 0)` })
-      .from(debts).where(eq(debts.userId, userId)),
+      .from(debts).where(eq(debts.householdId, householdId)),
     db.select({ total: sql<string>`coalesce(sum(sisa_saldo::numeric), 0)` })
-      .from(receivables).where(eq(receivables.userId, userId)),
+      .from(receivables).where(eq(receivables.householdId, householdId)),
   ]);
 
   const totalKas = Number(accRes.total);
@@ -103,18 +106,23 @@ export interface WealthSnapshotPoint {
  * Menghitung ulang kekayaan bersih terkini lalu upsert ke `wealth_snapshots`
  * untuk hari ini. Aman dipanggil berkali-kali per hari (idempotent) — panggilan
  * kedua dst. di hari yang sama akan menimpa (bukan menduplikasi) baris yang sama.
+ *
+ * Sprint 27: satu snapshot per HOUSEHOLD per hari (bukan per-user lagi) — lihat
+ * migration 0013 & idx_wealth_snapshots_household_tanggal_unique. `userId` di
+ * bawah dicatat sebagai `user_id` (createdBy — anggota mana yang memicu
+ * snapshot ini), bukan basis conflict target.
  */
-export async function createWealthSnapshot(db: DB, userId: string): Promise<void> {
-  const summary = await calculateWealthSummary(db, userId);
+export async function createWealthSnapshot(db: DB, householdId: string, userId: string): Promise<void> {
+  const summary = await calculateWealthSummary(db, householdId, userId);
   // wealthLevel -1 berarti belum ada data aset/utang sama sekali — tidak ada
   // yang berarti untuk disnapshot (grafik time-series baru mulai relevan
   // sejak data pertama masuk, bukan sebelumnya).
   if (summary.wealthLevel === -1) return;
 
   await db.execute(sql`
-    INSERT INTO wealth_snapshots (user_id, tanggal, total_aset, total_utang, kekayaan_bersih)
-    VALUES (${userId}, CURRENT_DATE, ${String(summary.totalAset)}, ${String(summary.totalUtang)}, ${String(summary.kekayaanBersih)})
-    ON CONFLICT (user_id, tanggal)
+    INSERT INTO wealth_snapshots (user_id, household_id, tanggal, total_aset, total_utang, kekayaan_bersih)
+    VALUES (${userId}, ${householdId}, CURRENT_DATE, ${String(summary.totalAset)}, ${String(summary.totalUtang)}, ${String(summary.kekayaanBersih)})
+    ON CONFLICT (household_id, tanggal)
     DO UPDATE SET
       total_aset = excluded.total_aset,
       total_utang = excluded.total_utang,
@@ -191,18 +199,19 @@ export function computeBackfillPoints(
 }
 
 /**
- * Backfill satu user — dipanggil oleh script sekali-jalan
+ * Backfill satu household — dipanggil oleh script sekali-jalan
  * `apps/api/src/scripts/backfillWealthSnapshots.ts`. Idempotent (ON CONFLICT
- * DO UPDATE per tanggal, sama seperti createWealthSnapshot).
+ * DO UPDATE per tanggal, sama seperti createWealthSnapshot). `userId` dipakai
+ * sebagai createdBy pada baris snapshot & untuk userName/userEmail summary.
  */
-export async function backfillWealthSnapshotsForUser(db: DB, userId: string): Promise<number> {
-  const summary = await calculateWealthSummary(db, userId);
+export async function backfillWealthSnapshotsForUser(db: DB, householdId: string, userId: string): Promise<number> {
+  const summary = await calculateWealthSummary(db, householdId, userId);
   if (summary.wealthLevel === -1) return 0; // belum ada data sama sekali
 
   const txRows = await db
     .select({ tanggal: transactions.tanggal, type: transactions.type, nominal: transactions.nominal, untungRugi: transactions.untungRugi })
     .from(transactions)
-    .where(eq(transactions.userId, userId))
+    .where(eq(transactions.householdId, householdId))
     .orderBy(asc(transactions.tanggal), asc(transactions.createdAt));
 
   if (txRows.length === 0) return 0;
@@ -214,9 +223,9 @@ export async function backfillWealthSnapshotsForUser(db: DB, userId: string): Pr
     const totalAset = p.kekayaanBersih >= 0 ? p.kekayaanBersih : 0;
     const totalUtang = p.kekayaanBersih >= 0 ? 0 : -p.kekayaanBersih;
     await db.execute(sql`
-      INSERT INTO wealth_snapshots (user_id, tanggal, total_aset, total_utang, kekayaan_bersih)
-      VALUES (${userId}, ${p.tanggal}, ${String(totalAset)}, ${String(totalUtang)}, ${String(p.kekayaanBersih)})
-      ON CONFLICT (user_id, tanggal)
+      INSERT INTO wealth_snapshots (user_id, household_id, tanggal, total_aset, total_utang, kekayaan_bersih)
+      VALUES (${userId}, ${householdId}, ${p.tanggal}, ${String(totalAset)}, ${String(totalUtang)}, ${String(p.kekayaanBersih)})
+      ON CONFLICT (household_id, tanggal)
       DO UPDATE SET
         total_aset = excluded.total_aset,
         total_utang = excluded.total_utang,
@@ -226,18 +235,18 @@ export async function backfillWealthSnapshotsForUser(db: DB, userId: string): Pr
 
   // Timpa baris hari ini dengan totalAset/totalUtang yang AKURAT (bukan
   // pendekatan) — createWealthSnapshot memanggil calculateWealthSummary ulang.
-  await createWealthSnapshot(db, userId);
+  await createWealthSnapshot(db, householdId, userId);
 
   return points.length;
 }
 
 /** GET /analytics/wealth-history — grafik kekayaan bersih dari waktu ke waktu. */
-export async function getWealthHistory(db: DB, userId: string, from: string, to: string): Promise<WealthSnapshotPoint[]> {
+export async function getWealthHistory(db: DB, householdId: string, from: string, to: string): Promise<WealthSnapshotPoint[]> {
   const rows = await db
     .select({ tanggal: wealthSnapshots.tanggal, kekayaanBersih: wealthSnapshots.kekayaanBersih })
     .from(wealthSnapshots)
     .where(and(
-      eq(wealthSnapshots.userId, userId),
+      eq(wealthSnapshots.householdId, householdId),
       gte(wealthSnapshots.tanggal, from),
       lte(wealthSnapshots.tanggal, to),
     ))
@@ -284,7 +293,7 @@ function prevMonths(ym: string, n: number): string[] {
   return months;
 }
 
-async function fetchMonthSnapshot(db: DB, userId: string, ym: string): Promise<MonthlySnapshot> {
+async function fetchMonthSnapshot(db: DB, householdId: string, ym: string): Promise<MonthlySnapshot> {
   const from = startOfMonth(ym);
   const to = startOfMonth(nextMonth(ym));
 
@@ -292,7 +301,7 @@ async function fetchMonthSnapshot(db: DB, userId: string, ym: string): Promise<M
     .select({ pemasukan: sql<string>`coalesce(sum(nominal::numeric), 0)` })
     .from(transactions)
     .where(and(
-      eq(transactions.userId, userId),
+      eq(transactions.householdId, householdId),
       eq(transactions.type, "pendapatan"),
       gte(transactions.tanggal, from),
       lt(transactions.tanggal, to),
@@ -302,7 +311,7 @@ async function fetchMonthSnapshot(db: DB, userId: string, ym: string): Promise<M
     .select({ pengeluaran: sql<string>`coalesce(sum(nominal::numeric), 0)` })
     .from(transactions)
     .where(and(
-      eq(transactions.userId, userId),
+      eq(transactions.householdId, householdId),
       eq(transactions.type, "pengeluaran"),
       gte(transactions.tanggal, from),
       lt(transactions.tanggal, to),
@@ -313,8 +322,12 @@ async function fetchMonthSnapshot(db: DB, userId: string, ym: string): Promise<M
   return { bulan: ym, pemasukan: p, pengeluaran: k, sisaUangBulanan: p - k };
 }
 
+// Sprint 27: transaksi (pemasukan/pengeluaran) di-scope per household, TAPI
+// `userProfile` (rencana pemasukan/pengeluaran fallback) TETAP per-individu
+// (lihat plan Sprint 27) — jadi butuh keduanya, householdId & userId.
 export async function calculateMonthlyCashFlow(
   db: DB,
+  householdId: string,
   userId: string,
   totalKas: number,
   totalUtang: number,
@@ -325,9 +338,9 @@ export async function calculateMonthlyCashFlow(
 
   const [[bulanIni, bulanLalu, duaBulanLalu], [profile]] = await Promise.all([
     Promise.all([
-      fetchMonthSnapshot(db, userId, currentYm),
-      fetchMonthSnapshot(db, userId, lastYm),
-      fetchMonthSnapshot(db, userId, twoAgoYm),
+      fetchMonthSnapshot(db, householdId, currentYm),
+      fetchMonthSnapshot(db, householdId, lastYm),
+      fetchMonthSnapshot(db, householdId, twoAgoYm),
     ]),
     db.select({
       pemasukanRencana: userProfile.pemasukanBulananRataRata,
@@ -494,6 +507,61 @@ export function calculateRetirementPlan(input: RetirementPlanInput, referenceDat
   };
 }
 
+// ─── Sprint 26 (Fase 4): Present Value & Inflasi ─────────────────────────────
+// calculateRetirementPlan() di atas SENGAJA tidak diubah (default "simple",
+// backward compatible) — ini mode opsional "Lanjutan" di sampingnya.
+
+export interface RetirementAssumptions {
+  inflasiPersen: number;         // persen per tahun, mis. 5 = 5%/tahun
+  returnInvestasiPersen: number; // persen per tahun, mis. 8 = 8%/tahun
+}
+
+export interface RetirementPlanAdvanced extends RetirementPlan {
+  // danaDibutuhkanSekarang: berapa lump sum yang perlu diinvestasikan HARI INI
+  // (dengan asumsi returnInvestasiPersen/tahun) supaya tumbuh cukup untuk
+  // menutup totalDanaPensiunWarisan (yang sudah inflasi-adjusted) saat pensiun.
+  danaDibutuhkanSekarang: number;
+  asumsi: RetirementAssumptions;
+}
+
+/**
+ * Formula 2 langkah sesuai plan Sprint 26:
+ * 1. FV — inflasi-kan kebutuhan dana calculateRetirementPlan() (dalam rupiah
+ *    HARI INI) ke nilai rupiah pada SAAT PENSIUN, `n` tahun dari sekarang:
+ *    FV = PV × (1 + inflasi)^n.
+ * 2. PV kembali — dari FV itu, hitung berapa lump sum yang perlu disiapkan
+ *    SEKARANG dengan asumsi tumbuh di tingkat returnInvestasiPersen/tahun:
+ *    PV = FV / (1 + returnInvestasi)^n.
+ *
+ * Simplifikasi sengaja (didokumentasikan, bukan bug): kebutuhan SELAMA masa
+ * pensiun diasumsikan konstan dalam rupiah hari-pensiun (tidak terus naik lagi
+ * akibat inflasi SEPANJANG masa pensiun) — cukup untuk kebutuhan aplikasi ini,
+ * upgrade ke model anuitas bertumbuh penuh adalah pekerjaan terpisah.
+ */
+export function calculateRetirementPlanAdvanced(
+  input: RetirementPlanInput,
+  assumptions: RetirementAssumptions,
+  referenceDate: Date = new Date(),
+): RetirementPlanAdvanced {
+  const basePlan = calculateRetirementPlan(input, referenceDate);
+  const n = Math.max(0, basePlan.tahunMenujuPensiun);
+  const inflationFactor = Math.pow(1 + assumptions.inflasiPersen / 100, n);
+  const discountFactor = Math.pow(1 + assumptions.returnInvestasiPersen / 100, n);
+
+  const danaDibutuhkanSebelumPensiun = basePlan.danaDibutuhkanSebelumPensiun * inflationFactor;
+  const danaDibutuhkanSelamaPensiun = basePlan.danaDibutuhkanSelamaPensiun * inflationFactor;
+  const totalDanaPensiunWarisan = danaDibutuhkanSebelumPensiun + danaDibutuhkanSelamaPensiun;
+
+  return {
+    ...basePlan,
+    danaDibutuhkanSebelumPensiun,
+    danaDibutuhkanSelamaPensiun,
+    totalDanaPensiunWarisan,
+    danaDibutuhkanSekarang: totalDanaPensiunWarisan / discountFactor,
+    asumsi: assumptions,
+  };
+}
+
 export interface CollectedFundsBreakdown {
   danaDaruratTerkumpul: number;
   danaPensiunTerkumpul: number;
@@ -546,12 +614,12 @@ export function calculateDebtPayoffEstimate(totalKas: number, totalUtang: number
 }
 
 /** PRD 3.2 — akumulasi untung/rugi realized dari jual barang & jual investasi. */
-export async function calculateRealizedProfitLoss(db: DB, userId: string): Promise<{ untungRugiJualBarang: number; untungRugiInvestasi: number }> {
+export async function calculateRealizedProfitLoss(db: DB, householdId: string): Promise<{ untungRugiJualBarang: number; untungRugiInvestasi: number }> {
   const [[barang], [investasi]] = await Promise.all([
     db.select({ total: sql<string>`coalesce(sum(untung_rugi::numeric), 0)` })
-      .from(transactions).where(and(eq(transactions.userId, userId), eq(transactions.type, "jual_barang"))),
+      .from(transactions).where(and(eq(transactions.householdId, householdId), eq(transactions.type, "jual_barang"))),
     db.select({ total: sql<string>`coalesce(sum(untung_rugi::numeric), 0)` })
-      .from(transactions).where(and(eq(transactions.userId, userId), eq(transactions.type, "jual_investasi"))),
+      .from(transactions).where(and(eq(transactions.householdId, householdId), eq(transactions.type, "jual_investasi"))),
   ]);
 
   return { untungRugiJualBarang: Number(barang.total), untungRugiInvestasi: Number(investasi.total) };

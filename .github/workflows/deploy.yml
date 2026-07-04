@@ -126,6 +126,16 @@ jobs:
           E2E_API_URL: http://localhost:4001
         run: bunx vitest run src/routes/wealth.e2e.test.ts
 
+      - name: Run household isolation & privilege escalation regression test
+        # Sprint 27 (Fase 4) — verifikasi data household A tidak bocor ke
+        # household B (list & akses by-id), header X-Household-Id tidak bisa
+        # dipakai melompat ke household orang lain, dan role viewer/editor/
+        # owner ditegakkan dengan benar. See households.e2e.test.ts.
+        working-directory: apps/api
+        env:
+          E2E_API_URL: http://localhost:4001
+        run: bunx vitest run src/routes/households.e2e.test.ts
+
       - name: Install Playwright browsers
         working-directory: apps/web
         run: bunx playwright install chromium --with-deps
@@ -204,7 +214,7 @@ jobs:
           DATABASE_URL="postgresql://wealth:${DB_PASS}@localhost:5433/wealth_checker" \
             bun run db:migrate
 
-          docker compose up -d api web
+          docker compose up -d api web worker
 
           echo "=== [6/6] Health check ==="
           for i in $(seq 1 30); do

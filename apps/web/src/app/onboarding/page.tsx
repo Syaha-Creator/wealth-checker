@@ -8,8 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { parseRupiahInput } from "@/lib/format";
 import { SEMUA_REKENING, SEMUA_KARTU_KREDIT_PAYLATER } from "@/lib/institutions";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
+import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -35,7 +34,7 @@ const OPTIONAL_STEPS = [3, 4, 5, 6];
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function apiFetch(path: string, method: string, body?: unknown) {
-  const res = await fetch(`${API}${path}`, {
+  const res = await apiFetchRaw(`${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     credentials: "include",

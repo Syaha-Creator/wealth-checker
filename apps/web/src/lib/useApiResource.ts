@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiFetch } from "./apiFetch";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export interface ApiResourceState<T> {
   data: T | null;
@@ -39,7 +39,7 @@ export function useApiResource<T>(path: string | null): ApiResourceState<T> {
     async function load() {
       setState((s) => ({ ...s, loading: true, error: "" }));
       try {
-        const res = await fetch(`${API}${path}`, { credentials: "include" });
+        const res = await apiFetch(`${path}`, { credentials: "include" });
         if (!res.ok) {
           const body = await res.json().catch(() => null);
           throw new Error(body?.error ?? `Gagal memuat data (${res.status})`);

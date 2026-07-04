@@ -9,15 +9,19 @@
 // Idempotent — aman dijalankan ulang (akan menimpa, bukan menduplikasi baris).
 import { db, authUser } from "@wealth/db";
 import { backfillWealthSnapshotsForUser } from "../services/wealth";
+import { backfillHouseholdForUser } from "../services/household";
 
 async function main() {
-  const users = await db.select({ id: authUser.id, email: authUser.email }).from(authUser);
+  const users = await db.select({ id: authUser.id, name: authUser.name, email: authUser.email }).from(authUser);
   console.log(`Backfilling wealth_snapshots untuk ${users.length} user...`);
 
   let totalSnapshots = 0;
   for (const user of users) {
     try {
-      const count = await backfillWealthSnapshotsForUser(db, user.id);
+      // Sprint 27: wealth_snapshots kini household-scoped — pastikan user
+      // sudah punya household (no-op kalau sudah ada dari backfillHouseholds.ts).
+      const { householdId } = await backfillHouseholdForUser(db, user.id, user.name || user.email);
+      const count = await backfillWealthSnapshotsForUser(db, householdId, user.id);
       if (count > 0) {
         console.log(`  ✓ ${user.email}: ${count} snapshot`);
         totalSnapshots += count;

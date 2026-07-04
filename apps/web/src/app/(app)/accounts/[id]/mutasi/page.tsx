@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonHero } from "@/components/ui/Skeleton";
+import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
+import type { DateRange } from "@/lib/dateRange";
 import { formatCurrency, formatDateLong } from "@/lib/format";
+import { apiFetch } from "@/lib/apiFetch";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 type MutationRow = {
   id: string;
@@ -78,10 +80,30 @@ export default function MutasiRekeningPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retryKey, setRetryKey] = useState(0);
+  // Audit temuan 5 (skalabilitas): dulu tidak ada filter tanggal sama sekali
+  // di halaman ini. `range` di sini adalah override eksplisit dari pengguna;
+  // saat `null` (belum diubah), tampilan memakai `fullRange` yang mencakup
+  // seluruh histori rekening — bukan preset seperti di Analisa — supaya
+  // tidak ada data yang "hilang" secara diam-diam saat pertama membuka halaman.
+  const [range, setRange] = useState<DateRange | null>(null);
+
+  const fullRange = useMemo<DateRange | null>(() => {
+    if (!data || data.mutasi.length === 0) return null;
+    const dates = data.mutasi.map((m) => m.tanggal);
+    return { from: dates.reduce((a, b) => (a < b ? a : b)), to: dates.reduce((a, b) => (a > b ? a : b)) };
+  }, [data]);
+
+  const effectiveRange = range ?? fullRange;
+
+  const filteredMutasi = useMemo(() => {
+    if (!data) return [];
+    if (!effectiveRange) return data.mutasi;
+    return data.mutasi.filter((row) => row.tanggal >= effectiveRange.from && row.tanggal <= effectiveRange.to);
+  }, [data, effectiveRange]);
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API}/api/accounts/${accountId}/mutasi`, { credentials: "include" })
+    apiFetch(`/api/accounts/${accountId}/mutasi`, { credentials: "include" })
       .then((r) => {
         if (!r.ok) throw new Error(r.status === 404 ? "Rekening tidak ditemukan" : "Gagal memuat mutasi rekening");
         return r.json();
@@ -127,8 +149,18 @@ export default function MutasiRekeningPage() {
               description="Rekening ini belum memiliki transaksi tercatat"
             />
           ) : (
+            <>
+              {effectiveRange && <DateRangeFilter value={effectiveRange} onChange={setRange} className="mb-4" />}
+
+              {filteredMutasi.length === 0 ? (
+                <EmptyState
+                  icon={<HistoryIcon />}
+                  title="Tidak ada mutasi di rentang ini"
+                  description="Coba perluas rentang tanggal untuk melihat mutasi lain"
+                />
+              ) : (
             <div className="space-y-2">
-              {data.mutasi.map((row) => (
+              {filteredMutasi.map((row) => (
                 <Card key={row.id} padding="sm">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
@@ -149,6 +181,8 @@ export default function MutasiRekeningPage() {
                 </Card>
               ))}
             </div>
+              )}
+            </>
           )}
         </div>
       )}

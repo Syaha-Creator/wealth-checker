@@ -42,7 +42,7 @@ export function IncomeReport({ range }: { range: DateRange }) {
       </Card>
 
       <Card>
-        <div className="h-56" aria-hidden="true">
+        <div className="h-48 sm:h-56 lg:h-64" aria-hidden="true">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie data={donutData} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="85%" paddingAngle={2}>

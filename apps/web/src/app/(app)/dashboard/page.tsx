@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSession, signOut } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
+import { useSession } from "@/lib/auth-client";
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -10,8 +9,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonCard, SkeletonHero } from "@/components/ui/Skeleton";
 import { formatCurrency, formatCurrencyShort, formatMonthLabel } from "@/lib/format";
+import { apiFetch } from "@/lib/apiFetch";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 type WealthSummary = {
   totalAset: number;
@@ -51,10 +50,6 @@ const LEVEL_CONFIG: { label: string; desc: string; variant: "danger" | "warning"
   { label: "Punya Warisan", desc: "Level kebebasan finansial tertinggi", variant: "brand" },
 ];
 
-function SignOutIcon() {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>;
-}
-
 function AccountIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
@@ -74,7 +69,7 @@ function DashboardSkeleton() {
         </div>
         <Skeleton className="h-9 w-20 rounded-lg" />
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <SkeletonHero className="h-40" />
           <div className="grid grid-cols-2 gap-3">
@@ -95,7 +90,6 @@ function DashboardSkeleton() {
 
 export default function DashboardPage() {
   const { data: session } = useSession();
-  const router = useRouter();
   const [summary, setSummary] = useState<WealthSummary | null>(null);
   const [cashFlow, setCashFlow] = useState<MonthlyCashFlow | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -111,15 +105,15 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!session) return;
     Promise.all([
-      fetch(`${API}/api/wealth/summary`, { credentials: "include" }).then((r) => {
+      apiFetch(`/api/wealth/summary`, { credentials: "include" }).then((r) => {
         if (!r.ok) throw new Error("Gagal memuat ringkasan kekayaan");
         return r.json();
       }),
-      fetch(`${API}/api/accounts`, { credentials: "include" }).then((r) => {
+      apiFetch(`/api/accounts`, { credentials: "include" }).then((r) => {
         if (!r.ok) throw new Error("Gagal memuat rekening");
         return r.json();
       }),
-      fetch(`${API}/api/wealth/monthly-cash-flow`, { credentials: "include" }).then((r) => {
+      apiFetch(`/api/wealth/monthly-cash-flow`, { credentials: "include" }).then((r) => {
         if (!r.ok) return null;
         return r.json();
       }),
@@ -134,11 +128,6 @@ export default function DashboardPage() {
       })
       .finally(() => setLoading(false));
   }, [session, retryKey]);
-
-  const handleSignOut = async () => {
-    await signOut();
-    router.push("/auth/login");
-  };
 
   if (loading) {
     return <DashboardSkeleton />;
@@ -174,12 +163,6 @@ export default function DashboardPage() {
       <PageHeader
         title={session?.user?.name ?? "Dashboard"}
         subtitle="Selamat datang kembali"
-        action={
-          <Button variant="secondary" size="sm" onClick={handleSignOut} aria-label="Keluar dari akun">
-            <SignOutIcon />
-            Keluar
-          </Button>
-        }
       />
 
       {/* New-user guidance — only shown when there is truly no wealth data yet
@@ -199,7 +182,7 @@ export default function DashboardPage() {
         />
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {/* Primary column: net worth + breakdown + cash flow */}
         <div className="lg:col-span-2 space-y-6">
           {/* Kekayaan Bersih hero */}

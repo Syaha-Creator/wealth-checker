@@ -89,6 +89,33 @@ services:
           memory: 256m
 
   # ---------------------------------------------------------------------------
+  # Worker — proses BullMQ terpisah (Fase 4, Sprint 24: notifikasi pengingat)
+  # Image sama dengan `api`, hanya command yang beda — lihat apps/api/src/worker.ts.
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: ./apps/api/Dockerfile
+    container_name: wealth_worker
+    restart: unless-stopped
+    command: ["bun", "run", "apps/api/src/worker.ts"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-wealth}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wealth_checker}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - wealth_network
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  # ---------------------------------------------------------------------------
   # Web — Next.js
   # ---------------------------------------------------------------------------
   web:

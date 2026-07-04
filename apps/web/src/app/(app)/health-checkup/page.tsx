@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonHero } from "@/components/ui/Skeleton";
 import { formatCurrency } from "@/lib/format";
+import { apiFetch } from "@/lib/apiFetch";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 type HealthCheckup = {
   wealthLevel: number;
@@ -72,7 +72,7 @@ export default function HealthCheckupPage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API}/api/wealth/health-checkup`, { credentials: "include" })
+    apiFetch(`/api/wealth/health-checkup`, { credentials: "include" })
       .then((r) => {
         if (!r.ok) throw new Error("Gagal memuat Financial Health Check-up");
         return r.json();

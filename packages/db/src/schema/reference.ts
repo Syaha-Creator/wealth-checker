@@ -1,5 +1,6 @@
-import { pgTable, integer, uuid, text, varchar, numeric, date, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, integer, uuid, text, varchar, numeric, date, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { authUser } from "./auth";
+import { households } from "./households";
 
 export const wealthLevelReference = pgTable("wealth_level_reference", {
   level: integer("level").primaryKey(),
@@ -27,16 +28,24 @@ export const budgetAllocationReference = pgTable("budget_allocation_reference", 
 export const wealthSnapshots = pgTable("wealth_snapshots", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "cascade" }),
   tanggal: date("tanggal").notNull(),
   totalAset: numeric("total_aset", { precision: 20, scale: 2 }).notNull(),
   totalUtang: numeric("total_utang", { precision: 20, scale: 2 }).notNull(),
   kekayaanBersih: numeric("kekayaan_bersih", { precision: 20, scale: 2 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  householdIdx: index("idx_wealth_snapshots_household").on(t.householdId),
+  // Sprint 27 (migration 0013): satu snapshot per household per hari
+  // (menggantikan idx_wealth_snapshots_user_tanggal_unique dari migration 0007)
+  // — kekayaan bersih sekarang representasi kolektif household, bukan per-user.
+  householdTanggalUniqueIdx: uniqueIndex("idx_wealth_snapshots_household_tanggal_unique").on(t.householdId, t.tanggal),
+}));
 
 export const dreamGoals = pgTable("dream_goals", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "cascade" }),
   namaGoal: varchar("nama_goal", { length: 255 }).notNull(),
   accountId: uuid("account_id"),
   targetNominal: numeric("target_nominal", { precision: 20, scale: 2 }).notNull(),
@@ -44,17 +53,23 @@ export const dreamGoals = pgTable("dream_goals", {
   // tidak terkait rekening spesifik diupdate manual oleh user, bukan live.
   saldoManual: numeric("saldo_manual", { precision: 20, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  householdIdx: index("idx_dream_goals_household").on(t.householdId),
+}));
 
 export const budgetPlans = pgTable("budget_plans", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "cascade" }),
   rencanaPemasukanBulanan: numeric("rencana_pemasukan_bulanan", { precision: 20, scale: 2 }).notNull(),
   bulanTahun: varchar("bulan_tahun", { length: 7 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => ({
-  // Sprint 14 (bug hunt pattern): satu rencana per user per bulan — unique index
-  // jadi conflict target untuk INSERT...ON CONFLICT DO UPDATE (atomic upsert),
+  // Sprint 14 (bug hunt pattern): satu rencana per bulan — unique index jadi
+  // conflict target untuk INSERT...ON CONFLICT DO UPDATE (atomic upsert),
   // mencegah duplikat baris rencana kalau form disubmit dua kali konkuren.
-  userBulanUniqueIdx: uniqueIndex("idx_budget_plans_user_bulan_unique").on(t.userId, t.bulanTahun),
+  // Sprint 27 (migration 0013): scope digeser ke per-household (satu rencana
+  // budget dipakai bersama seluruh anggota household untuk bulan yang sama).
+  householdBulanUniqueIdx: uniqueIndex("idx_budget_plans_household_bulan_unique").on(t.householdId, t.bulanTahun),
+  householdIdx: index("idx_budget_plans_household").on(t.householdId),
 }));

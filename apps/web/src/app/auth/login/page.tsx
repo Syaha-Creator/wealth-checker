@@ -7,8 +7,8 @@ import { signIn, useSession } from "@/lib/auth-client";
 import { Input, PasswordInput } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { apiFetch } from "@/lib/apiFetch";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 // Bug hunt (Issue 1): "sudah onboarding atau belum" dulu ditentukan dari
 // GET /api/accounts.length — tidak konsisten dengan definisi dashboard sendiri
@@ -17,7 +17,7 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 // dilempar ke /onboarding tiap login. Pakai sumber kebenaran yang sama di sini.
 async function resolvePostLoginDestination(): Promise<"/onboarding" | "/dashboard"> {
   try {
-    const res = await fetch(`${API}/api/wealth/summary`, { credentials: "include" });
+    const res = await apiFetch(`/api/wealth/summary`, { credentials: "include" });
     if (!res.ok) return "/dashboard";
     const summary = await res.json();
     return summary?.wealthLevel === -1 ? "/onboarding" : "/dashboard";

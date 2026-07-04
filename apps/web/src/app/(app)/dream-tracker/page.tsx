@@ -6,13 +6,13 @@ import { ConfirmModal } from "@/components/ConfirmModal";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/IconButton";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input, Select, InputRupiah } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/format";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
+import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
 
 interface DreamGoal {
   id: string;
@@ -32,7 +32,7 @@ interface Account {
 }
 
 async function apiFetch(path: string, method: string, body?: unknown) {
-  const res = await fetch(`${API}${path}`, {
+  const res = await apiFetchRaw(`${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -276,21 +276,23 @@ export default function DreamTrackerPage() {
                     <p className="text-xs text-text-muted">Update manual</p>
                   )}
                 </div>
-                <div className="flex gap-0.5 shrink-0 -mr-1 -mt-1">
-                  <button
+                <div className="flex items-center gap-0.5 shrink-0 -mr-1 -mt-1">
+                  <IconButton
                     onClick={() => openEditForm(goal)}
+                    size="sm"
+                    variant="info"
                     aria-label={`Edit impian ${goal.namaGoal}`}
-                    className="p-1.5 text-text-muted hover:text-info transition-colors rounded-lg hover:bg-info-soft"
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
-                  </button>
-                  <button
+                  </IconButton>
+                  <IconButton
                     onClick={() => setDeleteTarget(goal)}
+                    size="sm"
+                    variant="danger"
                     aria-label={`Hapus impian ${goal.namaGoal}`}
-                    className="p-1.5 text-text-muted hover:text-danger transition-colors rounded-lg hover:bg-danger-soft"
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" /></svg>
-                  </button>
+                  </IconButton>
                 </div>
               </div>
 

@@ -2,13 +2,13 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RequiredMark } from "@/components/ui/Input";
 import { formatRupiahInput, parseRupiahInput, formatCurrency } from "@/lib/format";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
+import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
 
 type Account = { id: string; nama: string; saldoCache: string };
 type Categories = { pendapatan: string[]; pengeluaran: string[] };
@@ -28,7 +28,7 @@ const KATEGORI_PENDAPATAN_FALLBACK = ["Gaji", "Proyek", "Dividen", "Bonus", "Had
 const KATEGORI_PENGELUARAN_FALLBACK = ["Makanan", "Transportasi", "Utilitas", "Belanja", "Kesehatan", "Hiburan", "Pendidikan", "Lainnya"];
 
 async function apiFetch(path: string, method: string, body?: unknown) {
-  const res = await fetch(`${API}${path}`, {
+  const res = await apiFetchRaw(`${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -78,11 +78,18 @@ function NewTransactionForm() {
   const [toAccountId, setToAccountId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{ nominal?: string; accountId?: string; toAccountId?: string }>({});
   const [accountsLoaded, setAccountsLoaded] = useState(false);
+  // Bug hunt / audit temuan 2: hanya 3 dari 11 tipe transaksi bisa dicatat di
+  // sini — 8 tipe lain (utang/piutang/aset) punya form domain-spesifik sendiri
+  // (rata-rata harga berjalan, penautan cicilan, dst) di halaman Utang/Aset.
+  // "Lainnya" adalah tab ke-4 yang murni UI (tidak mengubah `type`) yang
+  // mengarahkan pengguna ke halaman yang benar alih-alih jalan buntu.
+  const [showOther, setShowOther] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API}/api/accounts`, { credentials: "include" })
+    apiFetchRaw(`/api/accounts`, { credentials: "include" })
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
@@ -96,7 +103,7 @@ function NewTransactionForm() {
       .catch(() => {})
       .finally(() => { if (!cancelled) setAccountsLoaded(true); });
     // Categories endpoint includes user history, not just the defaults
-    fetch(`${API}/api/transactions/categories`, { credentials: "include" })
+    apiFetchRaw(`/api/transactions/categories`, { credentials: "include" })
       .then((r) => r.json())
       .then((data: Categories) => {
         if (cancelled) return;
@@ -116,22 +123,34 @@ function NewTransactionForm() {
   const transferAccounts = accounts.filter((a) => a.id !== accountId);
   const canTransfer = accounts.length >= 2;
 
+  const validate = () => {
+    const errs: { nominal?: string; accountId?: string; toAccountId?: string } = {};
+    if (!nominal || nominalParsed === 0) {
+      errs.nominal = "Masukkan nominal transaksi";
+    } else if (isOverBalance) {
+      errs.nominal = `Saldo tidak mencukupi. Saldo tersedia ${formatCurrency(saldoTersedia)}`;
+    }
+    if (!accountId) {
+      errs.accountId = "Pilih rekening";
+    }
+    if (type === "transfer") {
+      if (!canTransfer) {
+        errs.toAccountId = "Butuh minimal 2 rekening untuk transfer";
+      } else if (!toAccountId) {
+        errs.toAccountId = "Pilih rekening tujuan";
+      } else if (accountId === toAccountId) {
+        errs.toAccountId = "Rekening asal dan tujuan tidak boleh sama";
+      }
+    }
+    return errs;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nominal || nominalParsed === 0) {
-      setError("Masukkan nominal transaksi");
-      return;
-    }
-    if (isOverBalance) {
-      setError(`Saldo tidak mencukupi. Saldo tersedia ${formatCurrency(saldoTersedia)}`);
-      return;
-    }
-    if (type === "transfer" && !canTransfer) {
-      setError("Butuh minimal 2 rekening untuk transfer");
-      return;
-    }
-    if (type === "transfer" && accountId === toAccountId) {
-      setError("Rekening asal dan tujuan tidak boleh sama");
+    const errs = validate();
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      setError("Periksa kembali isian yang ditandai merah di bawah.");
       return;
     }
     setLoading(true);
@@ -192,23 +211,71 @@ function NewTransactionForm() {
           <button
             key={t.value}
             type="button"
-            onClick={() => { setType(t.value); setKategori(""); setError(""); }}
-            aria-pressed={type === t.value}
+            onClick={() => { setType(t.value); setKategori(""); setError(""); setFieldErrors({}); setShowOther(false); }}
+            aria-pressed={!showOther && type === t.value}
             className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
-              type === t.value ? t.activeClass : "text-text-muted hover:text-text-secondary"
+              !showOther && type === t.value ? t.activeClass : "text-text-muted hover:text-text-secondary"
             }`}
           >
             {t.label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => setShowOther(true)}
+          aria-pressed={showOther}
+          className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
+            showOther ? "bg-surface text-text-primary shadow-sm" : "text-text-muted hover:text-text-secondary"
+          }`}
+        >
+          Lainnya
+        </button>
       </div>
 
+      {showOther ? (
+        <div className="space-y-3">
+          <p className="text-sm text-text-muted mb-1">
+            Tipe transaksi ini punya form khusus di halamannya sendiri (mis. menghitung harga rata-rata aset atau menautkan cicilan), jadi dicatat langsung dari sana:
+          </p>
+          <Link
+            href="/debts"
+            className="flex items-center justify-between gap-3 p-4 bg-surface rounded-2xl border border-border hover:border-border-strong hover:bg-surface-hover transition-colors"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="w-10 h-10 rounded-full bg-warning-soft text-warning-text flex items-center justify-center shrink-0" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5M2 12l10 5 10-5" /></svg>
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-text-primary">Utang & Piutang</p>
+                <p className="text-xs text-text-muted">Pinjam/bayar utang, atau beri/terima piutang</p>
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-text-muted shrink-0" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
+          </Link>
+          <Link
+            href="/assets"
+            className="flex items-center justify-between gap-3 p-4 bg-surface rounded-2xl border border-border hover:border-border-strong hover:bg-surface-hover transition-colors"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="w-10 h-10 rounded-full bg-info-soft text-info-text flex items-center justify-center shrink-0" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z" /><path d="M3 8l9 5 9-5M12 13v8" /></svg>
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-text-primary">Aset & Investasi</p>
+                <p className="text-xs text-text-muted">Beli/jual barang, atau beli/cairkan investasi</p>
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-text-muted shrink-0" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
+          </Link>
+        </div>
+      ) : (
+      <>
       {/* Transfer warning — not enough accounts */}
       {type === "transfer" && !canTransfer && (
         <div className="mb-4 p-3 bg-warning-soft border border-warning-soft-border rounded-xl flex items-start gap-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-warning shrink-0 mt-0.5" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
           <p className="text-sm text-warning-text">
-            Transfer membutuhkan minimal 2 rekening. <a href="/accounts" className="font-medium underline">Tambah rekening</a> terlebih dahulu.
+            Transfer membutuhkan minimal 2 rekening. <Link href="/accounts" className="font-medium underline">Tambah rekening</Link> terlebih dahulu.
           </p>
         </div>
       )}
@@ -223,7 +290,7 @@ function NewTransactionForm() {
 
         {/* Nominal */}
         <div className={`bg-surface rounded-2xl p-5 border transition-colors ${
-          isOverBalance ? "border-danger bg-danger-soft/40" : "border-border"
+          isOverBalance || fieldErrors.nominal ? "border-danger bg-danger-soft/40" : "border-border"
         }`}>
           <label htmlFor="nominal" className="block text-xs font-medium text-text-muted mb-2 uppercase tracking-wide">Nominal<RequiredMark /></label>
           <div className="flex items-center gap-2">
@@ -236,6 +303,8 @@ function NewTransactionForm() {
               id="nominal"
               type="text"
               inputMode="numeric"
+              aria-invalid={fieldErrors.nominal ? true : undefined}
+              aria-describedby={fieldErrors.nominal ? "nominal-error" : undefined}
               className={`flex-1 min-w-0 text-3xl font-bold bg-transparent focus:outline-none text-text-primary ${
                 isOverBalance ? "text-danger-text" :
                 type === "pendapatan" ? "text-brand" :
@@ -243,7 +312,7 @@ function NewTransactionForm() {
               }`}
               placeholder="0"
               value={nominal}
-              onChange={(e) => setNominal(formatRupiahInput(e.target.value))}
+              onChange={(e) => { setNominal(formatRupiahInput(e.target.value)); setFieldErrors((f) => ({ ...f, nominal: undefined })); }}
               required
             />
           </div>
@@ -264,6 +333,9 @@ function NewTransactionForm() {
               </span>
             </div>
           )}
+          {fieldErrors.nominal && (
+            <p id="nominal-error" role="alert" className="text-xs text-danger-text mt-2">{fieldErrors.nominal}</p>
+          )}
         </div>
 
         <div className="bg-surface rounded-2xl border border-border divide-y divide-border">
@@ -281,44 +353,58 @@ function NewTransactionForm() {
           </div>
 
           {/* Rekening asal */}
-          <div className="flex items-center px-5 py-3">
-            <label htmlFor="account" className="text-sm text-text-muted w-28">
-              {type === "transfer" ? "Dari Rekening" : "Rekening"}<RequiredMark />
-            </label>
-            <div className="flex-1 flex items-center gap-1 justify-end">
-              <select
-                id="account"
-                className="text-sm text-text-primary bg-transparent focus:outline-none text-right appearance-none"
-                value={accountId}
-                onChange={(e) => { setAccountId(e.target.value); setError(""); }}
-              >
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>{a.nama}</option>
-                ))}
-                {accounts.length === 0 && <option value="">Tidak ada rekening</option>}
-              </select>
-              <ChevronDown />
+          <div className={`px-5 py-3 ${fieldErrors.accountId ? "bg-danger-soft/40" : ""}`}>
+            <div className="flex items-center">
+              <label htmlFor="account" className="text-sm text-text-muted w-28">
+                {type === "transfer" ? "Dari Rekening" : "Rekening"}<RequiredMark />
+              </label>
+              <div className="flex-1 flex items-center gap-1 justify-end">
+                <select
+                  id="account"
+                  aria-invalid={fieldErrors.accountId ? true : undefined}
+                  aria-describedby={fieldErrors.accountId ? "account-error" : undefined}
+                  className="text-sm text-text-primary bg-transparent focus:outline-none text-right appearance-none"
+                  value={accountId}
+                  onChange={(e) => { setAccountId(e.target.value); setError(""); setFieldErrors((f) => ({ ...f, accountId: undefined })); }}
+                >
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>{a.nama}</option>
+                  ))}
+                  {accounts.length === 0 && <option value="">Tidak ada rekening</option>}
+                </select>
+                <ChevronDown />
+              </div>
             </div>
+            {fieldErrors.accountId && (
+              <p id="account-error" role="alert" className="text-xs text-danger-text mt-1 text-right">{fieldErrors.accountId}</p>
+            )}
           </div>
 
           {/* Rekening tujuan (transfer) */}
           {type === "transfer" && (
-            <div className="flex items-center px-5 py-3">
-              <label htmlFor="to-account" className="text-sm text-text-muted w-28">Ke Rekening<RequiredMark /></label>
-              <div className="flex-1 flex items-center gap-1 justify-end">
-                <select
-                  id="to-account"
-                  className="text-sm text-text-primary bg-transparent focus:outline-none text-right appearance-none"
-                  value={toAccountId}
-                  onChange={(e) => setToAccountId(e.target.value)}
-                >
-                  {transferAccounts.map((a) => (
-                    <option key={a.id} value={a.id}>{a.nama}</option>
-                  ))}
-                  {transferAccounts.length === 0 && <option value="">—</option>}
-                </select>
-                <ChevronDown />
+            <div className={`px-5 py-3 ${fieldErrors.toAccountId ? "bg-danger-soft/40" : ""}`}>
+              <div className="flex items-center">
+                <label htmlFor="to-account" className="text-sm text-text-muted w-28">Ke Rekening<RequiredMark /></label>
+                <div className="flex-1 flex items-center gap-1 justify-end">
+                  <select
+                    id="to-account"
+                    aria-invalid={fieldErrors.toAccountId ? true : undefined}
+                    aria-describedby={fieldErrors.toAccountId ? "to-account-error" : undefined}
+                    className="text-sm text-text-primary bg-transparent focus:outline-none text-right appearance-none"
+                    value={toAccountId}
+                    onChange={(e) => { setToAccountId(e.target.value); setFieldErrors((f) => ({ ...f, toAccountId: undefined })); }}
+                  >
+                    {transferAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>{a.nama}</option>
+                    ))}
+                    {transferAccounts.length === 0 && <option value="">—</option>}
+                  </select>
+                  <ChevronDown />
+                </div>
               </div>
+              {fieldErrors.toAccountId && (
+                <p id="to-account-error" role="alert" className="text-xs text-danger-text mt-1 text-right">{fieldErrors.toAccountId}</p>
+              )}
             </div>
           )}
 
@@ -375,9 +461,12 @@ function NewTransactionForm() {
             : `Simpan ${type === "pendapatan" ? "Pemasukan" : type === "pengeluaran" ? "Pengeluaran" : "Transfer"}`}
         </Button>
       </form>
+      </>
+      )}
       </div>
 
       {/* Ringkasan rekening — desktop only, mirrors the inline saldo indicator with more context */}
+      {!showOther && (
       <div className="hidden lg:block lg:sticky lg:top-6 mt-8 lg:mt-0">
         <div className="bg-surface rounded-2xl border border-border p-5">
           <h2 className="text-sm font-semibold text-text-primary mb-4">Ringkasan Rekening</h2>
@@ -423,6 +512,7 @@ function NewTransactionForm() {
           )}
         </div>
       </div>
+      )}
       </div>
     </div>
   );

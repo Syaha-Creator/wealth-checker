@@ -9,8 +9,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { InputRupiah } from "@/components/ui/Input";
 import { Skeleton, SkeletonHero } from "@/components/ui/Skeleton";
 import { formatCurrency, formatMonthLabel, parseRupiahInput } from "@/lib/format";
+import { apiFetch } from "@/lib/apiFetch";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 type BudgetAllocationItem = { kategori: string; persen: number; nominal: number };
 
@@ -72,7 +72,7 @@ export default function BudgetingPage() {
   const fetchAdvice = useCallback(async () => {
     setError("");
     try {
-      const res = await fetch(`${API}/api/budgeting-advice?bulanTahun=${currentYm()}`, { credentials: "include" });
+      const res = await apiFetch(`/api/budgeting-advice?bulanTahun=${currentYm()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Gagal memuat rekomendasi budgeting");
       const json: BudgetingAdvice = await res.json();
       setAdvice(json);
@@ -91,7 +91,7 @@ export default function BudgetingPage() {
     // konsisten dengan zona waktu lokal user — server bisa berjalan di timezone
     // berbeda (mis. UTC), yang di sekitar tengah malam WIB bisa membuat GET ini
     // dan POST /budget-plans (lihat handleSavePlan) merujuk bulan yang berbeda.
-    fetch(`${API}/api/budgeting-advice?bulanTahun=${currentYm()}`, { credentials: "include" })
+    apiFetch(`/api/budgeting-advice?bulanTahun=${currentYm()}`, { credentials: "include" })
       .then((res) => {
         if (!res.ok) throw new Error("Gagal memuat rekomendasi budgeting");
         return res.json();
@@ -112,7 +112,7 @@ export default function BudgetingPage() {
     e.preventDefault();
     setSaving(true); setFormError("");
     try {
-      const res = await fetch(`${API}/api/budget-plans`, {
+      const res = await apiFetch(`/api/budget-plans`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

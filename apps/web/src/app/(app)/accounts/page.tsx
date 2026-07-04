@@ -1,19 +1,18 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import Link from "next/link";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/IconButton";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RequiredMark } from "@/components/ui/Input";
 import { Skeleton, SkeletonHero } from "@/components/ui/Skeleton";
 import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/format";
 import { SEMUA_REKENING } from "@/lib/institutions";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
+import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
 
 type Account = {
   id: string;
@@ -33,7 +32,7 @@ type ModalState = {
 };
 
 async function apiFetch(path: string, method: string, body?: unknown) {
-  const res = await fetch(`${API}${path}`, {
+  const res = await apiFetchRaw(`${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -330,42 +329,48 @@ export default function AccountsPage() {
                     <p className="font-semibold text-text-primary truncate">{acc.nama}</p>
                     {!acc.isActive && <Badge>Nonaktif</Badge>}
                   </div>
-                  <div className="flex gap-0.5 shrink-0 -mr-1 -mt-1">
-                    <Link
+                  <div className="flex items-center gap-0.5 shrink-0 -mr-1 -mt-1">
+                    <IconButton
                       href={`/accounts/${acc.id}/mutasi`}
+                      size="sm"
+                      variant="default"
                       aria-label={`Lihat mutasi rekening ${acc.nama}`}
-                      className="p-1.5 text-text-muted hover:text-brand transition-colors rounded-lg hover:bg-brand-soft"
                       title="Mutasi Rekening"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
-                    </Link>
-                    <button
+                    </IconButton>
+                    <IconButton
                       onClick={() => (koreksiId === acc.id ? closeKoreksi() : openKoreksi(acc))}
+                      size="sm"
+                      variant="info"
                       aria-label={`Koreksi saldo rekening ${acc.nama}`}
                       aria-pressed={koreksiId === acc.id}
-                      className="p-1.5 text-text-muted hover:text-info transition-colors rounded-lg hover:bg-info-soft"
                       title="Koreksi Saldo"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                    </button>
+                    </IconButton>
                     {acc.isActive && (
-                      <button
+                      <IconButton
                         onClick={() => handleDeactivate(acc.id, acc.nama, acc.saldoCache)}
+                        size="sm"
+                        variant="warning"
                         aria-label={`Nonaktifkan rekening ${acc.nama}`}
-                        className="p-1.5 text-text-muted hover:text-warning transition-colors rounded-lg hover:bg-warning-soft"
                         title="Nonaktifkan"
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-                      </button>
+                      </IconButton>
                     )}
-                    <button
+                    {/* Divider before the destructive action so it isn't flush against Koreksi/Nonaktifkan */}
+                    <div className="w-px h-5 bg-border mx-1" aria-hidden="true" />
+                    <IconButton
                       onClick={() => handleDelete(acc.id, acc.nama)}
+                      size="sm"
+                      variant="danger"
                       aria-label={`Hapus rekening ${acc.nama}`}
-                      className="p-1.5 text-text-muted hover:text-danger transition-colors rounded-lg hover:bg-danger-soft"
                       title="Hapus"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                    </button>
+                    </IconButton>
                   </div>
                 </div>
                 <p className="text-lg font-bold text-brand">{formatCurrency(acc.saldoCache)}</p>

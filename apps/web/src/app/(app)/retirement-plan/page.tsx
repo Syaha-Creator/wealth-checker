@@ -6,9 +6,11 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonHero, SkeletonCard } from "@/components/ui/Skeleton";
+import { Toggle } from "@/components/ui/Toggle";
 import { formatCurrency, formatCurrencyShort } from "@/lib/format";
+import { RetirementAdvancedPanel } from "./_components/RetirementAdvancedPanel";
+import { apiFetch } from "@/lib/apiFetch";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 type RetirementPlanResponse =
   | { hasProfile: false; error: string }
@@ -82,7 +84,7 @@ function formatTahun(n: number): string {
 }
 
 function formatBulan(n: number | null): string {
-  if (n === null) return "tidak dapat dihitung (sisa gaji ≤ 0)";
+  if (n === null) return "belum bisa dihitung — pengeluaran masih lebih besar dari pemasukan";
   if (n === 0) return "sekarang";
   return `${n} bulan`;
 }
@@ -92,10 +94,11 @@ export default function RetirementPlanPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retryKey, setRetryKey] = useState(0);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API}/api/wealth/retirement-plan`, { credentials: "include" })
+    apiFetch(`/api/wealth/retirement-plan`, { credentials: "include" })
       .then((r) => {
         if (!r.ok) throw new Error("Gagal memuat rencana pensiun & warisan");
         return r.json();
@@ -230,6 +233,18 @@ export default function RetirementPlanPage() {
               </div>
             </div>
           </Card>
+
+          {/* Sprint 26 (Fase 4): toggle mode Sederhana/Lanjutan */}
+          <Card>
+            <Toggle
+              id="toggle-advanced-mode"
+              checked={showAdvanced}
+              onChange={setShowAdvanced}
+              label="Tampilkan Mode Lanjutan (Present Value & Inflasi)"
+            />
+          </Card>
+
+          {showAdvanced && <RetirementAdvancedPanel totalDanaPensiunWarisanSimple={data.plan.totalDanaPensiunWarisan} />}
         </div>
       )}
     </div>

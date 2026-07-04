@@ -9,10 +9,16 @@ import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input, InputRupiah, RequiredMark, Select } from "@/components/ui/Input";
 import { SkeletonHero, Skeleton } from "@/components/ui/Skeleton";
+import { Tabs, tabPanelId, tabButtonId } from "@/components/ui/Tabs";
 import { formatCurrency, parseRupiahInput } from "@/lib/format";
 import { SEMUA_KARTU_KREDIT_PAYLATER } from "@/lib/institutions";
+import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
+const DEBT_TABS_ID_PREFIX = "debts";
+const DEBT_TABS: { id: "utang" | "piutang"; label: string }[] = [
+  { id: "utang", label: "Utang" },
+  { id: "piutang", label: "Piutang" },
+];
 
 type Account = { id: string; nama: string; saldoCache: string; isActive: boolean };
 
@@ -37,7 +43,7 @@ type ReceivableSummary = {
 };
 
 async function apiFetch(path: string, method: string, body?: unknown) {
-  const res = await fetch(`${API}${path}`, {
+  const res = await apiFetchRaw(`${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -126,6 +132,9 @@ function DebtTab({
   const [payTanggal, setPayTanggal] = useState(todayStr());
   const [paySaving, setPaySaving] = useState(false);
   const [payError, setPayError] = useState("");
+  // Audit temuan 5 (skalabilitas): daftar kreditur murni scroll vertikal
+  // tanpa pencarian — muncul begitu daftar cukup panjang untuk butuh itu.
+  const [search, setSearch] = useState("");
 
   const resetAddForm = () => {
     setPemberiUtang(""); setTipe("utang_biasa"); setNominal(""); setAccountId(""); setTanggal(todayStr()); setFormError("");
@@ -182,6 +191,9 @@ function DebtTab({
   }
 
   const items = summary?.perPemberi ?? [];
+  const filteredItems = search.trim()
+    ? items.filter((d) => d.pemberiUtang.toLowerCase().includes(search.trim().toLowerCase()))
+    : items;
 
   return (
     <div>
@@ -258,7 +270,25 @@ function DebtTab({
         <EmptyState icon={<DebtIcon />} title="Belum ada utang tercatat" description="Catat pinjaman baru untuk mulai melacak cicilan Anda" />
       ) : (
         <div className="space-y-3">
-          {items.map((d) => (
+          {items.length > 5 && (
+            <div className="relative">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true">
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Cari nama pemberi pinjaman..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                aria-label="Cari utang"
+                className="w-full pl-8 pr-3 py-2 text-sm bg-surface border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand"
+              />
+            </div>
+          )}
+          {filteredItems.length === 0 && (
+            <p className="text-sm text-text-muted text-center py-6">Tidak ada utang yang cocok dengan &quot;{search}&quot;</p>
+          )}
+          {filteredItems.map((d) => (
             <Card key={d.id}>
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="min-w-0">
@@ -347,6 +377,7 @@ function ReceivableTab({
   const [recvTanggal, setRecvTanggal] = useState(todayStr());
   const [recvSaving, setRecvSaving] = useState(false);
   const [recvError, setRecvError] = useState("");
+  const [search, setSearch] = useState("");
 
   const resetAddForm = () => {
     setPeminjam(""); setNominal(""); setAccountId(""); setTanggal(todayStr()); setFormError("");
@@ -403,6 +434,9 @@ function ReceivableTab({
   }
 
   const items = summary?.perPeminjam ?? [];
+  const filteredItems = search.trim()
+    ? items.filter((r) => r.peminjam.toLowerCase().includes(search.trim().toLowerCase()))
+    : items;
 
   return (
     <div>
@@ -459,7 +493,25 @@ function ReceivableTab({
         <EmptyState icon={<ReceivableIcon />} title="Belum ada piutang tercatat" description="Catat pemberian pinjaman baru untuk mulai melacak pembayarannya" />
       ) : (
         <div className="space-y-3">
-          {items.map((r) => (
+          {items.length > 5 && (
+            <div className="relative">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true">
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Cari nama peminjam..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                aria-label="Cari piutang"
+                className="w-full pl-8 pr-3 py-2 text-sm bg-surface border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand"
+              />
+            </div>
+          )}
+          {filteredItems.length === 0 && (
+            <p className="text-sm text-text-muted text-center py-6">Tidak ada piutang yang cocok dengan &quot;{search}&quot;</p>
+          )}
+          {filteredItems.map((r) => (
             <Card key={r.id}>
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="min-w-0">
@@ -578,38 +630,36 @@ export default function DebtsPage() {
     <div className="max-w-3xl">
       <PageHeader title="Utang & Piutang" subtitle="Lacak pinjaman dan piutang Anda" />
 
-      <div className="flex gap-1 p-1 bg-surface-hover rounded-xl mb-6 max-w-xs" role="tablist">
-        <button
-          role="tab"
-          aria-selected={tab === "utang"}
-          onClick={() => setTab("utang")}
-          className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${tab === "utang" ? "bg-surface text-text-primary shadow-sm" : "text-text-muted hover:text-text-secondary"}`}
-        >
-          Utang
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === "piutang"}
-          onClick={() => setTab("piutang")}
-          className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${tab === "piutang" ? "bg-surface text-text-primary shadow-sm" : "text-text-muted hover:text-text-secondary"}`}
-        >
-          Piutang
-        </button>
-      </div>
+      <Tabs
+        items={DEBT_TABS}
+        value={tab}
+        onChange={setTab}
+        idPrefix={DEBT_TABS_ID_PREFIX}
+        aria-label="Utang atau Piutang"
+        fitted
+        className="mb-6 max-w-xs"
+      />
 
       {fetchError && <ErrorBanner message={fetchError} onRetry={refetch} />}
 
-      {loading ? (
-        <div className="space-y-4">
-          <SkeletonHero className="h-28" />
-          <div className="flex justify-end"><Skeleton className="h-9 w-32 rounded-xl" /></div>
-          {[0, 1].map((i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}
-        </div>
-      ) : tab === "utang" ? (
-        <DebtTab summary={debtSummary} accounts={accounts} accountsLoaded={accountsLoaded} onChanged={refetch} />
-      ) : (
-        <ReceivableTab summary={receivableSummary} accounts={accounts} accountsLoaded={accountsLoaded} onChanged={refetch} />
-      )}
+      <div
+        role="tabpanel"
+        id={tabPanelId(DEBT_TABS_ID_PREFIX, tab)}
+        aria-labelledby={tabButtonId(DEBT_TABS_ID_PREFIX, tab)}
+        tabIndex={0}
+      >
+        {loading ? (
+          <div className="space-y-4">
+            <SkeletonHero className="h-28" />
+            <div className="flex justify-end"><Skeleton className="h-9 w-32 rounded-xl" /></div>
+            {[0, 1].map((i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}
+          </div>
+        ) : tab === "utang" ? (
+          <DebtTab summary={debtSummary} accounts={accounts} accountsLoaded={accountsLoaded} onChanged={refetch} />
+        ) : (
+          <ReceivableTab summary={receivableSummary} accounts={accounts} accountsLoaded={accountsLoaded} onChanged={refetch} />
+        )}
+      </div>
     </div>
   );
 }

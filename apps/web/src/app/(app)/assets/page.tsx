@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input, InputRupiah, RequiredMark, Select } from "@/components/ui/Input";
 import { SkeletonHero, Skeleton } from "@/components/ui/Skeleton";
+import { Tabs, tabPanelId, tabButtonId } from "@/components/ui/Tabs";
 import { formatCurrency, parseRupiahInput } from "@/lib/format";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
+import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
 
 type Account = { id: string; nama: string; saldoCache: string; isActive: boolean };
 
@@ -23,8 +23,14 @@ type AssetSummary = { totalNilai: number; totalUntungRugi: number; items: AssetS
 
 type AssetKind = "barang" | "investasi";
 
+const ASSET_TABS_ID_PREFIX = "assets";
+const ASSET_TABS: { id: AssetKind; label: string }[] = [
+  { id: "barang", label: "Barang" },
+  { id: "investasi", label: "Investasi" },
+];
+
 async function apiFetch(path: string, method: string, body?: unknown) {
-  const res = await fetch(`${API}${path}`, {
+  const res = await apiFetchRaw(`${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -107,6 +113,9 @@ function AssetTab({
   const [sellTanggal, setSellTanggal] = useState(todayStr());
   const [sellSaving, setSellSaving] = useState(false);
   const [sellError, setSellError] = useState("");
+  // Audit temuan 5 (skalabilitas): daftar aset murni scroll vertikal tanpa
+  // pencarian — muncul begitu daftar cukup panjang untuk butuh itu.
+  const [search, setSearch] = useState("");
 
   const resetAddForm = () => {
     setNamaAset(""); setJumlah(""); setHargaSatuan(""); setAccountId(""); setTanggal(todayStr()); setFormError("");
@@ -168,6 +177,9 @@ function AssetTab({
 
   const items = summary?.items ?? [];
   const untungRugi = summary?.totalUntungRugi ?? 0;
+  const filteredItems = search.trim()
+    ? items.filter((item) => item.namaAset.toLowerCase().includes(search.trim().toLowerCase()))
+    : items;
 
   return (
     <div>
@@ -251,7 +263,25 @@ function AssetTab({
         <EmptyState icon={<Icon />} title={`Belum ada ${label.toLowerCase()} tercatat`} description={`Catat pembelian ${label.toLowerCase()} untuk mulai melacak nilai & keuntungannya`} />
       ) : (
         <div className="space-y-3">
-          {items.map((item) => {
+          {items.length > 5 && (
+            <div className="relative">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true">
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="text"
+                placeholder={`Cari nama ${label.toLowerCase()}...`}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                aria-label={`Cari ${label.toLowerCase()}`}
+                className="w-full pl-8 pr-3 py-2 text-sm bg-surface border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand"
+              />
+            </div>
+          )}
+          {filteredItems.length === 0 && (
+            <p className="text-sm text-text-muted text-center py-6">Tidak ada {label.toLowerCase()} yang cocok dengan &quot;{search}&quot;</p>
+          )}
+          {filteredItems.map((item) => {
             const sellJumlahValue = Number(sellJumlah) || 0;
             const sellExceedsOwned = sellJumlahValue > item.jumlah;
             const sellHargaValue = parseRupiahInput(sellHargaSatuan);
@@ -389,38 +419,36 @@ export default function AssetsPage() {
     <div className="max-w-3xl">
       <PageHeader title="Aset" subtitle="Lacak barang & investasi Anda" />
 
-      <div className="flex gap-1 p-1 bg-surface-hover rounded-xl mb-6 max-w-xs" role="tablist">
-        <button
-          role="tab"
-          aria-selected={tab === "barang"}
-          onClick={() => setTab("barang")}
-          className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${tab === "barang" ? "bg-surface text-text-primary shadow-sm" : "text-text-muted hover:text-text-secondary"}`}
-        >
-          Barang
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === "investasi"}
-          onClick={() => setTab("investasi")}
-          className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${tab === "investasi" ? "bg-surface text-text-primary shadow-sm" : "text-text-muted hover:text-text-secondary"}`}
-        >
-          Investasi
-        </button>
-      </div>
+      <Tabs
+        items={ASSET_TABS}
+        value={tab}
+        onChange={setTab}
+        idPrefix={ASSET_TABS_ID_PREFIX}
+        aria-label="Barang atau Investasi"
+        fitted
+        className="mb-6 max-w-xs"
+      />
 
       {fetchError && <ErrorBanner message={fetchError} onRetry={refetch} />}
 
-      {loading ? (
-        <div className="space-y-4">
-          <SkeletonHero className="h-28" />
-          <div className="flex justify-end"><Skeleton className="h-9 w-32 rounded-xl" /></div>
-          {[0, 1].map((i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}
-        </div>
-      ) : tab === "barang" ? (
-        <AssetTab kind="barang" summary={fixedSummary} allRows={fixedAll} accounts={accounts} accountsLoaded={accountsLoaded} onChanged={refetch} />
-      ) : (
-        <AssetTab kind="investasi" summary={liquidSummary} allRows={liquidAll} accounts={accounts} accountsLoaded={accountsLoaded} onChanged={refetch} />
-      )}
+      <div
+        role="tabpanel"
+        id={tabPanelId(ASSET_TABS_ID_PREFIX, tab)}
+        aria-labelledby={tabButtonId(ASSET_TABS_ID_PREFIX, tab)}
+        tabIndex={0}
+      >
+        {loading ? (
+          <div className="space-y-4">
+            <SkeletonHero className="h-28" />
+            <div className="flex justify-end"><Skeleton className="h-9 w-32 rounded-xl" /></div>
+            {[0, 1].map((i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}
+          </div>
+        ) : tab === "barang" ? (
+          <AssetTab kind="barang" summary={fixedSummary} allRows={fixedAll} accounts={accounts} accountsLoaded={accountsLoaded} onChanged={refetch} />
+        ) : (
+          <AssetTab kind="investasi" summary={liquidSummary} allRows={liquidAll} accounts={accounts} accountsLoaded={accountsLoaded} onChanged={refetch} />
+        )}
+      </div>
     </div>
   );
 }

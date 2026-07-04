@@ -10,7 +10,7 @@ Rebuild dari Google Sheets Template ke Aplikasi Web/Mobile — Personal finance 
 | Backend API | Hono.js on Bun |
 | Database | PostgreSQL + Drizzle ORM |
 | Auth | Better Auth |
-| Cache | Redis |
+| Cache / Job Queue | Redis + BullMQ |
 | Deploy | Docker + GitHub Actions |
 
 ## Struktur Monorepo

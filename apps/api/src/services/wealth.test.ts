@@ -5,6 +5,7 @@ import {
   computeNetWorthDelta,
   computeBackfillPoints,
   calculateRetirementPlan,
+  calculateRetirementPlanAdvanced,
   calculateCollectedFundsBreakdown,
   calculateDebtPayoffEstimate,
 } from "./wealth";
@@ -377,6 +378,47 @@ describe("calculateRetirementPlan (Sprint 22 — formula PRD 3.1.8)", () => {
       referenceDate,
     );
     expect(plan.danaDibutuhkanSelamaPensiun).toBe(25 * 12 * -1_000_000);
+  });
+});
+
+describe("calculateRetirementPlanAdvanced (Sprint 26 — present value & inflasi)", () => {
+  const referenceDate = new Date("2026-01-01T00:00:00");
+  const input = { tanggalLahir: "2000-01-01", usiaPensiun: 55, usiaWarisan: 80, sisaUangBulanan: 5_000_000 };
+
+  it("hasil advanced (totalDanaPensiunWarisan) > simple karena inflasi", () => {
+    const simple = calculateRetirementPlan(input, referenceDate);
+    const advanced = calculateRetirementPlanAdvanced(input, { inflasiPersen: 5, returnInvestasiPersen: 8 }, referenceDate);
+    expect(advanced.totalDanaPensiunWarisan).toBeGreaterThan(simple.totalDanaPensiunWarisan);
+  });
+
+  it("inflasi 0% → totalDanaPensiunWarisan advanced sama dengan simple (tidak ada inflasi factor)", () => {
+    const simple = calculateRetirementPlan(input, referenceDate);
+    const advanced = calculateRetirementPlanAdvanced(input, { inflasiPersen: 0, returnInvestasiPersen: 8 }, referenceDate);
+    expect(advanced.totalDanaPensiunWarisan).toBeCloseTo(simple.totalDanaPensiunWarisan, 5);
+  });
+
+  it("menaikkan asumsi inflasi menaikkan totalDanaPensiunWarisan", () => {
+    const low = calculateRetirementPlanAdvanced(input, { inflasiPersen: 3, returnInvestasiPersen: 8 }, referenceDate);
+    const high = calculateRetirementPlanAdvanced(input, { inflasiPersen: 10, returnInvestasiPersen: 8 }, referenceDate);
+    expect(high.totalDanaPensiunWarisan).toBeGreaterThan(low.totalDanaPensiunWarisan);
+  });
+
+  it("menaikkan asumsi return investasi menurunkan danaDibutuhkanSekarang (lump sum lebih kecil)", () => {
+    const lowReturn = calculateRetirementPlanAdvanced(input, { inflasiPersen: 5, returnInvestasiPersen: 4 }, referenceDate);
+    const highReturn = calculateRetirementPlanAdvanced(input, { inflasiPersen: 5, returnInvestasiPersen: 12 }, referenceDate);
+    expect(highReturn.danaDibutuhkanSekarang).toBeLessThan(lowReturn.danaDibutuhkanSekarang);
+  });
+
+  it("usia pensiun sudah terlewat (n<0 di-floor 0) → inflationFactor/discountFactor = 1, tidak error", () => {
+    const pastRetirement = { tanggalLahir: "1960-01-01", usiaPensiun: 55, usiaWarisan: 80, sisaUangBulanan: 5_000_000 };
+    const advanced = calculateRetirementPlanAdvanced(pastRetirement, { inflasiPersen: 5, returnInvestasiPersen: 8 }, referenceDate);
+    expect(advanced.danaDibutuhkanSebelumPensiun).toBe(0);
+    expect(Number.isFinite(advanced.danaDibutuhkanSekarang)).toBe(true);
+  });
+
+  it("asumsi yang dipakai ikut dikembalikan di hasil", () => {
+    const advanced = calculateRetirementPlanAdvanced(input, { inflasiPersen: 6, returnInvestasiPersen: 9 }, referenceDate);
+    expect(advanced.asumsi).toEqual({ inflasiPersen: 6, returnInvestasiPersen: 9 });
   });
 });
 

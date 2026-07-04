@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db, transactions, budgetPlans, budgetAllocationReference, userProfile } from "@wealth/db";
 import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
+import { resolveHousehold } from "../middleware/household";
 import { calculateWealthSummary } from "../services/wealth";
 import { calculateBudgetAllocation } from "../services/budgeting";
 import {
@@ -12,8 +13,9 @@ import {
   calculateEmergencyFund,
   groupEssentialExpenses,
   deriveIncomeBreakdown,
+  fetchMonthlyPLRaw,
+  fetchBudgetVsActualAggregates,
   DEFAULT_ESSENTIAL_CATEGORIES,
-  type MonthlyPLRaw,
   type ActualAmounts,
 } from "../services/analytics";
 import type { AppEnv } from "../types";
@@ -21,6 +23,10 @@ import type { AppEnv } from "../types";
 export const analyticsRoutes = new Hono<AppEnv>();
 
 analyticsRoutes.use("*", requireAuth);
+// Sprint 27 (Fase 4): seluruh analitik dihitung dari transaksi/rencana yang
+// di-scope per household (userProfile/pengeluaranRataRata di /emergency-fund
+// TETAP per-individu — lihat catatan Sprint 27 di plan).
+analyticsRoutes.use("*", resolveHousehold);
 
 const dateRangeQuerySchema = z.object({
   from: z.string().date(),
@@ -34,33 +40,11 @@ function currentYm(): string {
 
 // ─── GET /monthly-pl — Sprint 17: Laba Rugi Bulanan ──────────────────────────
 analyticsRoutes.get("/monthly-pl", zValidator("query", dateRangeQuerySchema), async (c) => {
-  const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const { from, to } = c.req.valid("query");
   if (from > to) return c.json({ error: "Tanggal 'from' tidak boleh setelah 'to'" }, 422);
 
-  const rows = await db.execute<Record<string, string>>(sql`
-    SELECT
-      to_char(tanggal, 'YYYY-MM') AS bulan,
-      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pendapatan'), 0) AS pendapatan,
-      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pinjaman_utang'), 0) AS "pinjamanMasuk",
-      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'bayar_utang'), 0) AS "bayarUtang",
-      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'penerimaan_piutang'), 0) AS "piutangTerbayar",
-      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pengeluaran'), 0) AS pengeluaran
-    FROM transactions
-    WHERE user_id = ${userId} AND tanggal BETWEEN ${from} AND ${to}
-    GROUP BY 1
-    ORDER BY 1
-  `);
-
-  const result = (rows as unknown as Record<string, string>[]).map((r): MonthlyPLRaw => ({
-    bulan: r.bulan,
-    pendapatan: Number(r.pendapatan),
-    pinjamanMasuk: Number(r.pinjamanMasuk),
-    bayarUtang: Number(r.bayarUtang),
-    piutangTerbayar: Number(r.piutangTerbayar),
-    pengeluaran: Number(r.pengeluaran),
-  }));
-
+  const result = await fetchMonthlyPLRaw(db, householdId, from, to);
   return c.json(result.map(deriveMonthlyPL));
 });
 
@@ -72,45 +56,25 @@ const budgetVsActualQuerySchema = dateRangeQuerySchema.extend({
 
 analyticsRoutes.get("/budget-vs-actual", zValidator("query", budgetVsActualQuerySchema), async (c) => {
   const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const { from, to, bulanTahun, kategoriPokok } = c.req.valid("query");
   if (from > to) return c.json({ error: "Tanggal 'from' tidak boleh setelah 'to'" }, 422);
 
   const ym = bulanTahun ?? currentYm();
   const essentialCategories = kategoriPokok ? kategoriPokok.split(",").map((s) => s.trim()).filter(Boolean) : DEFAULT_ESSENTIAL_CATEGORIES;
 
-  const summary = await calculateWealthSummary(db, userId);
+  const summary = await calculateWealthSummary(db, householdId, userId);
   if (summary.wealthLevel === -1) {
     return c.json({ wealthLevel: -1, hasPlan: false, pendapatan: null, alokasi: [] });
   }
 
-  const [[plan], [ref], aggRows] = await Promise.all([
-    db.select().from(budgetPlans).where(and(eq(budgetPlans.userId, userId), eq(budgetPlans.bulanTahun, ym))),
+  const [[plan], [ref], agg] = await Promise.all([
+    db.select().from(budgetPlans).where(and(eq(budgetPlans.householdId, householdId), eq(budgetPlans.bulanTahun, ym))),
     db.select().from(budgetAllocationReference).where(eq(budgetAllocationReference.level, summary.wealthLevel)),
-    db.execute<Record<string, string>>(sql`
-      SELECT
-        COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pendapatan'), 0) AS pendapatan,
-        COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pengeluaran'), 0) AS pengeluaran,
-        COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pengeluaran' AND ${inArray(transactions.kategori, essentialCategories)}), 0) AS "kebutuhanPokok",
-        COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'bayar_utang'), 0) AS "bayarUtang",
-        COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'beli_investasi'), 0) AS investasi
-      FROM transactions
-      WHERE user_id = ${userId} AND tanggal BETWEEN ${from} AND ${to}
-    `),
+    fetchBudgetVsActualAggregates(db, householdId, from, to, essentialCategories),
   ]);
 
-  const agg = (aggRows as unknown as Record<string, string>[])[0];
-  const totalPendapatan = Number(agg.pendapatan);
-  const totalPengeluaran = Number(agg.pengeluaran);
-  const kebutuhanPokok = Number(agg.kebutuhanPokok);
-
-  const aktual: ActualAmounts = {
-    kebutuhanPokok,
-    bayarUtang: Number(agg.bayarUtang),
-    investasi: Number(agg.investasi),
-    gayaHidup: Math.max(0, totalPengeluaran - kebutuhanPokok),
-    tabungan: totalPendapatan - totalPengeluaran,
-  };
-
+  const { totalPendapatan, ...aktual } = agg;
   const rencanaPemasukanBulanan = plan ? Number(plan.rencanaPemasukanBulanan) : 0;
 
   if (!ref) {
@@ -135,7 +99,8 @@ analyticsRoutes.get("/budget-vs-actual", zValidator("query", budgetVsActualQuery
 // ─── GET /emergency-fund — Sprint 18: Dana Darurat ───────────────────────────
 analyticsRoutes.get("/emergency-fund", async (c) => {
   const userId = c.get("userId") as string;
-  const summary = await calculateWealthSummary(db, userId);
+  const householdId = c.get("householdId");
+  const summary = await calculateWealthSummary(db, householdId, userId);
 
   if (summary.wealthLevel === -1) {
     return c.json({ danaDarurat: 0, status: "belum_cukup", bulanTertanggung: null });
@@ -158,7 +123,7 @@ const essentialExpensesQuerySchema = dateRangeQuerySchema.extend({
 });
 
 analyticsRoutes.get("/essential-expenses", zValidator("query", essentialExpensesQuerySchema), async (c) => {
-  const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const { from, to, kategori } = c.req.valid("query");
   if (from > to) return c.json({ error: "Tanggal 'from' tidak boleh setelah 'to'" }, 422);
 
@@ -168,7 +133,7 @@ analyticsRoutes.get("/essential-expenses", zValidator("query", essentialExpenses
     .select({ kategori: transactions.kategori, rincian: transactions.rincian, nominal: transactions.nominal })
     .from(transactions)
     .where(and(
-      eq(transactions.userId, userId),
+      eq(transactions.householdId, householdId),
       eq(transactions.type, "pengeluaran"),
       gte(transactions.tanggal, from),
       lte(transactions.tanggal, to),
@@ -186,7 +151,7 @@ analyticsRoutes.get("/essential-expenses", zValidator("query", essentialExpenses
 
 // ─── GET /income — Sprint 19: Pemasukan ──────────────────────────────────────
 analyticsRoutes.get("/income", zValidator("query", dateRangeQuerySchema), async (c) => {
-  const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const { from, to } = c.req.valid("query");
   if (from > to) return c.json({ error: "Tanggal 'from' tidak boleh setelah 'to'" }, 422);
 
@@ -194,7 +159,7 @@ analyticsRoutes.get("/income", zValidator("query", dateRangeQuerySchema), async 
     .select({ kategori: transactions.kategori, total: sql<string>`sum(nominal::numeric)` })
     .from(transactions)
     .where(and(
-      eq(transactions.userId, userId),
+      eq(transactions.householdId, householdId),
       eq(transactions.type, "pendapatan"),
       gte(transactions.tanggal, from),
       lte(transactions.tanggal, to),

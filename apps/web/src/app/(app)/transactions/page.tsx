@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import Link from "next/link";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/IconButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonRow } from "@/components/ui/Skeleton";
 import { formatCurrency, formatDateLong, formatMonthLabel } from "@/lib/format";
+import { apiFetch } from "@/lib/apiFetch";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 type Transaction = {
   id: string;
@@ -53,6 +53,7 @@ const FILTER_TYPES = [
 ];
 
 const CORE_TYPES = new Set(["pendapatan", "pengeluaran", "transfer"]);
+const PAGE_SIZE = 50;
 
 function groupByDate(txs: Transaction[]) {
   const groups: Record<string, Transaction[]> = {};
@@ -92,6 +93,12 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Skalabilitas (audit temuan 5): dulu hardcap limit=200 tanpa cara mengakses
+  // transaksi lama sama sekali. Sekarang dimuat per halaman (PAGE_SIZE) dengan
+  // tombol "Muat lebih banyak" — hasMore=true selagi halaman terakhir yang
+  // diambil masih penuh (indikasi kemungkinan ada data selanjutnya).
+  const [hasMore, setHasMore] = useState(true);
   const [fetchError, setFetchError] = useState("");
   const [deleteModal, setDeleteModal] = useState<ModalState>({ open: false, id: "" });
   const [deleteError, setDeleteError] = useState("");
@@ -103,31 +110,56 @@ export default function TransactionsPage() {
   const [searchText, setSearchText] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
+  const fetchPage = useCallback(async (offset: number, limit: number) => {
+    const res = await apiFetch(`/api/transactions?limit=${limit}&offset=${offset}`, { credentials: "include" });
+    if (!res.ok) throw new Error("Gagal memuat transaksi");
+    return (await res.json()) as Transaction[];
+  }, []);
+
+  // Refetch dari awal — dipakai setelah hapus transaksi. Memuat ulang sebanyak
+  // yang sudah pernah dimuat sebelumnya supaya kedalaman scroll pengguna tidak
+  // tiba-tiba menyusut kembali ke halaman pertama.
   const refetch = useCallback(async () => {
     setLoading(true);
     setFetchError("");
     try {
-      const res = await fetch(`${API}/api/transactions?limit=200`, { credentials: "include" });
-      if (!res.ok) throw new Error("Gagal memuat transaksi");
-      const data = await res.json();
+      const currentCount = Math.max(PAGE_SIZE, transactions.length);
+      const data = await fetchPage(0, currentCount);
       setTransactions(data);
+      setHasMore(data.length === currentCount);
     } catch (err: unknown) {
       setFetchError(err instanceof Error ? err.message : "Gagal memuat transaksi");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchPage, transactions.length]);
+
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    try {
+      const data = await fetchPage(transactions.length, PAGE_SIZE);
+      setTransactions((prev) => [...prev, ...data]);
+      setHasMore(data.length === PAGE_SIZE);
+    } catch (err: unknown) {
+      setFetchError(err instanceof Error ? err.message : "Gagal memuat transaksi berikutnya");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [fetchPage, transactions.length]);
 
   // Initial load: inline fetch to avoid calling setState via callback inside effect
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API}/api/transactions?limit=200`, { credentials: "include" })
+    apiFetch(`/api/transactions?limit=${PAGE_SIZE}&offset=0`, { credentials: "include" })
       .then((res) => {
         if (!res.ok) throw new Error("Gagal memuat transaksi");
         return res.json();
       })
       .then((data: Transaction[]) => {
-        if (!cancelled) setTransactions(data);
+        if (!cancelled) {
+          setTransactions(data);
+          setHasMore(data.length === PAGE_SIZE);
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setFetchError(err instanceof Error ? err.message : "Gagal memuat transaksi");
@@ -135,7 +167,7 @@ export default function TransactionsPage() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    fetch(`${API}/api/accounts`, { credentials: "include" })
+    apiFetch(`/api/accounts`, { credentials: "include" })
       .then((res) => res.json())
       .then((data: Account[]) => {
         if (!cancelled) setAccounts(data);
@@ -195,7 +227,7 @@ export default function TransactionsPage() {
     setDeleteBusy(true);
     setDeleteError("");
     try {
-      const res = await fetch(`${API}/api/transactions/${id}`, { method: "DELETE", credentials: "include" });
+      const res = await apiFetch(`/api/transactions/${id}`, { method: "DELETE", credentials: "include" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: "Gagal menghapus transaksi" }));
         throw new Error(body.error ?? "Gagal menghapus transaksi");
@@ -227,11 +259,7 @@ export default function TransactionsPage() {
         subtitle={
           <>
             {isFiltering ? `${filtered.length} dari ${transactions.length}` : `${transactions.length}`} transaksi
-            {transactions.length >= 200 && (
-              <span className="ml-1 text-warning-text font-medium" title="Hanya 200 transaksi terbaru yang ditampilkan">
-                · ⚠ maks 200
-              </span>
-            )}
+            {hasMore && <span className="ml-1 text-text-muted">termuat{isFiltering ? " (mungkin ada lebih)" : ""}</span>}
           </>
         }
         action={
@@ -387,7 +415,7 @@ export default function TransactionsPage() {
           {/* Summary for filtered/month view */}
           {(filterType === "semua" || filterType === "pendapatan" || filterType === "pengeluaran") &&
             (totalPemasukan > 0 || totalPengeluaran > 0) && (
-            <div className="mb-4 grid grid-cols-2 sm:grid-cols-2 gap-3 sm:max-w-md">
+            <div className="mb-4 grid grid-cols-2 gap-3 sm:max-w-md">
               <div className="bg-brand-soft border border-brand-soft-border rounded-xl p-3">
                 <p className="text-xs text-brand font-medium mb-0.5">Total Pemasukan</p>
                 <p className="text-sm font-bold text-brand">
@@ -467,24 +495,24 @@ export default function TransactionsPage() {
                               {cfg.label}{tx.kategori && ` · ${tx.kategori}`}
                             </p>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <p className={`text-sm font-semibold ${cfg.color}`}>
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <p className={`text-sm font-semibold ${cfg.color} mr-1`}>
                               {cfg.sign}{formatCurrency(tx.nominal)}
                             </p>
-                            <Link
+                            <IconButton
                               href={`/transactions/${tx.id}/edit`}
+                              variant="info"
                               aria-label={`Edit transaksi ${tx.rincian || tx.kategori || cfg.label}`}
-                              className="p-1.5 text-text-muted/60 hover:text-brand hover:bg-brand-soft rounded-lg transition-colors"
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                            </Link>
-                            <button
+                            </IconButton>
+                            <IconButton
                               onClick={() => setDeleteModal({ open: true, id: tx.id })}
+                              variant="danger"
                               aria-label={`Hapus transaksi ${tx.rincian || tx.kategori || cfg.label}`}
-                              className="p-1.5 text-text-muted/60 hover:text-danger hover:bg-danger-soft rounded-lg transition-colors"
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                            </button>
+                            </IconButton>
                           </div>
                         </div>
                       );
@@ -492,6 +520,16 @@ export default function TransactionsPage() {
                   </Card>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Load more — replaces the old hardcoded limit=200 cap (audit
+              temuan 5) so transaksi lama tetap bisa diakses secara bertahap. */}
+          {!loading && hasMore && (
+            <div className="mt-6 flex justify-center">
+              <Button variant="secondary" size="sm" onClick={loadMore} loading={loadingMore}>
+                {loadingMore ? "Memuat..." : "Muat Lebih Banyak"}
+              </Button>
             </div>
           )}
         </div>

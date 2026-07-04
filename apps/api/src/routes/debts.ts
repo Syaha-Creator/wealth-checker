@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db, debts, receivables, transactions } from "@wealth/db";
 import { eq, and, count } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
+import { resolveHousehold, requireRole } from "../middleware/household";
 import { calculateDebtSummary, calculateReceivableSummary } from "../services/debtReceivable";
 import { createWealthSnapshot } from "../services/wealth";
 import { isUniqueViolation } from "../lib/dbErrors";
@@ -13,11 +14,13 @@ import type { AppEnv } from "../types";
 export const debtRoutes = new Hono<AppEnv>();
 
 debtRoutes.use("*", requireAuth);
+// Sprint 27 (Fase 4): utang/piutang di-scope per household.
+debtRoutes.use("*", resolveHousehold);
 
 // Sprint 16 (Fase 3) — lihat catatan di transactions.ts: fire-and-forget,
 // dipanggil setelah mutasi CRUD utang/piutang commit.
-function snapshotWealthInBackground(userId: string): void {
-  createWealthSnapshot(db, userId).catch((err) => {
+function snapshotWealthInBackground(householdId: string, userId: string): void {
+  createWealthSnapshot(db, householdId, userId).catch((err) => {
     console.error("[wealth-snapshot] gagal membuat snapshot", err);
   });
 }
@@ -31,12 +34,12 @@ const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
 // luar itu mendesinkronisasi asumsi itu, sehingga penghapusan/edit transaksi
 // lama nanti menghitung ulang sisaSaldo dari basis yang sudah salah. Guard ini
 // dipanggil sebelum PATCH yang mengubah field tersebut diterapkan.
-async function hasPaymentHistory(userId: string, entityId: string, type: "bayar_utang" | "penerimaan_piutang"): Promise<boolean> {
+async function hasPaymentHistory(householdId: string, entityId: string, type: "bayar_utang" | "penerimaan_piutang"): Promise<boolean> {
   const [{ total }] = await db
     .select({ total: count() })
     .from(transactions)
     .where(and(
-      eq(transactions.userId, userId),
+      eq(transactions.householdId, householdId),
       eq(transactions.relatedEntityId, entityId),
       eq(transactions.type, type),
     ));
@@ -48,8 +51,8 @@ async function hasPaymentHistory(userId: string, entityId: string, type: "bayar_
 // "/summary" tidak pernah ditangkap sebagai parameter id.
 
 debtRoutes.get("/summary", async (c) => {
-  const userId = c.get("userId") as string;
-  const rows = await db.select().from(debts).where(eq(debts.userId, userId));
+  const householdId = c.get("householdId");
+  const rows = await db.select().from(debts).where(eq(debts.householdId, householdId));
   return c.json(calculateDebtSummary(rows));
 });
 
@@ -72,45 +75,48 @@ const debtSchema = debtBaseSchema.refine((val) => val.sisaSaldo === undefined ||
 });
 
 debtRoutes.get("/", async (c) => {
-  const userId = c.get("userId") as string;
-  return c.json(await db.select().from(debts).where(eq(debts.userId, userId)));
+  const householdId = c.get("householdId");
+  return c.json(await db.select().from(debts).where(eq(debts.householdId, householdId)));
 });
 
-debtRoutes.post("/", zValidator("json", debtSchema, zodErrorHook), async (c) => {
+debtRoutes.post("/", requireRole("owner", "editor"), zValidator("json", debtSchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const { pemberiUtang, tipe, saldoAwal, sisaSaldo } = c.req.valid("json");
   try {
     const [row] = await db
       .insert(debts)
       .values({
         userId,
+        householdId,
         pemberiUtang,
         tipe,
         saldoAwal: String(saldoAwal),
         sisaSaldo: String(sisaSaldo ?? saldoAwal),
       })
       .returning();
-    snapshotWealthInBackground(userId);
+    snapshotWealthInBackground(householdId, userId);
     return c.json(row, 201);
   } catch (err) {
-    if (isUniqueViolation(err, "idx_debts_user_pemberi_unique")) {
+    if (isUniqueViolation(err, "idx_debts_household_pemberi_unique")) {
       return c.json({ error: `Utang dengan nama pemberi "${pemberiUtang}" sudah ada — edit baris yang sudah ada, atau catat lewat transaksi "Pinjam Utang" agar otomatis digabung` }, 409);
     }
     throw err;
   }
 });
 
-debtRoutes.patch("/:id", zValidator("param", idParam, zodErrorHook), zValidator("json", debtBaseSchema.partial(), zodErrorHook), async (c) => {
+debtRoutes.patch("/:id", requireRole("owner", "editor"), zValidator("param", idParam, zodErrorHook), zValidator("json", debtBaseSchema.partial(), zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
 
-  const [existing] = await db.select().from(debts).where(and(eq(debts.id, id), eq(debts.userId, userId)));
+  const [existing] = await db.select().from(debts).where(and(eq(debts.id, id), eq(debts.householdId, householdId)));
   if (!existing) return c.json({ error: "Not found" }, 404);
 
   if (
     (data.saldoAwal !== undefined || data.sisaSaldo !== undefined) &&
-    (await hasPaymentHistory(userId, id, "bayar_utang"))
+    (await hasPaymentHistory(householdId, id, "bayar_utang"))
   ) {
     return c.json({ error: "saldoAwal/sisaSaldo tidak bisa diedit langsung karena utang ini sudah punya histori pembayaran (bayar_utang) — edit lewat transaksi cicilan, bukan lewat form ini" }, 409);
   }
@@ -130,20 +136,21 @@ debtRoutes.patch("/:id", zValidator("param", idParam, zodErrorHook), zValidator(
         ...(data.saldoAwal !== undefined && { saldoAwal: String(data.saldoAwal) }),
         ...(data.sisaSaldo !== undefined && { sisaSaldo: String(data.sisaSaldo) }),
       })
-      .where(and(eq(debts.id, id), eq(debts.userId, userId)))
+      .where(and(eq(debts.id, id), eq(debts.householdId, householdId)))
       .returning();
-    snapshotWealthInBackground(userId);
+    snapshotWealthInBackground(householdId, userId);
     return c.json(row);
   } catch (err) {
-    if (isUniqueViolation(err, "idx_debts_user_pemberi_unique")) {
+    if (isUniqueViolation(err, "idx_debts_household_pemberi_unique")) {
       return c.json({ error: `Nama pemberi utang "${data.pemberiUtang}" sudah dipakai utang lain` }, 409);
     }
     throw err;
   }
 });
 
-debtRoutes.delete("/:id", zValidator("param", idParam, zodErrorHook), async (c) => {
+debtRoutes.delete("/:id", requireRole("owner", "editor"), zValidator("param", idParam, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const { id } = c.req.valid("param");
 
   // High #4 (bug hunt): tanpa guard ini, hapus debt yang masih dirujuk transaksi
@@ -151,14 +158,14 @@ debtRoutes.delete("/:id", zValidator("param", idParam, zodErrorHook), async (c) 
   const [{ total }] = await db
     .select({ total: count() })
     .from(transactions)
-    .where(and(eq(transactions.userId, userId), eq(transactions.relatedEntityId, id)));
+    .where(and(eq(transactions.householdId, householdId), eq(transactions.relatedEntityId, id)));
 
   if (Number(total) > 0) {
     return c.json({ error: "Utang masih memiliki transaksi terkait (pinjaman/cicilan) — hapus atau edit transaksi tersebut dahulu" }, 409);
   }
 
-  await db.delete(debts).where(and(eq(debts.id, id), eq(debts.userId, userId)));
-  snapshotWealthInBackground(userId);
+  await db.delete(debts).where(and(eq(debts.id, id), eq(debts.householdId, householdId)));
+  snapshotWealthInBackground(householdId, userId);
   return c.body(null, 204);
 });
 
@@ -176,52 +183,55 @@ const receivableSchema = receivableBaseSchema.refine((val) => val.sisaSaldo === 
 });
 
 debtRoutes.get("/receivables", async (c) => {
-  const userId = c.get("userId") as string;
-  return c.json(await db.select().from(receivables).where(eq(receivables.userId, userId)));
+  const householdId = c.get("householdId");
+  return c.json(await db.select().from(receivables).where(eq(receivables.householdId, householdId)));
 });
 
 // ─── GET /receivables/summary — ringkasan "Peminjam vs Sisa Piutang" (Sprint 9) ──
 
 debtRoutes.get("/receivables/summary", async (c) => {
-  const userId = c.get("userId") as string;
-  const rows = await db.select().from(receivables).where(eq(receivables.userId, userId));
+  const householdId = c.get("householdId");
+  const rows = await db.select().from(receivables).where(eq(receivables.householdId, householdId));
   return c.json(calculateReceivableSummary(rows));
 });
 
-debtRoutes.post("/receivables", zValidator("json", receivableSchema, zodErrorHook), async (c) => {
+debtRoutes.post("/receivables", requireRole("owner", "editor"), zValidator("json", receivableSchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const { peminjam, saldoAwal, sisaSaldo } = c.req.valid("json");
   try {
     const [row] = await db
       .insert(receivables)
       .values({
         userId,
+        householdId,
         peminjam,
         saldoAwal: String(saldoAwal),
         sisaSaldo: String(sisaSaldo ?? saldoAwal),
       })
       .returning();
-    snapshotWealthInBackground(userId);
+    snapshotWealthInBackground(householdId, userId);
     return c.json(row, 201);
   } catch (err) {
-    if (isUniqueViolation(err, "idx_receivables_user_peminjam_unique")) {
+    if (isUniqueViolation(err, "idx_receivables_household_peminjam_unique")) {
       return c.json({ error: `Piutang dengan nama peminjam "${peminjam}" sudah ada — edit baris yang sudah ada, atau catat lewat transaksi "Beri Piutang" agar otomatis digabung` }, 409);
     }
     throw err;
   }
 });
 
-debtRoutes.patch("/receivables/:id", zValidator("param", idParam, zodErrorHook), zValidator("json", receivableBaseSchema.partial(), zodErrorHook), async (c) => {
+debtRoutes.patch("/receivables/:id", requireRole("owner", "editor"), zValidator("param", idParam, zodErrorHook), zValidator("json", receivableBaseSchema.partial(), zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
 
-  const [existing] = await db.select().from(receivables).where(and(eq(receivables.id, id), eq(receivables.userId, userId)));
+  const [existing] = await db.select().from(receivables).where(and(eq(receivables.id, id), eq(receivables.householdId, householdId)));
   if (!existing) return c.json({ error: "Not found" }, 404);
 
   if (
     (data.saldoAwal !== undefined || data.sisaSaldo !== undefined) &&
-    (await hasPaymentHistory(userId, id, "penerimaan_piutang"))
+    (await hasPaymentHistory(householdId, id, "penerimaan_piutang"))
   ) {
     return c.json({ error: "saldoAwal/sisaSaldo tidak bisa diedit langsung karena piutang ini sudah punya histori penerimaan (penerimaan_piutang) — edit lewat transaksi penerimaan, bukan lewat form ini" }, 409);
   }
@@ -240,33 +250,34 @@ debtRoutes.patch("/receivables/:id", zValidator("param", idParam, zodErrorHook),
         ...(data.saldoAwal !== undefined && { saldoAwal: String(data.saldoAwal) }),
         ...(data.sisaSaldo !== undefined && { sisaSaldo: String(data.sisaSaldo) }),
       })
-      .where(and(eq(receivables.id, id), eq(receivables.userId, userId)))
+      .where(and(eq(receivables.id, id), eq(receivables.householdId, householdId)))
       .returning();
-    snapshotWealthInBackground(userId);
+    snapshotWealthInBackground(householdId, userId);
     return c.json(row);
   } catch (err) {
-    if (isUniqueViolation(err, "idx_receivables_user_peminjam_unique")) {
+    if (isUniqueViolation(err, "idx_receivables_household_peminjam_unique")) {
       return c.json({ error: `Nama peminjam "${data.peminjam}" sudah dipakai piutang lain` }, 409);
     }
     throw err;
   }
 });
 
-debtRoutes.delete("/receivables/:id", zValidator("param", idParam, zodErrorHook), async (c) => {
+debtRoutes.delete("/receivables/:id", requireRole("owner", "editor"), zValidator("param", idParam, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const { id } = c.req.valid("param");
 
   // High #4 (bug hunt): sama seperti debts.delete di atas.
   const [{ total }] = await db
     .select({ total: count() })
     .from(transactions)
-    .where(and(eq(transactions.userId, userId), eq(transactions.relatedEntityId, id)));
+    .where(and(eq(transactions.householdId, householdId), eq(transactions.relatedEntityId, id)));
 
   if (Number(total) > 0) {
     return c.json({ error: "Piutang masih memiliki transaksi terkait (pemberian/penerimaan) — hapus atau edit transaksi tersebut dahulu" }, 409);
   }
 
-  await db.delete(receivables).where(and(eq(receivables.id, id), eq(receivables.userId, userId)));
-  snapshotWealthInBackground(userId);
+  await db.delete(receivables).where(and(eq(receivables.id, id), eq(receivables.householdId, householdId)));
+  snapshotWealthInBackground(householdId, userId);
   return c.body(null, 204);
 });

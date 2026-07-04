@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db, transactions, accounts, debts, receivables, liquidAssets, fixedAssets } from "@wealth/db";
 import { eq, and, or, desc, sql, isNotNull } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
+import { resolveHousehold, requireRole } from "../middleware/household";
 import { calculateMovingAverageCost, calculateProfitLoss, canSell, applySale } from "../services/movingAverageCost";
 import { canPayDebt, canReceiveReceivable } from "../services/debtReceivable";
 import { createWealthSnapshot } from "../services/wealth";
@@ -15,8 +16,8 @@ import type { AppEnv } from "../types";
 // menggagalkan request utama (transaksi/CRUD sudah commit). Dipanggil SETELAH
 // mutasi utama commit, tidak di dalam db.transaction, karena ia membaca ulang
 // kekayaan bersih terkini lewat calculateWealthSummary().
-function snapshotWealthInBackground(userId: string): void {
-  createWealthSnapshot(db, userId).catch((err) => {
+function snapshotWealthInBackground(householdId: string, userId: string): void {
+  createWealthSnapshot(db, householdId, userId).catch((err) => {
     console.error("[wealth-snapshot] gagal membuat snapshot", err);
   });
 }
@@ -29,6 +30,8 @@ type DbTx = Parameters<typeof db.transaction>[0] extends (tx: infer T) => unknow
 export const transactionRoutes = new Hono<AppEnv>();
 
 transactionRoutes.use("*", requireAuth);
+// Sprint 27 (Fase 4): transaksi di-scope per household — lihat middleware/household.ts.
+transactionRoutes.use("*", resolveHousehold);
 
 // Default categories
 const KATEGORI_PENDAPATAN_DEFAULT = ["Gaji", "Proyek", "Dividen", "Bonus", "Hadiah", "Lainnya"];
@@ -64,7 +67,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  */
 async function reverseTransactionEffects(
   tx: DbTx,
-  userId: string,
+  householdId: string,
   trx: { type: string; accountId: string | null; relatedEntityId: string | null; nominal: string },
 ): Promise<void> {
   // ── Reverse account balance ─────────────────────────────────────────────
@@ -86,7 +89,7 @@ async function reverseTransactionEffects(
         .set({ saldoCache: sql`saldo_cache::numeric - ${trx.nominal}` })
         .where(and(
           eq(accounts.id, trx.accountId),
-          eq(accounts.userId, userId),
+          eq(accounts.householdId, householdId),
           sql`saldo_cache::numeric >= ${trx.nominal}`,
         ))
         .returning({ id: accounts.id });
@@ -95,7 +98,7 @@ async function reverseTransactionEffects(
         const [acc] = await tx
           .select({ id: accounts.id })
           .from(accounts)
-          .where(and(eq(accounts.id, trx.accountId), eq(accounts.userId, userId)));
+          .where(and(eq(accounts.id, trx.accountId), eq(accounts.householdId, householdId)));
 
         if (acc) {
           throw Object.assign(new Error(
@@ -107,7 +110,7 @@ async function reverseTransactionEffects(
       await tx
         .update(accounts)
         .set({ saldoCache: sql`saldo_cache::numeric + ${trx.nominal}` })
-        .where(and(eq(accounts.id, trx.accountId), eq(accounts.userId, userId)));
+        .where(and(eq(accounts.id, trx.accountId), eq(accounts.householdId, householdId)));
     }
   }
 
@@ -119,7 +122,7 @@ async function reverseTransactionEffects(
       .set({ saldoCache: sql`saldo_cache::numeric - ${trx.nominal}` })
       .where(and(
         eq(accounts.id, trx.relatedEntityId),
-        eq(accounts.userId, userId),
+        eq(accounts.householdId, householdId),
         sql`saldo_cache::numeric >= ${trx.nominal}`,
       ))
       .returning({ id: accounts.id });
@@ -128,7 +131,7 @@ async function reverseTransactionEffects(
       const [acc] = await tx
         .select({ id: accounts.id })
         .from(accounts)
-        .where(and(eq(accounts.id, trx.relatedEntityId), eq(accounts.userId, userId)));
+        .where(and(eq(accounts.id, trx.relatedEntityId), eq(accounts.householdId, householdId)));
 
       if (acc) {
         throw Object.assign(new Error(
@@ -144,14 +147,14 @@ async function reverseTransactionEffects(
     await tx
       .update(debts)
       .set({ sisaSaldo: sql`LEAST(saldo_awal::numeric, sisa_saldo::numeric + ${trx.nominal})` })
-      .where(and(eq(debts.id, trx.relatedEntityId), eq(debts.userId, userId)));
+      .where(and(eq(debts.id, trx.relatedEntityId), eq(debts.householdId, householdId)));
   }
 
   if (trx.type === "penerimaan_piutang" && trx.relatedEntityId) {
     await tx
       .update(receivables)
       .set({ sisaSaldo: sql`LEAST(saldo_awal::numeric, sisa_saldo::numeric + ${trx.nominal})` })
-      .where(and(eq(receivables.id, trx.relatedEntityId), eq(receivables.userId, userId)));
+      .where(and(eq(receivables.id, trx.relatedEntityId), eq(receivables.householdId, householdId)));
   }
 
   // ── Reverse pinjaman_utang / pemberian_piutang: undo the debt/receivable
@@ -184,7 +187,7 @@ async function reverseTransactionEffects(
       })
       .where(and(
         eq(debts.id, trx.relatedEntityId),
-        eq(debts.userId, userId),
+        eq(debts.householdId, householdId),
         sql`sisa_saldo::numeric >= ${trx.nominal}`,
       ))
       .returning({ id: debts.id });
@@ -193,7 +196,7 @@ async function reverseTransactionEffects(
       const [debt] = await tx
         .select({ id: debts.id })
         .from(debts)
-        .where(and(eq(debts.id, trx.relatedEntityId), eq(debts.userId, userId)));
+        .where(and(eq(debts.id, trx.relatedEntityId), eq(debts.householdId, householdId)));
 
       // Debt tidak ditemukan (mis. sudah dihapus terpisah) — tidak ada apa pun
       // untuk dibalik, aman untuk lanjut. Kalau ditemukan, berarti sisaSaldo
@@ -215,7 +218,7 @@ async function reverseTransactionEffects(
       })
       .where(and(
         eq(receivables.id, trx.relatedEntityId),
-        eq(receivables.userId, userId),
+        eq(receivables.householdId, householdId),
         sql`sisa_saldo::numeric >= ${trx.nominal}`,
       ))
       .returning({ id: receivables.id });
@@ -224,7 +227,7 @@ async function reverseTransactionEffects(
       const [rec] = await tx
         .select({ id: receivables.id })
         .from(receivables)
-        .where(and(eq(receivables.id, trx.relatedEntityId), eq(receivables.userId, userId)));
+        .where(and(eq(receivables.id, trx.relatedEntityId), eq(receivables.householdId, householdId)));
 
       if (rec) {
         throw Object.assign(new Error(
@@ -246,7 +249,7 @@ async function reverseTransactionEffects(
  */
 async function applyTransactionEffects(
   tx: DbTx,
-  userId: string,
+  householdId: string,
   data: { type: string; accountId?: string; toAccountId?: string },
   computedNominal: number,
   relatedEntityId: string | undefined,
@@ -265,7 +268,7 @@ async function applyTransactionEffects(
     const [srcAcc] = await tx
       .select({ id: accounts.id, saldoCache: accounts.saldoCache, isActive: accounts.isActive })
       .from(accounts)
-      .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, userId)));
+      .where(and(eq(accounts.id, data.accountId), eq(accounts.householdId, householdId)));
 
     if (!srcAcc) {
       throw Object.assign(new Error("Rekening asal tidak ditemukan"), { status: 404 });
@@ -282,7 +285,7 @@ async function applyTransactionEffects(
         .set({ saldoCache: sql`saldo_cache - ${String(computedNominal)}` })
         .where(and(
           eq(accounts.id, data.accountId),
-          eq(accounts.userId, userId),
+          eq(accounts.householdId, householdId),
           sql`saldo_cache::numeric >= ${String(computedNominal)}`,
         ))
         .returning({ id: accounts.id, saldoCache: accounts.saldoCache });
@@ -303,7 +306,7 @@ async function applyTransactionEffects(
       await tx
         .update(accounts)
         .set({ saldoCache: sql`saldo_cache + ${String(computedNominal)}` })
-        .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, userId)));
+        .where(and(eq(accounts.id, data.accountId), eq(accounts.householdId, householdId)));
     }
   }
 
@@ -316,7 +319,7 @@ async function applyTransactionEffects(
       .set({ saldoCache: sql`saldo_cache + ${String(computedNominal)}` })
       .where(and(
         eq(accounts.id, data.toAccountId),
-        eq(accounts.userId, userId),
+        eq(accounts.householdId, householdId),
         options?.toAccountIdUnchanged ? undefined : eq(accounts.isActive, true),
       ))
       .returning({ id: accounts.id });
@@ -342,7 +345,7 @@ async function applyTransactionEffects(
       .set({ sisaSaldo: sql`sisa_saldo::numeric - ${String(computedNominal)}` })
       .where(and(
         eq(debts.id, relatedEntityId),
-        eq(debts.userId, userId),
+        eq(debts.householdId, householdId),
         sql`sisa_saldo::numeric >= ${String(computedNominal)}`,
       ))
       .returning({ id: debts.id });
@@ -351,7 +354,7 @@ async function applyTransactionEffects(
       const [debt] = await tx
         .select({ sisaSaldo: debts.sisaSaldo })
         .from(debts)
-        .where(and(eq(debts.id, relatedEntityId), eq(debts.userId, userId)));
+        .where(and(eq(debts.id, relatedEntityId), eq(debts.householdId, householdId)));
 
       if (!debt) {
         throw Object.assign(new Error("Utang tidak ditemukan"), { status: 404 });
@@ -371,7 +374,7 @@ async function applyTransactionEffects(
       .set({ sisaSaldo: sql`sisa_saldo::numeric - ${String(computedNominal)}` })
       .where(and(
         eq(receivables.id, relatedEntityId),
-        eq(receivables.userId, userId),
+        eq(receivables.householdId, householdId),
         sql`sisa_saldo::numeric >= ${String(computedNominal)}`,
       ))
       .returning({ id: receivables.id });
@@ -380,7 +383,7 @@ async function applyTransactionEffects(
       const [rec] = await tx
         .select({ sisaSaldo: receivables.sisaSaldo })
         .from(receivables)
-        .where(and(eq(receivables.id, relatedEntityId), eq(receivables.userId, userId)));
+        .where(and(eq(receivables.id, relatedEntityId), eq(receivables.householdId, householdId)));
 
       if (!rec) {
         throw Object.assign(new Error("Piutang tidak ditemukan"), { status: 404 });
@@ -414,6 +417,7 @@ async function applyTransactionEffects(
 async function upsertAssetBuy(
   tx: DbTx,
   tableName: "fixed_assets" | "liquid_assets",
+  householdId: string,
   userId: string,
   namaAset: string,
   qty: number,
@@ -421,9 +425,9 @@ async function upsertAssetBuy(
 ): Promise<string> {
   const t = sql.raw(tableName);
   const rows = await tx.execute<{ id: string }>(sql`
-    INSERT INTO ${t} (user_id, nama_aset, jumlah, harga_beli_rata_rata)
-    VALUES (${userId}, ${namaAset}, ${String(qty)}, ${String(price)})
-    ON CONFLICT (user_id, lower(nama_aset))
+    INSERT INTO ${t} (user_id, household_id, nama_aset, jumlah, harga_beli_rata_rata)
+    VALUES (${userId}, ${householdId}, ${namaAset}, ${String(qty)}, ${String(price)})
+    ON CONFLICT (household_id, lower(nama_aset))
     DO UPDATE SET
       jumlah = ${t}.jumlah::numeric + excluded.jumlah::numeric,
       harga_beli_rata_rata = (
@@ -439,15 +443,16 @@ async function upsertAssetBuy(
 /** Upsert for pinjaman_utang — cari-atau-buat debt berdasarkan nama pemberi (case-insensitive). */
 async function upsertDebtOnLoan(
   tx: DbTx,
+  householdId: string,
   userId: string,
   pemberiUtang: string,
   tipe: "utang_biasa" | "kartu_kredit",
   nominal: number,
 ): Promise<string> {
   const rows = await tx.execute<{ id: string }>(sql`
-    INSERT INTO debts (user_id, pemberi_utang, tipe, saldo_awal, sisa_saldo)
-    VALUES (${userId}, ${pemberiUtang}, ${tipe}::debt_type, ${String(nominal)}, ${String(nominal)})
-    ON CONFLICT (user_id, lower(pemberi_utang))
+    INSERT INTO debts (user_id, household_id, pemberi_utang, tipe, saldo_awal, sisa_saldo)
+    VALUES (${userId}, ${householdId}, ${pemberiUtang}, ${tipe}::debt_type, ${String(nominal)}, ${String(nominal)})
+    ON CONFLICT (household_id, lower(pemberi_utang))
     DO UPDATE SET
       saldo_awal = debts.saldo_awal::numeric + excluded.saldo_awal::numeric,
       sisa_saldo = debts.sisa_saldo::numeric + excluded.sisa_saldo::numeric
@@ -459,14 +464,15 @@ async function upsertDebtOnLoan(
 /** Upsert for pemberian_piutang — cari-atau-buat receivable berdasarkan nama peminjam (case-insensitive). */
 async function upsertReceivableOnLend(
   tx: DbTx,
+  householdId: string,
   userId: string,
   peminjam: string,
   nominal: number,
 ): Promise<string> {
   const rows = await tx.execute<{ id: string }>(sql`
-    INSERT INTO receivables (user_id, peminjam, saldo_awal, sisa_saldo)
-    VALUES (${userId}, ${peminjam}, ${String(nominal)}, ${String(nominal)})
-    ON CONFLICT (user_id, lower(peminjam))
+    INSERT INTO receivables (user_id, household_id, peminjam, saldo_awal, sisa_saldo)
+    VALUES (${userId}, ${householdId}, ${peminjam}, ${String(nominal)}, ${String(nominal)})
+    ON CONFLICT (household_id, lower(peminjam))
     DO UPDATE SET
       saldo_awal = receivables.saldo_awal::numeric + excluded.saldo_awal::numeric,
       sisa_saldo = receivables.sisa_saldo::numeric + excluded.sisa_saldo::numeric
@@ -484,13 +490,13 @@ const listQuerySchema = z.object({
 });
 
 transactionRoutes.get("/", zValidator("query", listQuerySchema, zodErrorHook), async (c) => {
-  const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const { limit, offset, accountId } = c.req.valid("query");
   const rows = await db
     .select()
     .from(transactions)
     .where(and(
-      eq(transactions.userId, userId),
+      eq(transactions.householdId, householdId),
       // Bug hunt Medium #2: transfer masuk disimpan di relatedEntityId, bukan
       // accountId (lihat accountMutation.ts) — filter accountId=X harus ikut
       // menangkap transfer masuk KE rekening X, sama seperti GET /:id/mutasi
@@ -513,11 +519,11 @@ transactionRoutes.get("/", zValidator("query", listQuerySchema, zodErrorHook), a
 // wins over the param route, regardless of the router's matching strategy.
 
 transactionRoutes.get("/categories", async (c) => {
-  const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const rows = await db
     .selectDistinct({ type: transactions.type, kategori: transactions.kategori })
     .from(transactions)
-    .where(and(eq(transactions.userId, userId), isNotNull(transactions.kategori)));
+    .where(and(eq(transactions.householdId, householdId), isNotNull(transactions.kategori)));
 
   const historyPendapatan = rows
     .filter((r) => r.type === "pendapatan" && r.kategori)
@@ -537,7 +543,7 @@ transactionRoutes.get("/categories", async (c) => {
 // of relying on it being within the list endpoint's 200-row cap.
 
 transactionRoutes.get("/:id", async (c) => {
-  const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const id = c.req.param("id");
 
   if (!UUID_RE.test(id)) return c.json({ error: "ID tidak valid" }, 400);
@@ -545,7 +551,7 @@ transactionRoutes.get("/:id", async (c) => {
   const [trx] = await db
     .select()
     .from(transactions)
-    .where(and(eq(transactions.id, id), eq(transactions.userId, userId)));
+    .where(and(eq(transactions.id, id), eq(transactions.householdId, householdId)));
 
   if (!trx) return c.json({ error: "Not found" }, 404);
   return c.json(trx);
@@ -629,8 +635,13 @@ const createSchema = z.object({
   }
 });
 
-transactionRoutes.post("/", zValidator("json", createSchema, zodErrorHook), async (c) => {
+// Security audit (Sprint 27): POST/PATCH/DELETE tadinya tidak dilindungi
+// requireRole sama sekali — sementara accounts/debts/assets/dreamGoals sudah
+// menolak role "viewer" sejak awal, transaksi (yang paling sering diubah)
+// justru lolos, membiarkan viewer mencatat/mengedit/menghapus transaksi.
+transactionRoutes.post("/", requireRole("owner", "editor"), zValidator("json", createSchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const {
     toAccountId, relatedDebtId, relatedReceivableId,
     pemberiUtang, debtTipe, peminjam,
@@ -659,7 +670,7 @@ transactionRoutes.post("/", zValidator("json", createSchema, zodErrorHook), asyn
           // upsertAssetBuy() di atas. Menggantikan SELECT-then-branch lama
           // yang race di bawah beli konkuren pada aset yang sama/baru.
           const tableName = data.type === "beli_barang" ? "fixed_assets" : "liquid_assets";
-          relatedEntityId = await upsertAssetBuy(tx, tableName, userId, namaAset!, jumlah!, hargaSatuan!);
+          relatedEntityId = await upsertAssetBuy(tx, tableName, householdId, userId, namaAset!, jumlah!, hargaSatuan!);
         } else {
           // jual_barang / jual_investasi — guard: tidak bisa jual melebihi kepemilikan.
           // `.for("update")` mengunci baris aset ini sampai transaksi commit
@@ -670,7 +681,7 @@ transactionRoutes.post("/", zValidator("json", createSchema, zodErrorHook), asyn
           const [existing] = await tx
             .select()
             .from(table)
-            .where(and(eq(table.userId, userId), sql`lower(nama_aset) = lower(${namaAset})`))
+            .where(and(eq(table.householdId, householdId), sql`lower(nama_aset) = lower(${namaAset})`))
             .for("update");
 
           const ownedQty = existing ? Number(existing.jumlah) : 0;
@@ -701,18 +712,18 @@ transactionRoutes.post("/", zValidator("json", createSchema, zodErrorHook), asyn
       // at this point relatedEntityId is still relatedDebtId/relatedReceivableId
       // for those two types (only overwritten below for pinjaman_utang/pemberian_piutang,
       // which are mutually exclusive with bayar_utang/penerimaan_piutang by type).
-      await applyTransactionEffects(tx, userId, { type: data.type, accountId: data.accountId, toAccountId }, computedNominal, relatedEntityId);
+      await applyTransactionEffects(tx, householdId, { type: data.type, accountId: data.accountId, toAccountId }, computedNominal, relatedEntityId);
 
       // ── Sprint 8: pinjaman_utang — cari-atau-buat debt berdasarkan nama pemberi ──
       // Atomic upsert (bug hunt Critical #3) — lihat komentar di upsertDebtOnLoan().
       if (data.type === "pinjaman_utang") {
-        relatedEntityId = await upsertDebtOnLoan(tx, userId, pemberiUtang!, debtTipe ?? "utang_biasa", computedNominal);
+        relatedEntityId = await upsertDebtOnLoan(tx, householdId, userId, pemberiUtang!, debtTipe ?? "utang_biasa", computedNominal);
       }
 
       // ── Sprint 9: pemberian_piutang — cari-atau-buat receivable berdasarkan nama peminjam ──
       // Atomic upsert (bug hunt Critical #3) — lihat komentar di upsertReceivableOnLend().
       if (data.type === "pemberian_piutang") {
-        relatedEntityId = await upsertReceivableOnLend(tx, userId, peminjam!, computedNominal);
+        relatedEntityId = await upsertReceivableOnLend(tx, householdId, userId, peminjam!, computedNominal);
       }
 
       // (bayar_utang / penerimaan_piutang guards + sisaSaldo decrement already
@@ -723,6 +734,7 @@ transactionRoutes.post("/", zValidator("json", createSchema, zodErrorHook), asyn
         .insert(transactions)
         .values({
           userId,
+          householdId,
           tanggal: data.tanggal,
           type: data.type,
           kategori: data.kategori,
@@ -737,7 +749,7 @@ transactionRoutes.post("/", zValidator("json", createSchema, zodErrorHook), asyn
       return [inserted];
     });
 
-    snapshotWealthInBackground(userId);
+    snapshotWealthInBackground(householdId, userId);
     return c.json(trx, 201);
   } catch (err: unknown) {
     const e = err as { status?: number; code?: string; message?: string; saldoTersedia?: number; nominal?: number; sisaSaldo?: number };
@@ -759,9 +771,13 @@ transactionRoutes.post("/", zValidator("json", createSchema, zodErrorHook), asyn
 
 // ─── DELETE /:id ──────────────────────────────────────────────────────────────
 
-transactionRoutes.delete("/:id", async (c) => {
+transactionRoutes.delete("/:id", requireRole("owner", "editor"), async (c) => {
   const userId = c.get("userId") as string;
-  const id = c.req.param("id");
+  const householdId = c.get("householdId");
+  // Chaining requireRole onto this "/:id" route widens Hono's inferred
+  // path-pattern type the same way zValidator does elsewhere in this file
+  // (see PATCH /:id below) — assertion is safe, router guarantees `id` present.
+  const id = c.req.param("id") as string;
 
   // Validate UUID format
   if (!UUID_RE.test(id)) return c.json({ error: "ID tidak valid" }, 400);
@@ -781,7 +797,7 @@ transactionRoutes.delete("/:id", async (c) => {
       const [trx] = await tx
         .select()
         .from(transactions)
-        .where(and(eq(transactions.id, id), eq(transactions.userId, userId)))
+        .where(and(eq(transactions.id, id), eq(transactions.householdId, householdId)))
         .for("update");
 
       if (!trx) throw Object.assign(new Error("Not found"), { status: 404 });
@@ -797,7 +813,7 @@ transactionRoutes.delete("/:id", async (c) => {
         ), { status: 409 });
       }
 
-      await reverseTransactionEffects(tx, userId, {
+      await reverseTransactionEffects(tx, householdId, {
         type: trx.type,
         accountId: trx.accountId,
         relatedEntityId: trx.relatedEntityId,
@@ -812,7 +828,7 @@ transactionRoutes.delete("/:id", async (c) => {
     throw err; // re-throw unexpected errors as 500
   }
 
-  snapshotWealthInBackground(userId);
+  snapshotWealthInBackground(householdId, userId);
   return c.body(null, 204);
 });
 
@@ -831,8 +847,9 @@ const patchSchema = z.object({
   toAccountId: z.string().uuid().optional(),
 });
 
-transactionRoutes.patch("/:id", zValidator("json", patchSchema, zodErrorHook), async (c) => {
+transactionRoutes.patch("/:id", requireRole("owner", "editor"), zValidator("json", patchSchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   // Chaining a second zValidator middleware onto this "/:id" route widens
   // Hono's inferred path-pattern type, so `c.req.param("id")` degrades from
   // `string` to `string | undefined` even though the router guarantees this
@@ -853,7 +870,7 @@ transactionRoutes.patch("/:id", zValidator("json", patchSchema, zodErrorHook), a
       const [existing] = await tx
         .select()
         .from(transactions)
-        .where(and(eq(transactions.id, id), eq(transactions.userId, userId)))
+        .where(and(eq(transactions.id, id), eq(transactions.householdId, householdId)))
         .for("update");
 
       if (!existing) throw Object.assign(new Error("Not found"), { status: 404 });
@@ -903,7 +920,7 @@ transactionRoutes.patch("/:id", zValidator("json", patchSchema, zodErrorHook), a
 
       if (effectsChanged) {
         // 1) Reverse the OLD effects using the OLD stored values
-        await reverseTransactionEffects(tx, userId, {
+        await reverseTransactionEffects(tx, householdId, {
           type: existing.type,
           accountId: existing.accountId,
           relatedEntityId: existing.relatedEntityId,
@@ -919,7 +936,7 @@ transactionRoutes.patch("/:id", zValidator("json", patchSchema, zodErrorHook), a
         // merely deactivated after this transaction was originally created.
         await applyTransactionEffects(
           tx,
-          userId,
+          householdId,
           { type, accountId, toAccountId },
           computedNominal,
           existing.relatedEntityId ?? undefined,
@@ -937,7 +954,7 @@ transactionRoutes.patch("/:id", zValidator("json", patchSchema, zodErrorHook), a
               saldoAwal: sql`saldo_awal::numeric + ${String(computedNominal)}`,
               sisaSaldo: sql`sisa_saldo::numeric + ${String(computedNominal)}`,
             })
-            .where(and(eq(debts.id, existing.relatedEntityId), eq(debts.userId, userId)));
+            .where(and(eq(debts.id, existing.relatedEntityId), eq(debts.householdId, householdId)));
         }
         if (type === "pemberian_piutang" && existing.relatedEntityId) {
           await tx
@@ -946,7 +963,7 @@ transactionRoutes.patch("/:id", zValidator("json", patchSchema, zodErrorHook), a
               saldoAwal: sql`saldo_awal::numeric + ${String(computedNominal)}`,
               sisaSaldo: sql`sisa_saldo::numeric + ${String(computedNominal)}`,
             })
-            .where(and(eq(receivables.id, existing.relatedEntityId), eq(receivables.userId, userId)));
+            .where(and(eq(receivables.id, existing.relatedEntityId), eq(receivables.householdId, householdId)));
         }
       }
 
@@ -965,7 +982,7 @@ transactionRoutes.patch("/:id", zValidator("json", patchSchema, zodErrorHook), a
       return [row];
     });
 
-    snapshotWealthInBackground(userId);
+    snapshotWealthInBackground(householdId, userId);
     return c.json(updated);
   } catch (err: unknown) {
     const e = err as { status?: number; code?: string; message?: string; saldoTersedia?: number; nominal?: number; sisaSaldo?: number };

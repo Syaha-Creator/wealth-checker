@@ -1,4 +1,4 @@
-import { forwardRef, useState } from "react";
+import { forwardRef, useId, useState } from "react";
 import type { InputHTMLAttributes, SelectHTMLAttributes, ReactNode } from "react";
 import { formatRupiahInput } from "@/lib/format";
 
@@ -20,13 +20,18 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { label, error, hint, id, className = "", required, endAdornment, ...rest },
+  { label, error, hint, id, className = "", required, endAdornment, "aria-describedby": ariaDescribedBy, ...rest },
   ref
 ) {
+  const generatedId = useId();
+  const fieldId = id ?? generatedId;
+  const messageId = `${fieldId}-message`;
+  const describedBy = [error || hint ? messageId : null, ariaDescribedBy].filter(Boolean).join(" ") || undefined;
+
   return (
     <div>
       {label && (
-        <label htmlFor={id} className="block text-sm font-medium text-text-secondary mb-1">
+        <label htmlFor={fieldId} className="block text-sm font-medium text-text-secondary mb-1">
           {label}
           {required && <RequiredMark />}
         </label>
@@ -34,8 +39,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       <div className="relative">
         <input
           ref={ref}
-          id={id}
+          id={fieldId}
           required={required}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
           className={`w-full px-3 py-2.5 ${endAdornment ? "pr-10" : ""} bg-surface border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand/30 transition-shadow ${
             error ? "border-danger" : "border-border"
           } ${className}`}
@@ -45,8 +52,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           <div className="absolute right-1.5 top-1/2 -translate-y-1/2">{endAdornment}</div>
         )}
       </div>
-      {hint && !error && <p className="text-xs text-text-muted mt-1">{hint}</p>}
-      {error && <p className="text-xs text-danger-text mt-1">{error}</p>}
+      {hint && !error && <p id={messageId} className="text-xs text-text-muted mt-1">{hint}</p>}
+      {error && <p id={messageId} role="alert" className="text-xs text-danger-text mt-1">{error}</p>}
     </div>
   );
 });
@@ -100,25 +107,33 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(fu
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   error?: string;
+  hint?: string;
   children?: ReactNode;
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
-  { label, error, id, className = "", children, required, ...rest },
+  { label, error, hint, id, className = "", children, required, "aria-describedby": ariaDescribedBy, ...rest },
   ref
 ) {
+  const generatedId = useId();
+  const fieldId = id ?? generatedId;
+  const messageId = `${fieldId}-message`;
+  const describedBy = [error || hint ? messageId : null, ariaDescribedBy].filter(Boolean).join(" ") || undefined;
+
   return (
     <div>
       {label && (
-        <label htmlFor={id} className="block text-sm font-medium text-text-secondary mb-1">
+        <label htmlFor={fieldId} className="block text-sm font-medium text-text-secondary mb-1">
           {label}
           {required && <RequiredMark />}
         </label>
       )}
       <select
         ref={ref}
-        id={id}
+        id={fieldId}
         required={required}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy}
         className={`w-full px-3 py-2.5 bg-surface border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand/30 transition-shadow ${
           error ? "border-danger" : "border-border"
         } ${className}`}
@@ -126,6 +141,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       >
         {children}
       </select>
+      {hint && !error && <p id={messageId} className="text-xs text-text-muted mt-1">{hint}</p>}
+      {error && <p id={messageId} role="alert" className="text-xs text-danger-text mt-1">{error}</p>}
     </div>
   );
 });
@@ -142,10 +159,14 @@ interface InputRupiahProps {
 }
 
 export function InputRupiah({ label, value, onChange, placeholder, required, id, hint, error }: InputRupiahProps) {
+  const generatedId = useId();
+  const fieldId = id ?? generatedId;
+  const messageId = `${fieldId}-message`;
+
   return (
     <div>
       {label && (
-        <label htmlFor={id} className="block text-sm font-medium text-text-secondary mb-1">
+        <label htmlFor={fieldId} className="block text-sm font-medium text-text-secondary mb-1">
           {label}
           {required && <RequiredMark />}
         </label>
@@ -153,9 +174,11 @@ export function InputRupiah({ label, value, onChange, placeholder, required, id,
       <div className="relative">
         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm" aria-hidden="true">Rp</span>
         <input
-          id={id}
+          id={fieldId}
           type="text"
           inputMode="numeric"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error || hint ? messageId : undefined}
           className={`w-full pl-10 pr-3 py-2.5 bg-surface border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand/30 transition-shadow ${
             error ? "border-danger" : "border-border"
           }`}
@@ -165,8 +188,8 @@ export function InputRupiah({ label, value, onChange, placeholder, required, id,
           required={required}
         />
       </div>
-      {hint && !error && <p className="text-xs text-text-muted mt-1">{hint}</p>}
-      {error && <p className="text-xs text-danger-text mt-1">{error}</p>}
+      {hint && !error && <p id={messageId} className="text-xs text-text-muted mt-1">{hint}</p>}
+      {error && <p id={messageId} role="alert" className="text-xs text-danger-text mt-1">{error}</p>}
     </div>
   );
 }

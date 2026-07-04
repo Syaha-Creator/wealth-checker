@@ -6,9 +6,9 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { RequiredMark } from "@/components/ui/Input";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { formatRupiahInput, parseRupiahInput } from "@/lib/format";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
+import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
 
 type Account = { id: string; nama: string; saldoCache: string; isActive: boolean };
 type Categories = { pendapatan: string[]; pengeluaran: string[] };
@@ -43,7 +43,7 @@ const TYPE_LABEL: Record<string, string> = {
 const ASSET_TYPES = new Set(["beli_barang", "jual_barang", "beli_investasi", "jual_investasi"]);
 
 async function apiFetch(path: string, method: string, body?: unknown) {
-  const res = await fetch(`${API}${path}`, {
+  const res = await apiFetchRaw(`${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -82,16 +82,17 @@ export default function EditTransactionPage() {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{ nominal?: string; accountId?: string; toAccountId?: string }>({});
 
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetch(`${API}/api/transactions/${id}`, { credentials: "include" }).then((r) => {
+      apiFetchRaw(`/api/transactions/${id}`, { credentials: "include" }).then((r) => {
         if (!r.ok) throw new Error(r.status === 404 ? "Transaksi tidak ditemukan" : "Gagal memuat transaksi");
         return r.json();
       }),
-      fetch(`${API}/api/accounts`, { credentials: "include" }).then((r) => r.json()),
-      fetch(`${API}/api/transactions/categories`, { credentials: "include" }).then((r) => r.json()).catch(() => null),
+      apiFetchRaw(`/api/accounts`, { credentials: "include" }).then((r) => r.json()),
+      apiFetchRaw(`/api/transactions/categories`, { credentials: "include" }).then((r) => r.json()).catch(() => null),
     ])
       .then(([txData, accData, catData]: [Transaction, Account[], Categories | null]) => {
         if (cancelled) return;
@@ -129,16 +130,23 @@ export default function EditTransactionPage() {
     if (!trx) return;
 
     const nominalParsed = parseRupiahInput(nominal);
+    const errs: { nominal?: string; accountId?: string; toAccountId?: string } = {};
     if (!nominal || nominalParsed <= 0) {
-      setError("Masukkan nominal transaksi");
-      return;
+      errs.nominal = "Masukkan nominal transaksi";
     }
-    if (isTransfer && (!accountId || !toAccountId)) {
-      setError("Rekening asal dan tujuan wajib diisi untuk transfer");
-      return;
+    if (!accountId) {
+      errs.accountId = "Pilih rekening";
     }
-    if (isTransfer && accountId === toAccountId) {
-      setError("Rekening asal dan tujuan tidak boleh sama");
+    if (isTransfer) {
+      if (!toAccountId) {
+        errs.toAccountId = "Pilih rekening tujuan";
+      } else if (accountId === toAccountId) {
+        errs.toAccountId = "Rekening asal dan tujuan tidak boleh sama";
+      }
+    }
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      setError("Periksa kembali isian yang ditandai merah di bawah.");
       return;
     }
 
@@ -165,8 +173,23 @@ export default function EditTransactionPage() {
     return (
       <div className="max-w-4xl">
         <PageHeader title="Edit Transaksi" onBack={() => router.back()} />
-        <div className="flex items-center justify-center py-20">
-          <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" aria-label="Memuat..." />
+        <div className="max-w-xl">
+          <Skeleton className="h-5 w-40 mb-4" />
+          <div className="space-y-4">
+            <Skeleton className="h-24 rounded-2xl" />
+            <div className="bg-surface rounded-2xl border border-border divide-y divide-border overflow-hidden">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center justify-between px-5 py-3">
+                  <Skeleton className="h-3.5 w-20" />
+                  <Skeleton className="h-3.5 w-24" />
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Skeleton className="h-11 flex-1 rounded-xl" />
+              <Skeleton className="h-11 flex-1 rounded-xl" />
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -214,7 +237,7 @@ export default function EditTransactionPage() {
           )}
 
           {/* Nominal */}
-          <div className="bg-surface rounded-2xl p-5 border border-border">
+          <div className={`bg-surface rounded-2xl p-5 border transition-colors ${fieldErrors.nominal ? "border-danger bg-danger-soft/40" : "border-border"}`}>
             <label htmlFor="nominal" className="block text-xs font-medium text-text-muted mb-2 uppercase tracking-wide">Nominal<RequiredMark /></label>
             <div className="flex items-center gap-2">
               <span className="text-2xl font-light text-text-primary" aria-hidden="true">Rp</span>
@@ -222,13 +245,18 @@ export default function EditTransactionPage() {
                 id="nominal"
                 type="text"
                 inputMode="numeric"
+                aria-invalid={fieldErrors.nominal ? true : undefined}
+                aria-describedby={fieldErrors.nominal ? "nominal-error" : undefined}
                 className="flex-1 min-w-0 text-3xl font-bold bg-transparent focus:outline-none text-text-primary"
                 placeholder="0"
                 value={nominal}
-                onChange={(e) => setNominal(formatRupiahInput(e.target.value))}
+                onChange={(e) => { setNominal(formatRupiahInput(e.target.value)); setFieldErrors((f) => ({ ...f, nominal: undefined })); }}
                 required
               />
             </div>
+            {fieldErrors.nominal && (
+              <p id="nominal-error" role="alert" className="text-xs text-danger-text mt-2">{fieldErrors.nominal}</p>
+            )}
           </div>
 
           <div className="bg-surface rounded-2xl border border-border divide-y divide-border">
@@ -246,44 +274,58 @@ export default function EditTransactionPage() {
             </div>
 
             {/* Rekening asal */}
-            <div className="flex items-center px-5 py-3">
-              <label htmlFor="account" className="text-sm text-text-muted w-28">
-                {isTransfer ? "Dari Rekening" : "Rekening"}<RequiredMark />
-              </label>
-              <div className="flex-1 flex items-center gap-1 justify-end">
-                <select
-                  id="account"
-                  className="text-sm text-text-primary bg-transparent focus:outline-none text-right appearance-none"
-                  value={accountId}
-                  onChange={(e) => setAccountId(e.target.value)}
-                >
-                  {accountOptions.map((a) => (
-                    <option key={a.id} value={a.id}>{a.nama}{!a.isActive ? " (nonaktif)" : ""}</option>
-                  ))}
-                  {accountOptions.length === 0 && <option value="">Tidak ada rekening</option>}
-                </select>
-                <ChevronDown />
+            <div className={`px-5 py-3 ${fieldErrors.accountId ? "bg-danger-soft/40" : ""}`}>
+              <div className="flex items-center">
+                <label htmlFor="account" className="text-sm text-text-muted w-28">
+                  {isTransfer ? "Dari Rekening" : "Rekening"}<RequiredMark />
+                </label>
+                <div className="flex-1 flex items-center gap-1 justify-end">
+                  <select
+                    id="account"
+                    aria-invalid={fieldErrors.accountId ? true : undefined}
+                    aria-describedby={fieldErrors.accountId ? "account-error" : undefined}
+                    className="text-sm text-text-primary bg-transparent focus:outline-none text-right appearance-none"
+                    value={accountId}
+                    onChange={(e) => { setAccountId(e.target.value); setFieldErrors((f) => ({ ...f, accountId: undefined })); }}
+                  >
+                    {accountOptions.map((a) => (
+                      <option key={a.id} value={a.id}>{a.nama}{!a.isActive ? " (nonaktif)" : ""}</option>
+                    ))}
+                    {accountOptions.length === 0 && <option value="">Tidak ada rekening</option>}
+                  </select>
+                  <ChevronDown />
+                </div>
               </div>
+              {fieldErrors.accountId && (
+                <p id="account-error" role="alert" className="text-xs text-danger-text mt-1 text-right">{fieldErrors.accountId}</p>
+              )}
             </div>
 
             {/* Rekening tujuan (transfer) */}
             {isTransfer && (
-              <div className="flex items-center px-5 py-3">
-                <label htmlFor="to-account" className="text-sm text-text-muted w-28">Ke Rekening<RequiredMark /></label>
-                <div className="flex-1 flex items-center gap-1 justify-end">
-                  <select
-                    id="to-account"
-                    className="text-sm text-text-primary bg-transparent focus:outline-none text-right appearance-none"
-                    value={toAccountId}
-                    onChange={(e) => setToAccountId(e.target.value)}
-                  >
-                    {toAccountOptions.map((a) => (
-                      <option key={a.id} value={a.id}>{a.nama}{!a.isActive ? " (nonaktif)" : ""}</option>
-                    ))}
-                    {toAccountOptions.length === 0 && <option value="">—</option>}
-                  </select>
-                  <ChevronDown />
+              <div className={`px-5 py-3 ${fieldErrors.toAccountId ? "bg-danger-soft/40" : ""}`}>
+                <div className="flex items-center">
+                  <label htmlFor="to-account" className="text-sm text-text-muted w-28">Ke Rekening<RequiredMark /></label>
+                  <div className="flex-1 flex items-center gap-1 justify-end">
+                    <select
+                      id="to-account"
+                      aria-invalid={fieldErrors.toAccountId ? true : undefined}
+                      aria-describedby={fieldErrors.toAccountId ? "to-account-error" : undefined}
+                      className="text-sm text-text-primary bg-transparent focus:outline-none text-right appearance-none"
+                      value={toAccountId}
+                      onChange={(e) => { setToAccountId(e.target.value); setFieldErrors((f) => ({ ...f, toAccountId: undefined })); }}
+                    >
+                      {toAccountOptions.map((a) => (
+                        <option key={a.id} value={a.id}>{a.nama}{!a.isActive ? " (nonaktif)" : ""}</option>
+                      ))}
+                      {toAccountOptions.length === 0 && <option value="">—</option>}
+                    </select>
+                    <ChevronDown />
+                  </div>
                 </div>
+                {fieldErrors.toAccountId && (
+                  <p id="to-account-error" role="alert" className="text-xs text-danger-text mt-1 text-right">{fieldErrors.toAccountId}</p>
+                )}
               </div>
             )}
 

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db, accounts, transactions } from "@wealth/db";
 import { eq, and, or, count, sql } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
+import { resolveHousehold, requireRole } from "../middleware/household";
 import { calculateAccountMutations } from "../services/accountMutation";
 import { createWealthSnapshot } from "../services/wealth";
 import { isUniqueViolation } from "../lib/dbErrors";
@@ -13,11 +14,14 @@ import type { AppEnv } from "../types";
 export const accountRoutes = new Hono<AppEnv>();
 
 accountRoutes.use("*", requireAuth);
+// Sprint 27 (Fase 4): data rekening di-scope per household (dilihat/diubah
+// bersama seluruh anggota), bukan lagi per-user — lihat middleware/household.ts.
+accountRoutes.use("*", resolveHousehold);
 
 // Sprint 16 (Fase 3) — lihat catatan di transactions.ts: fire-and-forget,
 // dipanggil setelah koreksi saldo / hapus rekening commit.
-function snapshotWealthInBackground(userId: string): void {
-  createWealthSnapshot(db, userId).catch((err) => {
+function snapshotWealthInBackground(householdId: string, userId: string): void {
+  createWealthSnapshot(db, householdId, userId).catch((err) => {
     console.error("[wealth-snapshot] gagal membuat snapshot", err);
   });
 }
@@ -26,8 +30,8 @@ function snapshotWealthInBackground(userId: string): void {
 const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
 
 accountRoutes.get("/", async (c) => {
-  const userId = c.get("userId") as string;
-  const rows = await db.select().from(accounts).where(eq(accounts.userId, userId));
+  const householdId = c.get("householdId");
+  const rows = await db.select().from(accounts).where(eq(accounts.householdId, householdId));
   return c.json(rows);
 });
 
@@ -38,20 +42,21 @@ const createSchema = z.object({
   saldoAwal: z.number().min(0).max(MAX_MONETARY_VALUE).finite().default(0),
 });
 
-accountRoutes.post("/", zValidator("json", createSchema), async (c) => {
+accountRoutes.post("/", requireRole("owner", "editor"), zValidator("json", createSchema), async (c) => {
   const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const { nama, saldoAwal } = c.req.valid("json");
   try {
     const [account] = await db
       .insert(accounts)
-      .values({ userId, nama, saldoCache: String(saldoAwal) })
+      .values({ userId, householdId, nama, saldoCache: String(saldoAwal) })
       .returning();
-    snapshotWealthInBackground(userId);
+    snapshotWealthInBackground(householdId, userId);
     return c.json(account, 201);
   } catch (err) {
     // Bug hunt (Issue 4): accounts dulu satu-satunya tabel CRUD tanpa
-    // pelindung nama duplikat — lihat migration 0009.
-    if (isUniqueViolation(err, "idx_accounts_user_nama_unique")) {
+    // pelindung nama duplikat — lihat migration 0009 (per-user) & 0013 (per-household).
+    if (isUniqueViolation(err, "idx_accounts_household_nama_unique")) {
       return c.json({ error: `Rekening dengan nama "${nama}" sudah ada — edit saldo rekening yang sudah ada, atau catat lewat transaksi agar otomatis digabung` }, 409);
     }
     throw err;
@@ -60,6 +65,7 @@ accountRoutes.post("/", zValidator("json", createSchema), async (c) => {
 
 accountRoutes.patch(
   "/:id",
+  requireRole("owner", "editor"),
   zValidator("param", idParam),
   zValidator("json", z.object({
     nama: z.string().min(1).optional(),
@@ -72,6 +78,7 @@ accountRoutes.patch(
   })),
   async (c) => {
     const userId = c.get("userId") as string;
+    const householdId = c.get("householdId");
     const { id } = c.req.valid("param");
     const { saldo, ...data } = c.req.valid("json");
 
@@ -95,7 +102,7 @@ accountRoutes.patch(
         .set({ ...data, ...(saldo !== undefined ? { saldoCache: String(saldo) } : {}) })
         .where(and(
           eq(accounts.id, id),
-          eq(accounts.userId, userId),
+          eq(accounts.householdId, householdId),
           // Guard atomic (hindari TOCTOU) — hanya diterapkan kalau isActive diset
           // false DAN saldo TIDAK ikut dikoreksi di request ini (kalau ikut,
           // sudah divalidasi = 0 di atas, jadi tidak perlu dicek lagi di WHERE).
@@ -106,8 +113,8 @@ accountRoutes.patch(
         .returning();
     } catch (err) {
       // Bug hunt (Issue 4): ganti nama rekening ke nama yang sudah dipakai
-      // rekening lain milik user yang sama.
-      if (isUniqueViolation(err, "idx_accounts_user_nama_unique")) {
+      // rekening lain milik household yang sama.
+      if (isUniqueViolation(err, "idx_accounts_household_nama_unique")) {
         return c.json({ error: `Nama rekening "${data.nama}" sudah dipakai rekening lain` }, 409);
       }
       throw err;
@@ -119,7 +126,7 @@ accountRoutes.patch(
       const [existing] = await db
         .select({ saldoCache: accounts.saldoCache })
         .from(accounts)
-        .where(and(eq(accounts.id, id), eq(accounts.userId, userId)));
+        .where(and(eq(accounts.id, id), eq(accounts.householdId, householdId)));
 
       if (!existing) return c.json({ error: "Not found" }, 404);
       return c.json({
@@ -127,7 +134,7 @@ accountRoutes.patch(
       }, 409);
     }
 
-    if (saldo !== undefined) snapshotWealthInBackground(userId);
+    if (saldo !== undefined) snapshotWealthInBackground(householdId, userId);
     return c.json(account);
   }
 );
@@ -137,17 +144,17 @@ accountRoutes.patch(
 // accountId maupun toAccountId transfer) + saldo berjalan (running balance).
 // Murni query baca, tidak ada logika bisnis baru — lihat accountMutation.ts.
 accountRoutes.get("/:id/mutasi", zValidator("param", idParam), async (c) => {
-  const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const { id } = c.req.valid("param");
 
-  const [account] = await db.select().from(accounts).where(and(eq(accounts.id, id), eq(accounts.userId, userId)));
+  const [account] = await db.select().from(accounts).where(and(eq(accounts.id, id), eq(accounts.householdId, householdId)));
   if (!account) return c.json({ error: "Rekening tidak ditemukan" }, 404);
 
   const txs = await db
     .select()
     .from(transactions)
     .where(and(
-      eq(transactions.userId, userId),
+      eq(transactions.householdId, householdId),
       or(
         eq(transactions.accountId, id),
         and(eq(transactions.type, "transfer"), eq(transactions.relatedEntityId, id)),
@@ -165,11 +172,12 @@ accountRoutes.get("/:id/mutasi", zValidator("param", idParam), async (c) => {
   });
 });
 
-accountRoutes.delete("/:id", zValidator("param", idParam), async (c) => {
+accountRoutes.delete("/:id", requireRole("owner", "editor"), zValidator("param", idParam), async (c) => {
   const userId = c.get("userId") as string;
+  const householdId = c.get("householdId");
   const { id } = c.req.valid("param");
 
-  // Also check relatedEntityId (transfer destination), scoped to this user's own transactions.
+  // Also check relatedEntityId (transfer destination), scoped to this household's transactions.
   // Bug hunt Low #1: relatedEntityId is polymorphic (transfer destination
   // account, or a debt/receivable/asset id for other types) — scope this
   // branch to type='transfer' so the guard only ever matches it against an
@@ -178,7 +186,7 @@ accountRoutes.delete("/:id", zValidator("param", idParam), async (c) => {
     .select({ total: count() })
     .from(transactions)
     .where(and(
-      eq(transactions.userId, userId),
+      eq(transactions.householdId, householdId),
       or(
         eq(transactions.accountId, id),
         and(eq(transactions.type, "transfer"), eq(transactions.relatedEntityId, id)),
@@ -189,7 +197,7 @@ accountRoutes.delete("/:id", zValidator("param", idParam), async (c) => {
     return c.json({ error: "Rekening masih memiliki transaksi terkait" }, 409);
   }
 
-  await db.delete(accounts).where(and(eq(accounts.id, id), eq(accounts.userId, userId)));
-  snapshotWealthInBackground(userId);
+  await db.delete(accounts).where(and(eq(accounts.id, id), eq(accounts.householdId, householdId)));
+  snapshotWealthInBackground(householdId, userId);
   return c.body(null, 204);
 });

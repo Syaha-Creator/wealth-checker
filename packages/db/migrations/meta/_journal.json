@@ -71,6 +71,41 @@
       "when": 1782865200007,
       "tag": "0009_accounts_unique_name",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782865200008,
+      "tag": "0010_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782865200009,
+      "tag": "0011_retirement_assumptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782865200010,
+      "tag": "0012_households_additive",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1782865200011,
+      "tag": "0013_households_enforce",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1782865200012,
+      "tag": "0014_transactions_household_indexes",
+      "breakpoints": true
     }
   ]
 }

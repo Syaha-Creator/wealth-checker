@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
+import { Tabs, tabPanelId, tabButtonId } from "@/components/ui/Tabs";
+import { ExportButtons } from "@/components/ExportButtons";
 import { computePresetRange } from "@/lib/dateRange";
 import type { DateRange } from "@/lib/dateRange";
 import { WealthHistoryReport } from "./_components/WealthHistoryReport";
@@ -30,6 +32,8 @@ const TABS: { id: TabId; label: string; needsDateFilter: boolean }[] = [
  * (lihat useApiResource) sehingga satu sub-laporan gagal/loading tidak
  * memengaruhi yang lain.
  */
+const TABS_ID_PREFIX = "analytics";
+
 export default function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState<TabId>("kekayaan-bersih");
   const [range, setRange] = useState<DateRange>(() => computePresetRange("3-bulan"));
@@ -40,23 +44,16 @@ export default function AnalyticsPage() {
     <div className="max-w-3xl">
       <PageHeader title="Analisa" subtitle="Pantau kesehatan keuanganmu dari berbagai sudut" />
 
-      <div className="flex gap-1.5 overflow-x-auto pb-1 mb-4 -mx-1 px-1" role="tablist" aria-label="Sub-laporan Analisa">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            role="tab"
-            aria-selected={activeTab === tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`shrink-0 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-              activeTab === tab.id
-                ? "bg-brand text-brand-text-on"
-                : "bg-surface text-text-secondary border border-border hover:bg-surface-hover"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <ExportButtons range={range} className="mb-4" />
+
+      <Tabs
+        items={TABS}
+        value={activeTab}
+        onChange={setActiveTab}
+        idPrefix={TABS_ID_PREFIX}
+        aria-label="Sub-laporan Analisa"
+        className="mb-4"
+      />
 
       {activeTabMeta.needsDateFilter ? (
         <DateRangeFilter value={range} onChange={setRange} className="mb-4" />
@@ -64,7 +61,12 @@ export default function AnalyticsPage() {
         <p className="text-xs text-text-muted mb-4">Dana darurat dihitung dari kondisi keuanganmu saat ini, tidak bergantung pada filter tanggal.</p>
       )}
 
-      <div role="tabpanel">
+      <div
+        role="tabpanel"
+        id={tabPanelId(TABS_ID_PREFIX, activeTab)}
+        aria-labelledby={tabButtonId(TABS_ID_PREFIX, activeTab)}
+        tabIndex={0}
+      >
         {activeTab === "kekayaan-bersih" && <WealthHistoryReport range={range} />}
         {activeTab === "laba-rugi" && <MonthlyPLReport range={range} />}
         {activeTab === "budgeting" && <BudgetVsActualReport range={range} />}

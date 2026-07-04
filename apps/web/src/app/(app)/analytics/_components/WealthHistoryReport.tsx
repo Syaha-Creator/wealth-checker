@@ -4,6 +4,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { Card } from "@/components/ui/Card";
 import { formatCurrency, formatCurrencyShort, formatDateShort } from "@/lib/format";
 import { useApiResource } from "@/lib/useApiResource";
+import { useMediaQuery } from "@/lib/useMediaQuery";
 import type { DateRange } from "@/lib/dateRange";
 import { ReportSkeleton, ReportError, ReportEmpty } from "./ReportStates";
 
@@ -17,6 +18,7 @@ export function WealthHistoryReport({ range }: { range: DateRange }) {
   const { data, loading, error, reload } = useApiResource<WealthHistoryResponse>(
     `/api/wealth/wealth-history?from=${range.from}&to=${range.to}`,
   );
+  const isNarrow = useMediaQuery("(max-width: 639px)");
 
   if (loading) return <ReportSkeleton />;
   if (error) return <ReportError message={error} onRetry={reload} />;
@@ -39,12 +41,12 @@ export function WealthHistoryReport({ range }: { range: DateRange }) {
           </span>
         </div>
         <p className="sr-only">{summaryText}</p>
-        <div className="h-64" aria-hidden="true">
+        <div className="h-48 sm:h-64 lg:h-72" aria-hidden="true">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={history} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis dataKey="tanggal" tickFormatter={formatDateShort} tick={{ fontSize: 11, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} minTickGap={30} />
-              <YAxis tickFormatter={(v) => formatCurrencyShort(v)} tick={{ fontSize: 11, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} width={64} />
+              <YAxis tickFormatter={(v) => formatCurrencyShort(v)} tick={{ fontSize: 11, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} width={isNarrow ? 42 : 64} />
               <Tooltip
                 formatter={(value) => [formatCurrency(Number(value)), "Kekayaan Bersih"]}
                 labelFormatter={(label) => formatDateShort(String(label))}

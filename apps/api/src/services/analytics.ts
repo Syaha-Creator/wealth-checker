@@ -2,6 +2,15 @@
 // budgeting.ts/debtReceivable.ts: agregasi SQL (GROUP BY bulan/kategori)
 // dilakukan di routes/analytics.ts, derivasi angka (tabungan, persentase,
 // selisih, dst) di sini agar bisa di-unit-test tanpa database.
+//
+// Sprint 25 (Fase 4): dua query agregasi (`fetchMonthlyPLRaw`,
+// `fetchBudgetVsActualAggregates`) DIPINDAH dari routes/analytics.ts ke sini
+// supaya services/reportData.ts (export PDF/Excel) bisa memakai query yang
+// SAMA PERSIS dengan endpoint /analytics/* — satu sumber kebenaran, bukan
+// query terpisah yang berisiko berbeda hasil.
+import { sql, and, eq, gte, lte, inArray } from "drizzle-orm";
+import type { DB } from "@wealth/db";
+import { transactions } from "@wealth/db";
 
 // ─── Sprint 17: Laba Rugi Bulanan ────────────────────────────────────────────
 
@@ -177,4 +186,81 @@ export function deriveIncomeBreakdown(rows: IncomeRaw[]): { items: IncomeBreakdo
     isTerbesar: i === 0 && r.total > 0,
   }));
   return { items, grandTotal };
+}
+
+// ─── Sprint 25 (Fase 4): query DB dipakai bersama routes/analytics.ts & reportData.ts ──
+
+/** Sama persis dengan query di GET /analytics/monthly-pl. */
+export async function fetchMonthlyPLRaw(db: DB, householdId: string, from: string, to: string): Promise<MonthlyPLRaw[]> {
+  const rows = await db.execute<Record<string, string>>(sql`
+    SELECT
+      to_char(tanggal, 'YYYY-MM') AS bulan,
+      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pendapatan'), 0) AS pendapatan,
+      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pinjaman_utang'), 0) AS "pinjamanMasuk",
+      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'bayar_utang'), 0) AS "bayarUtang",
+      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'penerimaan_piutang'), 0) AS "piutangTerbayar",
+      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pengeluaran'), 0) AS pengeluaran
+    FROM transactions
+    WHERE household_id = ${householdId} AND tanggal BETWEEN ${from} AND ${to}
+    GROUP BY 1
+    ORDER BY 1
+  `);
+
+  return (rows as unknown as Record<string, string>[]).map((r): MonthlyPLRaw => ({
+    bulan: r.bulan,
+    pendapatan: Number(r.pendapatan),
+    pinjamanMasuk: Number(r.pinjamanMasuk),
+    bayarUtang: Number(r.bayarUtang),
+    piutangTerbayar: Number(r.piutangTerbayar),
+    pengeluaran: Number(r.pengeluaran),
+  }));
+}
+
+export interface BudgetVsActualAggregates extends ActualAmounts {
+  totalPendapatan: number;
+  totalPengeluaran: number;
+}
+
+/** Sama persis dengan query agregat di GET /analytics/budget-vs-actual. */
+export async function fetchBudgetVsActualAggregates(
+  db: DB,
+  householdId: string,
+  from: string,
+  to: string,
+  essentialCategories: string[],
+): Promise<BudgetVsActualAggregates> {
+  const rows = await db.execute<Record<string, string>>(sql`
+    SELECT
+      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pendapatan'), 0) AS pendapatan,
+      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pengeluaran'), 0) AS pengeluaran,
+      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'pengeluaran' AND ${inArray(transactions.kategori, essentialCategories)}), 0) AS "kebutuhanPokok",
+      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'bayar_utang'), 0) AS "bayarUtang",
+      COALESCE(SUM(nominal::numeric) FILTER (WHERE type = 'beli_investasi'), 0) AS investasi
+    FROM transactions
+    WHERE household_id = ${householdId} AND tanggal BETWEEN ${from} AND ${to}
+  `);
+  const aggRow = (rows as unknown as Record<string, string>[])[0];
+
+  const totalPendapatan = Number(aggRow.pendapatan);
+  const totalPengeluaran = Number(aggRow.pengeluaran);
+  const kebutuhanPokok = Number(aggRow.kebutuhanPokok);
+
+  return {
+    totalPendapatan,
+    totalPengeluaran,
+    kebutuhanPokok,
+    bayarUtang: Number(aggRow.bayarUtang),
+    investasi: Number(aggRow.investasi),
+    gayaHidup: Math.max(0, totalPengeluaran - kebutuhanPokok),
+    tabungan: totalPendapatan - totalPengeluaran,
+  };
+}
+
+/** Query mentah transaksi dalam rentang, dipakai reportData.ts (daftar transaksi di laporan). */
+export async function fetchTransactionsInRange(db: DB, householdId: string, from: string, to: string) {
+  return db
+    .select()
+    .from(transactions)
+    .where(and(eq(transactions.householdId, householdId), gte(transactions.tanggal, from), lte(transactions.tanggal, to)))
+    .orderBy(transactions.tanggal);
 }

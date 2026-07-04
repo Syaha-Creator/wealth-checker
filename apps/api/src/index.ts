@@ -17,6 +17,9 @@ import { profileRoutes } from "./routes/profile";
 import { budgetRoutes } from "./routes/budget";
 import { analyticsRoutes } from "./routes/analytics";
 import { dreamGoalRoutes } from "./routes/dreamGoals";
+import { notificationRoutes } from "./routes/notifications";
+import { exportRoutes } from "./routes/export";
+import { householdRoutes } from "./routes/households";
 
 const ALLOWED_ORIGINS = [
   "https://wealth.velrox.cloud",
@@ -63,6 +66,9 @@ app.route("/api/profile", profileRoutes);
 app.route("/api", budgetRoutes);
 app.route("/api/analytics", analyticsRoutes);
 app.route("/api/dream-goals", dreamGoalRoutes);
+app.route("/api/notifications", notificationRoutes);
+app.route("/api/export", exportRoutes);
+app.route("/api/households", householdRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 
