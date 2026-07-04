@@ -210,8 +210,10 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
     await expect(page.locator("text=Financial Health Check-up")).toBeVisible({ timeout: 10_000 });
     await page.waitForTimeout(500);
     await assertNoErrorAlert(page);
-    // Rekening 950.000 kas, tanpa utang → kekayaanBersih < uang*3 → level 5 (Dana Pensiun)
-    await expect(page.locator("text=Dana Pensiun")).toBeVisible({ timeout: 10_000 });
+    // Rekening 950.000 kas, tanpa utang, belum ada investasi (totalLiquidAssets = 0)
+    // → uangBersih > 0 tapi totalLiquidAssets <= 0 → level 4 (Punya Dana Darurat).
+    // Lihat calculateWealthLevel() di services/wealth.ts.
+    await expect(page.locator("text=Punya Dana Darurat")).toBeVisible({ timeout: 10_000 });
   });
 
   await test.step("Budgeting Advisor (Sprint 14) — atur rencana lalu lihat alokasi", async () => {
@@ -228,9 +230,9 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
     await page.waitForTimeout(700);
     await assertNoErrorAlert(page);
 
-    // Level 5 (Dana Pensiun): kategori "Kebutuhan Pokok" 35% dari 5.000.000 = 1.750.000
+    // Level 4 (Punya Dana Darurat): kategori "Kebutuhan Pokok" 40% dari 5.000.000 = 2.000.000
     await expect(page.locator("text=Kebutuhan Pokok")).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator("text=1.750.000").first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("text=2.000.000").first()).toBeVisible({ timeout: 10_000 });
   });
 
   await test.step("Mutasi Rekening (Sprint 15) menampilkan riwayat transaksi rekening", async () => {
