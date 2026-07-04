@@ -112,6 +112,9 @@ budgetRoutes.get("/budgeting-advice", async (c) => {
     });
   }
 
-  const advice = calculateBudgetAllocation(rencanaPemasukanBulanan, ref);
-  return c.json({ ...advice, hasPlan: Boolean(plan) });
+  // calculateBudgetAllocation() returns `level` (generic service-layer naming,
+  // matches BudgetingAdvice); renamed to `wealthLevel` here to stay consistent
+  // with the other two response branches above and the wealth.ts endpoints.
+  const { level, ...advice } = calculateBudgetAllocation(rencanaPemasukanBulanan, ref);
+  return c.json({ ...advice, wealthLevel: level, hasPlan: Boolean(plan) });
 });
