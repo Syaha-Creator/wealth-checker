@@ -106,9 +106,11 @@ function mutasiTx(overrides: Partial<{
   };
 }
 
-/** Fixture: 4 transaksi Jan–Apr, saldoCache = 250rb */
+const SALDO_CACHE = 250_000;
+
+/** Fixture: 4 transaksi Jan–Mar, saldoCache = 250rb */
 function fullHistoryResult() {
-  return calculateAccountMutations(ACC, 250_000, [
+  return calculateAccountMutations(ACC, SALDO_CACHE, [
     mutasiTx({ id: "t1", tanggal: "2026-01-01", type: "pendapatan", nominal: "100000" }),
     mutasiTx({ id: "t2", tanggal: "2026-01-15", type: "pengeluaran", nominal: "50000" }),
     mutasiTx({ id: "t3", tanggal: "2026-02-01", type: "pendapatan", nominal: "100000" }),
@@ -161,5 +163,48 @@ describe("GET /accounts/:id/mutasi — date range filter", () => {
     if (!parsed.success) {
       expect(parsed.error.issues[0]?.message).toBe("from harus <= to");
     }
+  });
+
+  it("filteredRows kosong — rentang sebelum transaksi pertama → saldoSebelumPeriode = saldoAwalTurunan", () => {
+    const result = fullHistoryResult();
+    const { filteredRows, saldoSebelumPeriode } = applyMutasiDateFilter(
+      result.rows,
+      result.saldoAwalTurunan,
+      "2025-12-01",
+      "2025-12-31",
+      SALDO_CACHE,
+    );
+    expect(filteredRows).toHaveLength(0);
+    expect(saldoSebelumPeriode).toBe(result.saldoAwalTurunan);
+    expect(saldoSebelumPeriode).toBe(150_000);
+  });
+
+  it("filteredRows kosong — celah antar transaksi → saldoSebelumPeriode = saldoSetelah tx terakhir sebelum from", () => {
+    const result = fullHistoryResult();
+    const { filteredRows, saldoSebelumPeriode } = applyMutasiDateFilter(
+      result.rows,
+      result.saldoAwalTurunan,
+      "2026-02-15",
+      "2026-02-28",
+      SALDO_CACHE,
+    );
+    expect(filteredRows).toHaveLength(0);
+    // t3 (2026-02-01) saldoSetelah = 300rb — tx terakhir sebelum 2026-02-15
+    expect(saldoSebelumPeriode).toBe(300_000);
+    expect(saldoSebelumPeriode).not.toBe(result.saldoAwalTurunan);
+  });
+
+  it("filteredRows kosong — rentang setelah transaksi terakhir → saldoSebelumPeriode = saldoCache", () => {
+    const result = fullHistoryResult();
+    const { filteredRows, saldoSebelumPeriode } = applyMutasiDateFilter(
+      result.rows,
+      result.saldoAwalTurunan,
+      "2026-04-01",
+      "2026-04-30",
+      SALDO_CACHE,
+    );
+    expect(filteredRows).toHaveLength(0);
+    expect(saldoSebelumPeriode).toBe(SALDO_CACHE);
+    expect(saldoSebelumPeriode).not.toBe(result.saldoAwalTurunan);
   });
 });

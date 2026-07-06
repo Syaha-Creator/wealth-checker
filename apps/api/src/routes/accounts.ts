@@ -177,6 +177,7 @@ accountRoutes.get(
     result.saldoAwalTurunan,
     from,
     to,
+    Number(account.saldoCache),
   );
 
   return c.json({
