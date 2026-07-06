@@ -177,6 +177,14 @@ accountRoutes.delete("/:id", requireRole("owner", "editor"), zValidator("param",
   const householdId = c.get("householdId");
   const { id } = c.req.valid("param");
 
+  // Sprint 28 (Fase 4) bugfix: households.e2e.test.ts menemukan pola yang sama
+  // di debts/assets.ts — `.delete().where(...)` yang tidak match baris manapun
+  // (id milik household lain) tetap "sukses" tanpa error, jadi endpoint selalu
+  // balas 204 walau id bukan milik household aktif. Cek existence dulu supaya
+  // balas 404 dalam kasus itu.
+  const [existing] = await db.select({ id: accounts.id }).from(accounts).where(and(eq(accounts.id, id), eq(accounts.householdId, householdId)));
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
   // Also check relatedEntityId (transfer destination), scoped to this household's transactions.
   // Bug hunt Low #1: relatedEntityId is polymorphic (transfer destination
   // account, or a debt/receivable/asset id for other types) — scope this

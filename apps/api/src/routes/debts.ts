@@ -153,6 +153,15 @@ debtRoutes.delete("/:id", requireRole("owner", "editor"), zValidator("param", id
   const householdId = c.get("householdId");
   const { id } = c.req.valid("param");
 
+  // Sprint 28 (Fase 4) bugfix: households.e2e.test.ts menemukan DELETE ini
+  // selalu 204 walau id milik household lain — `.delete().where(...)` yang
+  // tidak match baris manapun (household salah) tetap "sukses" tanpa error,
+  // membocorkan status sukses palsu ke household yang tidak berhak. Cek
+  // existence dulu (sama seperti PATCH di atas & dreamGoals.ts) supaya balas
+  // 404, bukan 204, kalau debt bukan milik household aktif.
+  const [existing] = await db.select({ id: debts.id }).from(debts).where(and(eq(debts.id, id), eq(debts.householdId, householdId)));
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
   // High #4 (bug hunt): tanpa guard ini, hapus debt yang masih dirujuk transaksi
   // (pinjaman_utang/bayar_utang) meninggalkan relatedEntityId yatim.
   const [{ total }] = await db
@@ -266,6 +275,11 @@ debtRoutes.delete("/receivables/:id", requireRole("owner", "editor"), zValidator
   const userId = c.get("userId") as string;
   const householdId = c.get("householdId");
   const { id } = c.req.valid("param");
+
+  // Sprint 28 (Fase 4) bugfix: sama seperti debts.delete di atas — cek
+  // existence dulu supaya id milik household lain balas 404, bukan 204 palsu.
+  const [existing] = await db.select({ id: receivables.id }).from(receivables).where(and(eq(receivables.id, id), eq(receivables.householdId, householdId)));
+  if (!existing) return c.json({ error: "Not found" }, 404);
 
   // High #4 (bug hunt): sama seperti debts.delete di atas.
   const [{ total }] = await db

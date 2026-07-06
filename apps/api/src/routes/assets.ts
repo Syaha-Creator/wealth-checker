@@ -118,6 +118,13 @@ assetRoutes.delete("/liquid/:id", requireRole("owner", "editor"), zValidator("pa
   const householdId = c.get("householdId");
   const { id } = c.req.valid("param");
 
+  // Sprint 28 (Fase 4) bugfix: households.e2e.test.ts menemukan DELETE ini
+  // selalu 204 walau id milik household lain — `.delete().where(...)` yang
+  // tidak match baris manapun tetap "sukses" tanpa error. Cek existence dulu
+  // (sama seperti PATCH fixed asset & dreamGoals.ts) supaya balas 404.
+  const [existing] = await db.select({ id: liquidAssets.id }).from(liquidAssets).where(and(eq(liquidAssets.id, id), eq(liquidAssets.householdId, householdId)));
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
   // High #4 (bug hunt): tanpa guard ini, hapus aset yang masih dirujuk transaksi
   // (beli_investasi/jual_investasi) meninggalkan relatedEntityId yatim.
   const [{ total }] = await db
@@ -209,6 +216,11 @@ assetRoutes.delete("/fixed/:id", requireRole("owner", "editor"), zValidator("par
   const userId = c.get("userId") as string;
   const householdId = c.get("householdId");
   const { id } = c.req.valid("param");
+
+  // Sprint 28 (Fase 4) bugfix: sama seperti liquid.delete di atas — cek
+  // existence dulu supaya id milik household lain balas 404, bukan 204 palsu.
+  const [existing] = await db.select({ id: fixedAssets.id }).from(fixedAssets).where(and(eq(fixedAssets.id, id), eq(fixedAssets.householdId, householdId)));
+  if (!existing) return c.json({ error: "Not found" }, 404);
 
   // High #4 (bug hunt): sama seperti liquid.delete di atas.
   const [{ total }] = await db
