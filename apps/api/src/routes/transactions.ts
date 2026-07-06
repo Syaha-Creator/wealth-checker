@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { db, transactions, accounts, debts, receivables, liquidAssets, fixedAssets } from "@wealth/db";
-import { eq, and, or, desc, sql, isNotNull } from "drizzle-orm";
+import { eq, and, or, desc, sql, isNotNull, gte, lte } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { resolveHousehold, requireRole } from "../middleware/household";
 import { calculateMovingAverageCost, calculateProfitLoss, canSell, applySale } from "../services/movingAverageCost";
@@ -10,6 +10,7 @@ import { canPayDebt, canReceiveReceivable } from "../services/debtReceivable";
 import { createWealthSnapshot } from "../services/wealth";
 import { DEBIT_TYPES, CREDIT_TYPES } from "../lib/transactionTypes";
 import { zodErrorHook } from "../lib/validation";
+import { transactionsListQuerySchema } from "../lib/transactionsListQuerySchema";
 import type { AppEnv } from "../types";
 
 // Sprint 16 (Fase 3) — fire-and-forget: gagal membuat snapshot tidak boleh
@@ -483,15 +484,9 @@ async function upsertReceivableOnLend(
 
 // ─── GET / ────────────────────────────────────────────────────────────────────
 
-const listQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
-  offset: z.coerce.number().int().min(0).optional().default(0),
-  accountId: z.string().uuid().optional(),
-});
-
-transactionRoutes.get("/", zValidator("query", listQuerySchema, zodErrorHook), async (c) => {
+transactionRoutes.get("/", zValidator("query", transactionsListQuerySchema, zodErrorHook), async (c) => {
   const householdId = c.get("householdId");
-  const { limit, offset, accountId } = c.req.valid("query");
+  const { limit, offset, accountId, from, to, kategori } = c.req.valid("query");
   const rows = await db
     .select()
     .from(transactions)
@@ -507,6 +502,9 @@ transactionRoutes.get("/", zValidator("query", listQuerySchema, zodErrorHook), a
             and(eq(transactions.type, "transfer"), eq(transactions.relatedEntityId, accountId)),
           )
         : undefined,
+      from ? gte(transactions.tanggal, from) : undefined,
+      to ? lte(transactions.tanggal, to) : undefined,
+      kategori ? sql`lower(${transactions.kategori}) = lower(${kategori})` : undefined,
     ))
     .orderBy(desc(transactions.tanggal), desc(transactions.createdAt))
     .limit(limit)

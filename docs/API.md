@@ -261,7 +261,20 @@ List transactions for the authenticated user, newest first.
 |-------|------|---------|-------|
 | `limit` | number | `50` | Max `200` |
 | `offset` | number | `0` | For pagination |
-| `accountId` | string (UUID) | — | Filter to transactions whose source `accountId` matches. Does not match the destination side of a `transfer`. |
+| `accountId` | string (UUID) | — | Filter to transactions whose source `accountId` matches, **or** incoming `transfer` transactions where this account is the destination (`relatedEntityId`). |
+| `from` | `YYYY-MM-DD` | — | Include transactions on or after this date (inclusive) |
+| `to` | `YYYY-MM-DD` | — | Include transactions on or before this date (inclusive) |
+| `kategori` | string | — | Exact category match, case-insensitive (`lower(kategori)`) |
+
+`from`, `to`, and `kategori` are optional. If both `from` and `to` are provided, `from` must be `<= to` (otherwise `400`).
+
+Unlike `GET /api/accounts/:id/mutasi`, date and category filters here are applied **in the database `WHERE` clause before `LIMIT`/`OFFSET`**, so pagination operates on the filtered result set — not on the raw household history.
+
+**Example request**
+
+```
+GET /api/transactions?from=2026-01-01&to=2026-01-31&kategori=Makanan&limit=20&offset=0
+```
 
 **Response `200`**
 
@@ -297,6 +310,8 @@ List transactions for the authenticated user, newest first.
 | `jual_barang` | Sale of a fixed asset — increases account balance |
 | `beli_investasi` | Purchase of liquid asset / investment — decreases account balance |
 | `jual_investasi` | Sale of investment — increases account balance |
+
+**Error `400`** — invalid date format, or `from` > `to`.
 
 ---
 
