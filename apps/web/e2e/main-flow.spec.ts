@@ -199,7 +199,15 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
 
   await test.step("Halaman Utang & Piutang (Sprint 8/9) tampil tanpa error", async () => {
     await page.goto("/debts");
-    await expect(page.locator("text=Utang & Piutang")).toBeVisible({ timeout: 10_000 });
+    // Sprint 28 (Fase 4 UI/UX audit) bugfix: AppNav sidebar item "Utang & Piutang"
+    // (desktop) menampilkan label sebagai teks biasa sejak audit itu (bukan hanya
+    // aria-label), jadi `text=Utang & Piutang` sekarang cocok DUA elemen — link
+    // sidebar dan heading halaman ini — dan gagal strict-mode. Pakai getByRole
+    // "heading" supaya spesifik ke <h1>/PageHeader, bukan link navigasi.
+    // (Lihat juga: accounts "Rekening", analytics "Analisa", assets "Aset", dan
+    // profile "Profil" punya potensi tabrakan yang sama kalau nanti ada test baru
+    // yang mengecek judul halamannya lewat `text=` polos alih-alih role heading.)
+    await expect(page.getByRole("heading", { name: "Utang & Piutang" })).toBeVisible({ timeout: 10_000 });
     await page.waitForTimeout(500);
     await assertNoErrorAlert(page);
     await expect(page.locator("text=Belum ada utang tercatat")).toBeVisible({ timeout: 10_000 });

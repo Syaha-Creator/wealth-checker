@@ -45,7 +45,20 @@ export function HouseholdSwitcher({ className = "" }: { className?: string }) {
       .then((list: HouseholdListItem[]) => {
         if (cancelled) return;
         setHouseholds(list);
-        setActiveId(getActiveHouseholdId() ?? list[0]?.id ?? null);
+        const stored = getActiveHouseholdId();
+        const storedStillValid = stored !== null && list.some((h) => h.id === stored);
+        // Bugfix: kalau household yang tersimpan di localStorage sudah tidak
+        // valid lagi (mis. owner mengeluarkan user ini dari household tsb —
+        // lihat DELETE /households/members/:userId), JANGAN cuma fallback di
+        // state lokal komponen ini — apiFetch() membaca localStorage LANGSUNG
+        // di setiap request (lihat lib/apiFetch.ts), jadi tanpa persist balik
+        // ke localStorage di sini, seluruh fetch household-scoped lain di app
+        // (dashboard, transaksi, dst) akan terus mengirim id basi itu dan
+        // selamanya kena 403 "Anda bukan anggota household ini" sampai user
+        // membersihkan localStorage manual.
+        const resolvedId = storedStillValid ? stored : list[0]?.id ?? null;
+        if (!storedStillValid) setActiveHouseholdId(resolvedId);
+        setActiveId(resolvedId);
       })
       .catch(() => {
         if (!cancelled) setHouseholds([]);

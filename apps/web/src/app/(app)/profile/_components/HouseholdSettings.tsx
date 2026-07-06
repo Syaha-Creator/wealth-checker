@@ -73,6 +73,14 @@ export function HouseholdSettings() {
   const [switching, setSwitching] = useState(false);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<Member | null>(null);
+  // Sprint 28 (Fase 4) bugfix: sebelumnya tidak ada jalan bagi member
+  // editor/viewer untuk keluar dari household sendiri (tombol "Keluarkan"
+  // hanya muncul untuk owner, dan backend-nya memang menolak non-owner
+  // memanggil endpoint itu sama sekali) — plan Fase 4 eksplisit mensyaratkan
+  // "Tombol keluar dari household (bagi non-owner)". `leaveTarget` terpisah
+  // dari `removeTarget` supaya salinan pesan konfirmasi bisa dibedakan
+  // ("keluar" vs "keluarkan anggota lain").
+  const [leaveTarget, setLeaveTarget] = useState<Member | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const reload = () => setReloadKey((k) => k + 1);
 
@@ -175,6 +183,25 @@ export function HouseholdSettings() {
     }
   };
 
+  const handleLeave = async () => {
+    if (!leaveTarget || !membersData) return;
+    setBusyUserId(leaveTarget.userId);
+    setMessage(null);
+    try {
+      await apiFetch(`/api/households/members/${leaveTarget.userId}`, "DELETE");
+      // Household yang baru saja ditinggalkan bisa saja masih tersimpan sebagai
+      // "aktif" di localStorage — bersihkan supaya apiFetch() berikutnya jatuh
+      // ke default household lain di server (lihat resolveHousehold), bukan
+      // terus mengirim id household yang sudah bukan miliknya lagi.
+      if (getActiveHouseholdId() === membersData.householdId) setActiveHouseholdId(null);
+      window.location.reload();
+    } catch (err: unknown) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "Gagal keluar dari household" });
+      setBusyUserId(null);
+      setLeaveTarget(null);
+    }
+  };
+
   if (loading) {
     return (
       <Card>
@@ -263,7 +290,23 @@ export function HouseholdSettings() {
                   ) : (
                     <Badge variant="neutral">{ROLE_LABEL[m.role]}</Badge>
                   )}
-                  {isOwner && (
+                  {m.email === session?.user?.email ? (
+                    // Household beranggota 1 (kasus paling umum — household
+                    // pribadi bawaan) tidak punya siapa pun untuk "ditinggali",
+                    // dan server memang menolaknya (409) — sembunyikan saja
+                    // daripada menampilkan tombol yang pasti gagal.
+                    membersData.members.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="outline-danger"
+                        size="sm"
+                        loading={busyUserId === m.userId}
+                        onClick={() => setLeaveTarget(m)}
+                      >
+                        Keluar
+                      </Button>
+                    )
+                  ) : isOwner && (
                     <Button
                       type="button"
                       variant="outline-danger"
@@ -364,6 +407,21 @@ export function HouseholdSettings() {
         busy={busyUserId === removeTarget?.userId}
         onConfirm={handleRemoveMember}
         onCancel={() => setRemoveTarget(null)}
+      />
+
+      <ConfirmModal
+        open={Boolean(leaveTarget)}
+        title="Keluar dari Household"
+        message={
+          leaveTarget?.role === "owner"
+            ? "Anda owner household ini — kalau masih ada owner lain, Anda bisa keluar. Kalau Anda satu-satunya owner, alihkan kepemilikan ke anggota lain dulu sebelum keluar."
+            : "Yakin ingin keluar dari household ini? Anda akan kehilangan akses ke data keuangan bersama, tapi data yang pernah Anda catat tetap tersimpan."
+        }
+        confirmLabel="Ya, Keluar"
+        confirmVariant="danger"
+        busy={busyUserId === leaveTarget?.userId}
+        onConfirm={handleLeave}
+        onCancel={() => setLeaveTarget(null)}
       />
     </Card>
   );

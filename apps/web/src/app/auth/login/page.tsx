@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "@/lib/auth-client";
 import { Input, PasswordInput } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { apiFetch } from "@/lib/apiFetch";
+import { safeRedirectTarget } from "@/lib/safeRedirect";
 
 
 // Bug hunt (Issue 1): "sudah onboarding atau belum" dulu ditentukan dari
@@ -26,8 +27,14 @@ async function resolvePostLoginDestination(): Promise<"/onboarding" | "/dashboar
   }
 }
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Sprint 28 (Fase 4): kalau user sampai di sini gara-gara dilempar dari
+  // halaman terproteksi (mis. link undangan household saat belum login —
+  // lihat (app)/layout.tsx & safeRedirect.ts), kembalikan ke situ setelah
+  // berhasil masuk alih-alih selalu ke /onboarding atau /dashboard.
+  const redirectTarget = safeRedirectTarget(searchParams.get("redirect"));
   const { data: session, isPending } = useSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,8 +49,12 @@ export default function LoginPage() {
   useEffect(() => {
     if (isPending || !session || navigatingRef.current) return;
     navigatingRef.current = true;
+    if (redirectTarget) {
+      router.replace(redirectTarget);
+      return;
+    }
     resolvePostLoginDestination().then((destination) => router.replace(destination));
-  }, [session, isPending, router]);
+  }, [session, isPending, router, redirectTarget]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -128,11 +139,22 @@ export default function LoginPage() {
 
         <p className="text-center text-text-muted text-sm mt-5">
           Belum punya akun?{" "}
-          <Link href="/auth/register" className="text-brand hover:text-brand-hover font-medium">
+          <Link
+            href={redirectTarget ? `/auth/register?redirect=${encodeURIComponent(redirectTarget)}` : "/auth/register"}
+            className="text-brand hover:text-brand-hover font-medium"
+          >
             Daftar gratis
           </Link>
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginContent />
+    </Suspense>
   );
 }

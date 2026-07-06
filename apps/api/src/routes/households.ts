@@ -204,6 +204,27 @@ householdRoutes.patch("/members/:userId", resolveHousehold, requireRole("owner")
 
   if (!target) return c.json({ error: "Anggota tidak ditemukan di household ini" }, 404);
 
+  // Sprint 28 (Fase 4) bugfix: DELETE /members/:userId sudah menolak keluarkan
+  // owner terakhir (lihat guard di bawah), tapi endpoint role-change ini belum
+  // — owner bisa menurunkan role dirinya sendiri (atau owner lain) ke
+  // editor/viewer tanpa halangan, meninggalkan household TANPA owner sama
+  // sekali. Karena invite/remove-member/role-change semuanya di-gate
+  // requireRole("owner"), household begitu jadi terkunci permanen (tidak ada
+  // yang bisa mengelolanya lagi, termasuk mengembalikan role owner). Tolak
+  // penurunan role owner terakhir — harus transfer ownership ke anggota lain
+  // dulu (PATCH role anggota lain jadi "owner"), sama seperti alur yang sudah
+  // diwajibkan di DELETE.
+  if (target.role === "owner" && role !== "owner") {
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(householdMembers)
+      .where(and(eq(householdMembers.householdId, householdId), eq(householdMembers.role, "owner")));
+
+    if (Number(total) <= 1) {
+      return c.json({ error: "Tidak bisa menurunkan role owner terakhir — alihkan kepemilikan ke anggota lain terlebih dahulu" }, 409);
+    }
+  }
+
   const [updated] = await db
     .update(householdMembers)
     .set({ role })
@@ -213,11 +234,24 @@ householdRoutes.patch("/members/:userId", resolveHousehold, requireRole("owner")
   return c.json(updated);
 });
 
-// ─── DELETE /members/:userId — keluarkan anggota (owner-only) ───────────────
-householdRoutes.delete("/members/:userId", resolveHousehold, requireRole("owner"), async (c) => {
+// ─── DELETE /members/:userId — keluarkan anggota (owner), atau keluar sendiri ──
+// Sprint 28 (Fase 4) bugfix: sebelumnya endpoint ini di-gate blanket
+// requireRole("owner"), jadi TIDAK ADA cara bagi member editor/viewer untuk
+// keluar dari household sendiri (403 kalau mencoba) — plan Fase 4 eksplisit
+// mensyaratkan "Tombol keluar dari household (bagi non-owner)" tapi
+// backend-nya belum pernah mengizinkannya. Sekarang: siapa pun boleh
+// menghapus DIRINYA SENDIRI (self-leave); menghapus anggota LAIN tetap
+// owner-only. Guard "tidak bisa keluarkan anggota/owner terakhir" di bawah
+// tetap berlaku untuk kedua jalur.
+householdRoutes.delete("/members/:userId", resolveHousehold, async (c) => {
   const actingUserId = c.get("userId") as string;
+  const actingRole = c.get("householdRole");
   const householdId = c.get("householdId");
   const targetUserId = c.req.param("userId") as string;
+
+  if (targetUserId !== actingUserId && actingRole !== "owner") {
+    return c.json({ error: "Anda tidak memiliki izin untuk melakukan aksi ini" }, 403);
+  }
 
   const [target] = await db
     .select({ role: householdMembers.role })

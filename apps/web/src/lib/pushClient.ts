@@ -34,6 +34,10 @@ export interface SubscribePayload {
 /** Minta izin notifikasi + subscribe ke push. Melempar error kalau ditolak/gagal. */
 export async function subscribeToPush(vapidPublicKey: string): Promise<SubscribePayload> {
   if (!isPushSupported()) throw new Error("Browser ini tidak mendukung push notification");
+  // Tanpa guard ini, kunci kosong (NEXT_PUBLIC_VAPID_PUBLIC_KEY belum di-set di
+  // env deploy) baru ketahuan lewat DOMException mentah dari pushManager.subscribe()
+  // ("applicationServerKey is not valid") — pesan yang membingungkan untuk user.
+  if (!vapidPublicKey) throw new Error("Push notification belum dikonfigurasi di server");
 
   const permission = await Notification.requestPermission();
   if (permission !== "granted") throw new Error("Izin notifikasi ditolak — aktifkan lewat setelan browser untuk melanjutkan");

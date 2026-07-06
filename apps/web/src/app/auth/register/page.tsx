@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signUp, useSession } from "@/lib/auth-client";
 import { Input, PasswordInput } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { safeRedirectTarget } from "@/lib/safeRedirect";
 
 // Bug hunt (Issue 11): dulu kriteria ini cuma kosmetik — password 8 karakter
 // tanpa huruf besar/angka tetap lolos daftar (Better Auth server-side cuma
@@ -51,8 +52,13 @@ function PasswordStrength({ password }: { password: string }) {
   );
 }
 
-export default function RegisterPage() {
+function RegisterContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Sprint 28 (Fase 4): sama seperti login — kalau ada tujuan tersimpan (mis.
+  // link undangan household yang diklik sebelum akun ini dibuat), utamakan itu
+  // daripada alur onboarding default. Lihat safeRedirect.ts & (app)/layout.tsx.
+  const redirectTarget = safeRedirectTarget(searchParams.get("redirect"));
   const { data: session, isPending } = useSession();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -63,9 +69,9 @@ export default function RegisterPage() {
   // Sudah login? langsung redirect
   useEffect(() => {
     if (!isPending && session) {
-      router.replace("/onboarding");
+      router.replace(redirectTarget ?? "/onboarding");
     }
-  }, [session, isPending, router]);
+  }, [session, isPending, router, redirectTarget]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -97,7 +103,7 @@ export default function RegisterPage() {
       return;
     }
 
-    router.push("/onboarding");
+    router.push(redirectTarget ?? "/onboarding");
     router.refresh();
   }
 
@@ -181,11 +187,22 @@ export default function RegisterPage() {
 
         <p className="text-center text-text-muted text-sm mt-5">
           Sudah punya akun?{" "}
-          <Link href="/auth/login" className="text-brand hover:text-brand-hover font-medium">
+          <Link
+            href={redirectTarget ? `/auth/login?redirect=${encodeURIComponent(redirectTarget)}` : "/auth/login"}
+            className="text-brand hover:text-brand-hover font-medium"
+          >
             Masuk
           </Link>
         </p>
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterContent />
+    </Suspense>
   );
 }

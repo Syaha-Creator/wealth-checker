@@ -13,7 +13,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isPending && !session) {
-      router.replace("/auth/login");
+      // Bawa path + query tujuan lewat ?redirect= supaya login/register bisa
+      // mengembalikan user ke sini setelah autentikasi — penting untuk link
+      // undangan household yang dibuka saat belum login (lihat safeRedirect.ts).
+      const target = `${window.location.pathname}${window.location.search}`;
+      router.replace(`/auth/login?redirect=${encodeURIComponent(target)}`);
     }
   }, [session, isPending, router]);
 

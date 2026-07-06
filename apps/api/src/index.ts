@@ -44,7 +44,18 @@ app.use(
       if (ALLOWED_ORIGINS.includes(origin)) return origin;
       return null; // reject
     },
-    allowHeaders: ["Content-Type", "Authorization", "Cookie"],
+    // Sprint 28 (Fase 4) bugfix: household switcher (X-Household-Id, lihat
+    // middleware/household.ts) tidak pernah tercantum di sini. Web app JALAN
+    // BENAR-BENAR cross-origin di semua env terkonfigurasi (NEXT_PUBLIC_API_URL
+    // absolut, beda port dari web — lihat docker-compose*.yml/.env.example),
+    // bukan lewat rewrite proxy Next.js yang sama-origin. Tanpa header ini di
+    // allowlist, browser MENOLAK preflight OPTIONS begitu ada household aktif
+    // selain default (setelah switch pertama) — request browser gagal total
+    // ("Failed to fetch") sebelum sempat sampai ke handler manapun, jadi tidak
+    // kelihatan di log server sama sekali. Ini mematikan seluruh fitur
+    // household switching di semua deployment nyata begitu user pernah pindah
+    // household.
+    allowHeaders: ["Content-Type", "Authorization", "Cookie", "X-Household-Id"],
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     exposeHeaders: ["Set-Cookie"],
     credentials: true,
