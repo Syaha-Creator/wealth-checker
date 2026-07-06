@@ -5,6 +5,9 @@ import { db, authUser, authSession, authAccount, authVerification } from "@wealt
 
 const productionOrigin = "https://wealth.velrox.cloud";
 const devOrigin = "http://localhost:3010";
+// Custom scheme untuk Wealth Checker Mobile (Flutter) — bukan browser, tapi
+// Better Auth tetap validasi header Origin pada request state-changing (CSRF).
+const mobileOrigin = "app://wealth-checker-mobile";
 
 // Additional origins (e.g. E2E/staging) can be injected via env var,
 // comma-separated — avoids hardcoding every environment into source.
@@ -44,7 +47,7 @@ export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL ?? devOrigin,
 
   // Origin yang diizinkan untuk cross-origin requests
-  trustedOrigins: [productionOrigin, devOrigin, ...extraOrigins],
+  trustedOrigins: [productionOrigin, devOrigin, mobileOrigin, ...extraOrigins],
 
   secret: process.env.BETTER_AUTH_SECRET!,
 
