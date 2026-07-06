@@ -7,9 +7,9 @@
 -- budget_plans). Kolom masih nullable supaya migration ini TIDAK breaking —
 -- kode aplikasi lama yang masih query by user_id tetap berjalan normal.
 --
--- Urutan rilis: 0012 (migration ini) -> jalankan script backfill
--- (src/scripts/backfillHouseholds.ts) -> verifikasi 0 baris NULL -> migration
--- 0013 (set NOT NULL + constraint household-scoped + drop kolom lama bila perlu).
+-- Urutan rilis: 0012 (migration ini) -> 0013 (backfill inline + set NOT NULL +
+-- constraint household-scoped). Script backfillHouseholds.ts tetap tersedia
+-- untuk verifikasi manual / dry-run di staging sebelum deploy.
 
 --> statement-breakpoint
 CREATE TYPE "household_role" AS ENUM ('owner', 'editor', 'viewer');

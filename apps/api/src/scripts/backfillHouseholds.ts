@@ -9,8 +9,10 @@
 // dibuatkan household baru, dan baris yang household_id-nya sudah terisi
 // tidak disentuh lagi (lihat WHERE ... IS NULL di backfillHouseholdForUser).
 //
-// WAJIB dijalankan sampai `countRowsMissingHousehold` melaporkan 0 di semua
-// tabel SEBELUM migration 0013 (set household_id NOT NULL) diterapkan.
+// Sejak Sprint 28, migration 0013 sudah menyertakan backfill SQL inline
+// (idempoten) — `bun run db:migrate` saja sudah cukup di CI/deploy. Script
+// ini tetap berguna untuk verifikasi manual / dry-run di staging: jalankan
+// sebelum migrate dan pastikan `countRowsMissingHousehold` melaporkan 0.
 import { db, authUser } from "@wealth/db";
 import { backfillHouseholdForUser, countRowsMissingHousehold } from "../services/household";
 

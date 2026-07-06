@@ -1,13 +1,127 @@
 -- Migration 0013 (Fase 4, Sprint 27): Multi-User / Family Sharing — TAHAP 2
--- (enforce). WAJIB dijalankan HANYA SETELAH script backfill
--- (apps/api/src/scripts/backfillHouseholds.ts) selesai dan melaporkan 0 baris
--- tanpa household_id di kesembilan tabel data.
+-- (enforce). Mengubah household_id dari nullable -> NOT NULL, dan menggeser
+-- scope unique constraint dari per-user ke per-household.
 --
--- Mengubah household_id dari nullable -> NOT NULL, dan menggeser scope unique
--- constraint dari per-user ke per-household (member household yang sama kini
--- berbagi satu "namespace" nama rekening/aset/pemberi-utang/peminjam/rencana
--- budget/snapshot kekayaan per hari — bukan lagi terpisah per individu).
+-- Sprint 28 bugfix: deploy/CI hanya menjalankan `bun run db:migrate` tanpa
+-- script backfillHouseholds.ts terpisah — SET NOT NULL gagal (23502) kalau
+-- masih ada baris legacy dengan household_id NULL. Backfill idempoten di bawah
+-- ini meniru apps/api/src/services/household.ts (backfillHouseholdForUser) +
+-- backfillHouseholds.ts, aman dijalankan ulang (user yang sudah punya
+-- household / baris yang sudah terisi tidak disentuh).
 
+--> statement-breakpoint
+WITH users_needing_household AS (
+  SELECT
+    u.id AS user_id,
+    gen_random_uuid() AS household_id,
+    CASE
+      WHEN length(trim(coalesce(u.name, ''))) > 0 THEN 'Keluarga ' || trim(u.name)
+      WHEN length(trim(coalesce(u.email, ''))) > 0 THEN 'Keluarga ' || trim(u.email)
+      ELSE 'Keluarga Saya'
+    END AS nama
+  FROM "user" u
+  WHERE NOT EXISTS (
+    SELECT 1 FROM household_members hm WHERE hm.user_id = u.id
+  )
+),
+inserted_households AS (
+  INSERT INTO households (id, nama)
+  SELECT household_id, nama FROM users_needing_household
+  RETURNING id
+)
+INSERT INTO household_members (household_id, user_id, role)
+SELECT household_id, user_id, 'owner'::household_role
+FROM users_needing_household;
+--> statement-breakpoint
+UPDATE accounts a
+SET household_id = ph.household_id
+FROM (
+  SELECT DISTINCT ON (hm.user_id) hm.user_id, hm.household_id
+  FROM household_members hm
+  ORDER BY hm.user_id, hm.joined_at ASC
+) ph
+WHERE a.user_id = ph.user_id
+  AND a.household_id IS NULL;
+--> statement-breakpoint
+UPDATE transactions t
+SET household_id = ph.household_id
+FROM (
+  SELECT DISTINCT ON (hm.user_id) hm.user_id, hm.household_id
+  FROM household_members hm
+  ORDER BY hm.user_id, hm.joined_at ASC
+) ph
+WHERE t.user_id = ph.user_id
+  AND t.household_id IS NULL;
+--> statement-breakpoint
+UPDATE debts d
+SET household_id = ph.household_id
+FROM (
+  SELECT DISTINCT ON (hm.user_id) hm.user_id, hm.household_id
+  FROM household_members hm
+  ORDER BY hm.user_id, hm.joined_at ASC
+) ph
+WHERE d.user_id = ph.user_id
+  AND d.household_id IS NULL;
+--> statement-breakpoint
+UPDATE receivables r
+SET household_id = ph.household_id
+FROM (
+  SELECT DISTINCT ON (hm.user_id) hm.user_id, hm.household_id
+  FROM household_members hm
+  ORDER BY hm.user_id, hm.joined_at ASC
+) ph
+WHERE r.user_id = ph.user_id
+  AND r.household_id IS NULL;
+--> statement-breakpoint
+UPDATE liquid_assets la
+SET household_id = ph.household_id
+FROM (
+  SELECT DISTINCT ON (hm.user_id) hm.user_id, hm.household_id
+  FROM household_members hm
+  ORDER BY hm.user_id, hm.joined_at ASC
+) ph
+WHERE la.user_id = ph.user_id
+  AND la.household_id IS NULL;
+--> statement-breakpoint
+UPDATE fixed_assets fa
+SET household_id = ph.household_id
+FROM (
+  SELECT DISTINCT ON (hm.user_id) hm.user_id, hm.household_id
+  FROM household_members hm
+  ORDER BY hm.user_id, hm.joined_at ASC
+) ph
+WHERE fa.user_id = ph.user_id
+  AND fa.household_id IS NULL;
+--> statement-breakpoint
+UPDATE wealth_snapshots ws
+SET household_id = ph.household_id
+FROM (
+  SELECT DISTINCT ON (hm.user_id) hm.user_id, hm.household_id
+  FROM household_members hm
+  ORDER BY hm.user_id, hm.joined_at ASC
+) ph
+WHERE ws.user_id = ph.user_id
+  AND ws.household_id IS NULL;
+--> statement-breakpoint
+UPDATE dream_goals dg
+SET household_id = ph.household_id
+FROM (
+  SELECT DISTINCT ON (hm.user_id) hm.user_id, hm.household_id
+  FROM household_members hm
+  ORDER BY hm.user_id, hm.joined_at ASC
+) ph
+WHERE dg.user_id = ph.user_id
+  AND dg.household_id IS NULL;
+--> statement-breakpoint
+UPDATE budget_plans bp
+SET household_id = ph.household_id
+FROM (
+  SELECT DISTINCT ON (hm.user_id) hm.user_id, hm.household_id
+  FROM household_members hm
+  ORDER BY hm.user_id, hm.joined_at ASC
+) ph
+WHERE bp.user_id = ph.user_id
+  AND bp.household_id IS NULL;
 --> statement-breakpoint
 ALTER TABLE "accounts" ALTER COLUMN "household_id" SET NOT NULL;
 --> statement-breakpoint
