@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RequiredMark } from "@/components/ui/Input";
@@ -185,7 +186,7 @@ function NewTransactionForm() {
   // silently-disabled submit button.
   if (accountsLoaded && accounts.length === 0) {
     return (
-      <div className="max-w-4xl">
+      <PageShell width="narrow">
         <PageHeader title="Catat Transaksi" onBack={() => router.back()} />
         <EmptyState
           icon={<AccountIcon />}
@@ -194,16 +195,15 @@ function NewTransactionForm() {
           action={<Button href="/accounts">Tambah Rekening Pertama</Button>}
           className="bg-surface rounded-2xl border border-border"
         />
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="max-w-4xl">
+    <PageShell width="narrow">
       <PageHeader title="Catat Transaksi" onBack={() => router.back()} />
 
-      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_280px] lg:gap-6 lg:items-start">
-      <div className="max-w-xl min-w-0">
+      <div className="max-w-xl mx-auto min-w-0">
 
       {/* Type selector */}
       <div className="flex gap-2 mb-6 bg-surface-hover p-1 rounded-xl" role="group" aria-label="Tipe transaksi">
@@ -463,11 +463,10 @@ function NewTransactionForm() {
       </form>
       </>
       )}
-      </div>
 
-      {/* Ringkasan rekening — desktop only, mirrors the inline saldo indicator with more context */}
+      {/* Ringkasan rekening — di desktop tampil di bawah form (kolom sempit ter-center) */}
       {!showOther && (
-      <div className="hidden lg:block lg:sticky lg:top-6 mt-8 lg:mt-0">
+      <div className="hidden md:block mt-6">
         <div className="bg-surface rounded-2xl border border-border p-5">
           <h2 className="text-sm font-semibold text-text-primary mb-4">Ringkasan Rekening</h2>
 
@@ -514,7 +513,7 @@ function NewTransactionForm() {
       </div>
       )}
       </div>
-    </div>
+    </PageShell>
   );
 }
 

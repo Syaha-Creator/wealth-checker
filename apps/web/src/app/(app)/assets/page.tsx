@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import type { FormEvent } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -252,7 +253,7 @@ function AssetTab({
             </Select>
             <Input id="asset-tanggal" type="date" label="Tanggal" value={tanggal} onChange={(e) => setTanggal(e.target.value)} required />
           </div>
-          <div className="flex gap-2 mt-4 max-w-xs">
+          <div className="flex gap-2 mt-4 max-w-sm">
             <Button type="button" variant="secondary" fullWidth onClick={() => { setShowAddForm(false); resetAddForm(); }}>Batal</Button>
             <Button type="submit" fullWidth loading={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>
           </div>
@@ -262,9 +263,9 @@ function AssetTab({
       {items.length === 0 ? (
         <EmptyState icon={<Icon />} title={`Belum ada ${label.toLowerCase()} tercatat`} description={`Catat pembelian ${label.toLowerCase()} untuk mulai melacak nilai & keuntungannya`} />
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 xl:gap-4">
           {items.length > 5 && (
-            <div className="relative">
+            <div className="relative col-span-full">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true">
                 <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
@@ -279,7 +280,7 @@ function AssetTab({
             </div>
           )}
           {filteredItems.length === 0 && (
-            <p className="text-sm text-text-muted text-center py-6">Tidak ada {label.toLowerCase()} yang cocok dengan &quot;{search}&quot;</p>
+            <p className="col-span-full text-sm text-text-muted text-center py-6">Tidak ada {label.toLowerCase()} yang cocok dengan &quot;{search}&quot;</p>
           )}
           {filteredItems.map((item) => {
             const sellJumlahValue = Number(sellJumlah) || 0;
@@ -336,7 +337,7 @@ function AssetTab({
                       {accounts.map((a) => <option key={a.id} value={a.id}>{a.nama}</option>)}
                     </Select>
                     <Input id={`sell-tanggal-${item.id}`} type="date" label="Tanggal" value={sellTanggal} onChange={(e) => setSellTanggal(e.target.value)} required />
-                    <div className="flex gap-2 max-w-xs">
+                    <div className="flex gap-2 max-w-sm">
                       <Button type="button" variant="secondary" fullWidth onClick={() => setSellingId(null)}>Batal</Button>
                       <Button type="submit" fullWidth loading={sellSaving} disabled={sellExceedsOwned}>{sellSaving ? "Memproses..." : "Jual"}</Button>
                     </div>
@@ -416,7 +417,7 @@ export default function AssetsPage() {
   }, []);
 
   return (
-    <div className="max-w-3xl">
+    <PageShell width="wide">
       <PageHeader title="Aset" subtitle="Lacak barang & investasi Anda" />
 
       <Tabs
@@ -426,7 +427,7 @@ export default function AssetsPage() {
         idPrefix={ASSET_TABS_ID_PREFIX}
         aria-label="Barang atau Investasi"
         fitted
-        className="mb-6 max-w-xs"
+        className="mb-6 max-w-sm"
       />
 
       {fetchError && <ErrorBanner message={fetchError} onRetry={refetch} />}
@@ -449,6 +450,6 @@ export default function AssetsPage() {
           <AssetTab kind="investasi" summary={liquidSummary} allRows={liquidAll} accounts={accounts} accountsLoaded={accountsLoaded} onChanged={refetch} />
         )}
       </div>
-    </div>
+    </PageShell>
   );
 }

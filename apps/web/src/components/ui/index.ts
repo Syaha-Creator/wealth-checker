@@ -7,6 +7,8 @@ export { Badge } from "./Badge";
 export { EmptyState } from "./EmptyState";
 export { Skeleton, SkeletonCard, SkeletonRow, SkeletonHero } from "./Skeleton";
 export { PageHeader } from "./PageHeader";
+export { PageShell } from "./PageShell";
+export type { PageWidth } from "./PageShell";
 export { StatCard } from "./StatCard";
 export { DateRangeFilter } from "./DateRangeFilter";
 export { Toggle } from "./Toggle";

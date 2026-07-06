@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { RequiredMark } from "@/components/ui/Input";
@@ -171,9 +172,9 @@ export default function EditTransactionPage() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl">
+      <PageShell width="narrow">
         <PageHeader title="Edit Transaksi" onBack={() => router.back()} />
-        <div className="max-w-xl">
+        <div className="max-w-xl mx-auto">
           <Skeleton className="h-5 w-40 mb-4" />
           <div className="space-y-4">
             <Skeleton className="h-24 rounded-2xl" />
@@ -191,37 +192,37 @@ export default function EditTransactionPage() {
             </div>
           </div>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   if (loadError || !trx) {
     return (
-      <div className="max-w-4xl">
+      <PageShell width="narrow">
         <PageHeader title="Edit Transaksi" onBack={() => router.back()} />
-        <div className="p-4 bg-danger-soft border border-danger-soft-border rounded-xl text-sm text-danger-text" role="alert">
+        <div className="max-w-xl mx-auto p-4 bg-danger-soft border border-danger-soft-border rounded-xl text-sm text-danger-text" role="alert">
           {loadError || "Transaksi tidak ditemukan"}
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   if (isAssetType) {
     return (
-      <div className="max-w-4xl">
+      <PageShell width="narrow">
         <PageHeader title="Edit Transaksi" onBack={() => router.back()} />
-        <div className="p-4 bg-warning-soft border border-warning-soft-border rounded-xl text-sm text-warning-text" role="alert">
+        <div className="max-w-xl mx-auto p-4 bg-warning-soft border border-warning-soft-border rounded-xl text-sm text-warning-text" role="alert">
           Transaksi beli/jual aset tidak bisa diedit karena mempengaruhi harga rata-rata berjalan. Catat transaksi penyesuaian baru jika diperlukan.
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="max-w-4xl">
+    <PageShell width="narrow">
       <PageHeader title="Edit Transaksi" onBack={() => router.back()} />
 
-      <div className="max-w-xl">
+      <div className="max-w-xl mx-auto">
         {/* Tipe transaksi — read-only, tidak bisa diubah lewat edit */}
         <div className="mb-4 flex items-center gap-2">
           <span className="text-xs text-text-muted">Tipe transaksi</span>
@@ -377,6 +378,6 @@ export default function EditTransactionPage() {
           </div>
         </form>
       </div>
-    </div>
+    </PageShell>
   );
 }

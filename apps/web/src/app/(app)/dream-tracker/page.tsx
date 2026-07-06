@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import type { FormEvent } from "react";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
@@ -212,7 +213,7 @@ export default function DreamTrackerPage() {
           />
         )}
       </div>
-      <div className="flex gap-2 mt-4 max-w-xs">
+      <div className="flex gap-2 mt-4 max-w-sm">
         <Button type="button" variant="secondary" fullWidth onClick={closeForm}>Batal</Button>
         <Button type="submit" fullWidth loading={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>
       </div>
@@ -220,7 +221,7 @@ export default function DreamTrackerPage() {
   );
 
   return (
-    <div className="max-w-3xl">
+    <PageShell width="wide">
       <ConfirmModal
         open={Boolean(deleteTarget)}
         title="Hapus Impian"
@@ -264,7 +265,7 @@ export default function DreamTrackerPage() {
           action={<Button size="sm" onClick={openNewForm}>Tambah Impian</Button>}
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {goals.map((goal) => (
             <Card key={goal.id} className={goal.tercapai ? "border-brand" : ""}>
               <div className="flex items-start justify-between gap-2 mb-2">
@@ -312,6 +313,6 @@ export default function DreamTrackerPage() {
           ))}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

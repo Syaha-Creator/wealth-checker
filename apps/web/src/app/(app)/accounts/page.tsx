@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
@@ -213,7 +214,7 @@ export default function AccountsPage() {
   const totalSaldo = accounts.filter((a) => a.isActive).reduce((s, a) => s + Number(a.saldoCache), 0);
 
   return (
-    <div>
+    <PageShell width="full">
       <ConfirmModal
         open={modal.open}
         title={modal.title}
@@ -236,9 +237,8 @@ export default function AccountsPage() {
         }
       />
 
-      <div className="max-w-5xl">
-        {/* Total */}
-        {loading ? (
+      {/* Total */}
+      {loading ? (
           <SkeletonHero className="h-24 mb-6" />
         ) : (
           <div className="bg-brand text-white rounded-2xl p-5 sm:p-6 mb-6">
@@ -298,7 +298,7 @@ export default function AccountsPage() {
                 </div>
               </div>
             </div>
-            <div className="flex gap-2 mt-4 max-w-xs">
+            <div className="flex gap-2 mt-4 max-w-sm">
               <Button type="button" variant="secondary" fullWidth onClick={() => { setShowForm(false); setError(""); }}>
                 Batal
               </Button>
@@ -407,7 +407,6 @@ export default function AccountsPage() {
             ))}
           </div>
         )}
-      </div>
-    </div>
+    </PageShell>
   );
 }

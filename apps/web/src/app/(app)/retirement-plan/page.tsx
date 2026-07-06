@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -120,7 +121,7 @@ export default function RetirementPlanPage() {
     : 0;
 
   return (
-    <div className="max-w-2xl">
+    <PageShell width="narrow">
       <PageHeader title="Rencana Pensiun & Warisan" subtitle="Proyeksi dana yang kamu butuhkan menuju pensiun dan warisan" />
 
       {loading ? (
@@ -247,6 +248,6 @@ export default function RetirementPlanPage() {
           {showAdvanced && <RetirementAdvancedPanel totalDanaPensiunWarisanSimple={data.plan.totalDanaPensiunWarisan} />}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

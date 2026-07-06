@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -121,7 +122,7 @@ export default function MutasiRekeningPage() {
   }, [accountId, retryKey]);
 
   return (
-    <div className="max-w-2xl">
+    <PageShell width="narrow">
       <PageHeader
         title={data ? `Mutasi ${data.account.nama}` : "Mutasi Rekening"}
         subtitle="Riwayat transaksi & saldo berjalan"
@@ -186,6 +187,6 @@ export default function MutasiRekeningPage() {
           )}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

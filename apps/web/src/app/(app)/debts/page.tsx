@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import type { FormEvent } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -259,7 +260,7 @@ function DebtTab({
             </Select>
             <Input id="debt-tanggal" type="date" label="Tanggal" value={tanggal} onChange={(e) => setTanggal(e.target.value)} required />
           </div>
-          <div className="flex gap-2 mt-4 max-w-xs">
+          <div className="flex gap-2 mt-4 max-w-sm">
             <Button type="button" variant="secondary" fullWidth onClick={() => { setShowAddForm(false); resetAddForm(); }}>Batal</Button>
             <Button type="submit" fullWidth loading={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>
           </div>
@@ -269,9 +270,9 @@ function DebtTab({
       {items.length === 0 ? (
         <EmptyState icon={<DebtIcon />} title="Belum ada utang tercatat" description="Catat pinjaman baru untuk mulai melacak cicilan Anda" />
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 xl:gap-4">
           {items.length > 5 && (
-            <div className="relative">
+            <div className="relative col-span-full">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true">
                 <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
@@ -286,7 +287,7 @@ function DebtTab({
             </div>
           )}
           {filteredItems.length === 0 && (
-            <p className="text-sm text-text-muted text-center py-6">Tidak ada utang yang cocok dengan &quot;{search}&quot;</p>
+            <p className="col-span-full text-sm text-text-muted text-center py-6">Tidak ada utang yang cocok dengan &quot;{search}&quot;</p>
           )}
           {filteredItems.map((d) => (
             <Card key={d.id}>
@@ -338,7 +339,7 @@ function DebtTab({
                       {accounts.map((a) => <option key={a.id} value={a.id}>{a.nama}</option>)}
                     </Select>
                     <Input id={`pay-tanggal-${d.id}`} type="date" label="Tanggal" value={payTanggal} onChange={(e) => setPayTanggal(e.target.value)} required />
-                    <div className="flex gap-2 max-w-xs">
+                    <div className="flex gap-2 max-w-sm">
                       <Button type="button" variant="secondary" fullWidth onClick={() => setPayingId(null)}>Batal</Button>
                       <Button type="submit" fullWidth loading={paySaving} disabled={payExceedsLimit}>{paySaving ? "Memproses..." : "Bayar"}</Button>
                     </div>
@@ -482,7 +483,7 @@ function ReceivableTab({
             </Select>
             <Input id="rec-tanggal" type="date" label="Tanggal" value={tanggal} onChange={(e) => setTanggal(e.target.value)} required />
           </div>
-          <div className="flex gap-2 mt-4 max-w-xs">
+          <div className="flex gap-2 mt-4 max-w-sm">
             <Button type="button" variant="secondary" fullWidth onClick={() => { setShowAddForm(false); resetAddForm(); }}>Batal</Button>
             <Button type="submit" fullWidth loading={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>
           </div>
@@ -492,9 +493,9 @@ function ReceivableTab({
       {items.length === 0 ? (
         <EmptyState icon={<ReceivableIcon />} title="Belum ada piutang tercatat" description="Catat pemberian pinjaman baru untuk mulai melacak pembayarannya" />
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 xl:gap-4">
           {items.length > 5 && (
-            <div className="relative">
+            <div className="relative col-span-full">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true">
                 <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
@@ -509,7 +510,7 @@ function ReceivableTab({
             </div>
           )}
           {filteredItems.length === 0 && (
-            <p className="text-sm text-text-muted text-center py-6">Tidak ada piutang yang cocok dengan &quot;{search}&quot;</p>
+            <p className="col-span-full text-sm text-text-muted text-center py-6">Tidak ada piutang yang cocok dengan &quot;{search}&quot;</p>
           )}
           {filteredItems.map((r) => (
             <Card key={r.id}>
@@ -557,7 +558,7 @@ function ReceivableTab({
                       {accounts.map((a) => <option key={a.id} value={a.id}>{a.nama}</option>)}
                     </Select>
                     <Input id={`recv-tanggal-${r.id}`} type="date" label="Tanggal" value={recvTanggal} onChange={(e) => setRecvTanggal(e.target.value)} required />
-                    <div className="flex gap-2 max-w-xs">
+                    <div className="flex gap-2 max-w-sm">
                       <Button type="button" variant="secondary" fullWidth onClick={() => setReceivingId(null)}>Batal</Button>
                       <Button type="submit" fullWidth loading={recvSaving} disabled={recvExceedsLimit}>{recvSaving ? "Memproses..." : "Terima"}</Button>
                     </div>
@@ -627,7 +628,7 @@ export default function DebtsPage() {
   }, []);
 
   return (
-    <div className="max-w-3xl">
+    <PageShell width="wide">
       <PageHeader title="Utang & Piutang" subtitle="Lacak pinjaman dan piutang Anda" />
 
       <Tabs
@@ -637,7 +638,7 @@ export default function DebtsPage() {
         idPrefix={DEBT_TABS_ID_PREFIX}
         aria-label="Utang atau Piutang"
         fitted
-        className="mb-6 max-w-xs"
+        className="mb-6 max-w-sm"
       />
 
       {fetchError && <ErrorBanner message={fetchError} onRetry={refetch} />}
@@ -660,6 +661,6 @@ export default function DebtsPage() {
           <ReceivableTab summary={receivableSummary} accounts={accounts} accountsLoaded={accountsLoaded} onChanged={refetch} />
         )}
       </div>
-    </div>
+    </PageShell>
   );
 }

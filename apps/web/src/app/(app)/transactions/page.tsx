@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
@@ -242,7 +243,7 @@ export default function TransactionsPage() {
   };
 
   return (
-    <div className="max-w-5xl">
+    <PageShell width="full">
       <ConfirmModal
         open={deleteModal.open}
         title="Hapus Transaksi"
@@ -415,7 +416,7 @@ export default function TransactionsPage() {
           {/* Summary for filtered/month view */}
           {(filterType === "semua" || filterType === "pendapatan" || filterType === "pengeluaran") &&
             (totalPemasukan > 0 || totalPengeluaran > 0) && (
-            <div className="mb-4 grid grid-cols-2 gap-3 sm:max-w-md">
+            <div className="mb-4 grid grid-cols-2 gap-3 max-w-md lg:max-w-lg">
               <div className="bg-brand-soft border border-brand-soft-border rounded-xl p-3">
                 <p className="text-xs text-brand font-medium mb-0.5">Total Pemasukan</p>
                 <p className="text-sm font-bold text-brand">
@@ -534,6 +535,6 @@ export default function TransactionsPage() {
           )}
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

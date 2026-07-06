@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 
 interface MoreLink {
@@ -115,22 +116,24 @@ const AKUN_LINKS: MoreLink[] = [
 
 export default function MorePage() {
   return (
-    <div className="max-w-3xl">
+    <PageShell width="wide">
       <PageHeader title="Lainnya" subtitle="Semua fitur Wealth Checker dalam satu tempat" />
 
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2 px-1">Kelola Keuangan</h2>
-          <Card padding="none" className="overflow-hidden">
-            {KELOLA_LINKS.map((item) => <LinkRow key={item.href} item={item} />)}
-          </Card>
-        </div>
+      <div className="lg:grid lg:grid-cols-2 lg:gap-6 lg:items-start space-y-6 lg:space-y-0">
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2 px-1">Kelola Keuangan</h2>
+            <Card padding="none" className="overflow-hidden">
+              {KELOLA_LINKS.map((item) => <LinkRow key={item.href} item={item} />)}
+            </Card>
+          </div>
 
-        <div>
-          <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2 px-1">Perencanaan</h2>
-          <Card padding="none" className="overflow-hidden">
-            {PERENCANAAN_LINKS.map((item) => <LinkRow key={item.href} item={item} />)}
-          </Card>
+          <div>
+            <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2 px-1">Perencanaan</h2>
+            <Card padding="none" className="overflow-hidden">
+              {PERENCANAAN_LINKS.map((item) => <LinkRow key={item.href} item={item} />)}
+            </Card>
+          </div>
         </div>
 
         <div>
@@ -140,6 +143,6 @@ export default function MorePage() {
           </Card>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

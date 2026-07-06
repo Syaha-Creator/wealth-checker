@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import type { FormEvent } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -133,7 +134,7 @@ export default function BudgetingPage() {
   };
 
   return (
-    <div className="max-w-2xl">
+    <PageShell width="narrow">
       <PageHeader title="Budgeting Advisor" subtitle={`Rencana alokasi anggaran ${formatMonthLabel(currentYm())}`} />
 
       {loading ? (
@@ -169,7 +170,7 @@ export default function BudgetingPage() {
               <h3 className="font-semibold text-text-primary mb-3">Atur Rencana Pemasukan Bulan Ini</h3>
               {formError && <p role="alert" className="text-sm text-danger-text mb-3">{formError}</p>}
               <InputRupiah id="pemasukan" label="Rencana Pemasukan" value={pemasukan} onChange={setPemasukan} required />
-              <div className="flex gap-2 mt-4 max-w-xs">
+              <div className="flex gap-2 mt-4 max-w-sm">
                 <Button type="button" variant="secondary" fullWidth onClick={() => setShowForm(false)}>Batal</Button>
                 <Button type="submit" fullWidth loading={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>
               </div>
@@ -204,6 +205,6 @@ export default function BudgetingPage() {
           )}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

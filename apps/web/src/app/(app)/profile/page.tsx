@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { InputRupiah } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { PageShell } from "@/components/ui/PageShell";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { formatCurrency, parseRupiahInput } from "@/lib/format";
 import { NotificationSettings } from "./_components/NotificationSettings";
@@ -120,7 +121,7 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="max-w-5xl">
+      <PageShell width="wide">
         <div className="flex items-center justify-between mb-6">
           <Skeleton className="h-6 w-20" />
           <Skeleton className="h-9 w-20 rounded-lg" />
@@ -149,13 +150,14 @@ export default function ProfilePage() {
             <Skeleton className="h-10 w-full rounded-lg" />
           </Card>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   if (fetchError) {
     return (
-      <Card className="max-w-lg text-center">
+      <PageShell width="wide">
+        <Card className="max-w-lg mx-auto text-center">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="mx-auto mb-3 text-danger" aria-hidden="true">
           <circle cx="12" cy="12" r="10" />
           <line x1="12" y1="8" x2="12" y2="12" />
@@ -167,11 +169,12 @@ export default function ProfilePage() {
           Coba Lagi
         </Button>
       </Card>
+      </PageShell>
     );
   }
 
   return (
-    <div className="max-w-5xl">
+    <PageShell width="wide">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold text-text-primary">Profil</h1>
         <ThemeToggle variant="pill" />
@@ -342,6 +345,6 @@ export default function ProfilePage() {
         onConfirm={() => { setShowResetWarning(false); router.push("/onboarding"); }}
         onCancel={() => setShowResetWarning(false)}
       />
-    </div>
+    </PageShell>
   );
 }

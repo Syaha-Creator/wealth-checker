@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonCard, SkeletonHero } from "@/components/ui/Skeleton";
 import { formatCurrency, formatCurrencyShort, formatMonthLabel } from "@/lib/format";
@@ -159,7 +160,7 @@ export default function DashboardPage() {
   const isNewUser = !summary || isNoData;
 
   return (
-    <div className="space-y-6">
+    <PageShell width="full" className="space-y-6">
       <PageHeader
         title={session?.user?.name ?? "Dashboard"}
         subtitle="Selamat datang kembali"
@@ -396,6 +397,6 @@ export default function DashboardPage() {
           </Card>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

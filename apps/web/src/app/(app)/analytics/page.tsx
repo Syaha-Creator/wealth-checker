@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
 import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
 import { Tabs, tabPanelId, tabButtonId } from "@/components/ui/Tabs";
 import { ExportButtons } from "@/components/ExportButtons";
@@ -41,7 +42,7 @@ export default function AnalyticsPage() {
   const activeTabMeta = TABS.find((t) => t.id === activeTab)!;
 
   return (
-    <div className="max-w-3xl">
+    <PageShell width="wide">
       <PageHeader title="Analisa" subtitle="Pantau kesehatan keuanganmu dari berbagai sudut" />
 
       <ExportButtons range={range} className="mb-4" />
@@ -74,6 +75,6 @@ export default function AnalyticsPage() {
         {activeTab === "kebutuhan-pokok" && <EssentialExpensesReport range={range} />}
         {activeTab === "pemasukan" && <IncomeReport range={range} />}
       </div>
-    </div>
+    </PageShell>
   );
 }

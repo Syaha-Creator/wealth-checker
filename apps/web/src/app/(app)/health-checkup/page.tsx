@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -90,7 +91,7 @@ export default function HealthCheckupPage() {
   }, [retryKey]);
 
   return (
-    <div className="max-w-2xl">
+    <PageShell width="narrow">
       <PageHeader title="Financial Health Check-up" subtitle="Diagnosa lengkap kondisi keuanganmu saat ini" />
 
       {loading ? (
@@ -161,6 +162,6 @@ export default function HealthCheckupPage() {
           </Card>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
