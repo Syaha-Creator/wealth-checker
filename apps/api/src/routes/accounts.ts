@@ -6,6 +6,9 @@ import { eq, and, or, count, sql } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { resolveHousehold, requireRole } from "../middleware/household";
 import { calculateAccountMutations } from "../services/accountMutation";
+import { applyMutasiDateFilter } from "../lib/mutasiDateFilter";
+import { mutasiQuerySchema } from "../lib/mutasiQuerySchema";
+import { zodErrorHook } from "../lib/validation";
 import { createWealthSnapshot } from "../services/wealth";
 import { isUniqueViolation } from "../lib/dbErrors";
 import { MAX_MONETARY_VALUE } from "../lib/validation";
@@ -142,10 +145,17 @@ accountRoutes.patch(
 // ─── GET /:id/mutasi — Mutasi Rekening (Sprint 15) ───────────────────────────
 // Read-only: histori transaksi yang menyentuh rekening ini (baik sebagai
 // accountId maupun toAccountId transfer) + saldo berjalan (running balance).
-// Murni query baca, tidak ada logika bisnis baru — lihat accountMutation.ts.
-accountRoutes.get("/:id/mutasi", zValidator("param", idParam), async (c) => {
+// Query `from`/`to` (YYYY-MM-DD) memfilter baris response saja — perhitungan
+// running balance tetap dari histori lengkap (lihat accountMutation.ts +
+// mutasiDateFilter.ts).
+accountRoutes.get(
+  "/:id/mutasi",
+  zValidator("param", idParam),
+  zValidator("query", mutasiQuerySchema, zodErrorHook),
+  async (c) => {
   const householdId = c.get("householdId");
   const { id } = c.req.valid("param");
+  const { from, to } = c.req.valid("query");
 
   const [account] = await db.select().from(accounts).where(and(eq(accounts.id, id), eq(accounts.householdId, householdId)));
   if (!account) return c.json({ error: "Rekening tidak ditemukan" }, 404);
@@ -162,13 +172,20 @@ accountRoutes.get("/:id/mutasi", zValidator("param", idParam), async (c) => {
     ));
 
   const result = calculateAccountMutations(id, Number(account.saldoCache), txs);
+  const { filteredRows, saldoSebelumPeriode } = applyMutasiDateFilter(
+    result.rows,
+    result.saldoAwalTurunan,
+    from,
+    to,
+  );
 
   return c.json({
     account: { id: account.id, nama: account.nama, saldoCache: Number(account.saldoCache) },
     saldoAwalTurunan: result.saldoAwalTurunan,
+    saldoSebelumPeriode,
     konsisten: result.konsisten,
     // Ditampilkan terbaru dulu (pola umum "mutasi rekening" di app finansial)
-    mutasi: [...result.rows].reverse(),
+    mutasi: [...filteredRows].reverse(),
   });
 });
 

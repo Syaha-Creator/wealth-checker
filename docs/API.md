@@ -195,17 +195,33 @@ Account cannot be deleted while it has linked transactions. Deactivate it instea
 
 **Fase 2 Sprint 15 — Mutasi Rekening.** Read-only transaction history for a single account with a running balance, newest first. Includes the destination side of `transfer` transactions (where this account is the recipient), which the generic `GET /api/transactions?accountId=` filter does **not** cover.
 
+**Query params (optional)**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `from` | `YYYY-MM-DD` | Include transactions on or after this date (inclusive) |
+| `to` | `YYYY-MM-DD` | Include transactions on or before this date (inclusive) |
+
+Both are optional. If both are provided, `from` must be `<= to` (otherwise `400`). Running balances (`saldoSetelah`) are always computed from the **full** transaction history first; the date filter only narrows which rows are returned — it does not recalculate balances from zero within the filtered window.
+
+**Example request**
+
+```
+GET /api/accounts/{id}/mutasi?from=2026-01-15&to=2026-02-28
+```
+
 **Response `200`**
 
 ```json
 {
   "account": { "id": "uuid", "nama": "BCA Tabungan", "saldoCache": 950000 },
   "saldoAwalTurunan": 1000000,
+  "saldoSebelumPeriode": 1200000,
   "konsisten": true,
   "mutasi": [
     {
       "id": "uuid",
-      "tanggal": "2026-07-01",
+      "tanggal": "2026-02-01",
       "type": "pengeluaran",
       "kategori": "Makanan",
       "rincian": "Makan siang",
@@ -219,10 +235,13 @@ Account cannot be deleted while it has linked transactions. Deactivate it instea
 
 | Field | Description |
 |-------|-------------|
-| `saldoAwalTurunan` | Starting balance **derived** from `saldoCache − sum(all deltas)` — `accounts` has no separate `saldoAwal` column after creation, so this is reconstructed from history rather than read directly. |
+| `saldoAwalTurunan` | Starting balance **derived** from `saldoCache − sum(all deltas)` since account creation — `accounts` has no separate `saldoAwal` column after creation, so this is reconstructed from the full history rather than read directly. Unchanged when a date filter is applied. |
+| `saldoSebelumPeriode` | Running balance immediately **before** the first transaction included in the filtered date range (chronological order). Equals `saldoAwalTurunan` when no `from`/`to` filter is given, or when the filter starts at the earliest transaction. Differs from `saldoAwalTurunan` when filtering to a sub-range in the middle of the account's history. |
 | `konsisten` | Sanity flag; should always be `true` (the running balance is guaranteed to reconcile with `saldoCache` by construction — see `accountMutation.ts`). A `false` value would indicate a bug in the delta logic itself. |
 | `mutasi[].delta` | Signed amount this transaction added/subtracted from *this* account (negative for debits, positive for credits/incoming transfers) |
 | `mutasi[].saldoSetelah` | Running balance immediately after this transaction, in chronological order (even though the array itself is newest-first) |
+
+**Error `400`** — invalid date format or `from` > `to`.
 
 **Error `404`** — account not found or does not belong to user.
 
