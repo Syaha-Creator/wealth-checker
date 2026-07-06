@@ -4,6 +4,8 @@ Base URL: `http://localhost:4000` (development) · configured via `NEXT_PUBLIC_A
 
 All authenticated endpoints require an active session cookie (`better-auth` session). Use `credentials: "include"` in all fetch calls from the frontend.
 
+**Bearer token (mobile / non-browser clients):** The API also accepts `Authorization: Bearer <token>` as an alternative to the session cookie. After a successful sign-in or sign-up, the response includes a `set-auth-token` response header containing the session token — store it on the client and send it on every subsequent request. Cookie-based auth remains the default for the Next.js web app; existing web clients are unchanged.
+
 ### Household context (Sprint 27 / Fase 4)
 
 Every endpoint that touches financial data (accounts, transactions, debts/receivables, assets, dream goals, budget plans, wealth summary/history, analytics, export) is now scoped to the caller's **active household**, not the caller's `userId` directly — see [§13. Households](#13-households-multi-userfamily-sharing-sprint-27--fase-4).

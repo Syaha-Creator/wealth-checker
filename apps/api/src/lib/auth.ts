@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { bearer } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db, authUser, authSession, authAccount, authVerification } from "@wealth/db";
 
@@ -59,6 +60,12 @@ export const auth = betterAuth({
   rateLimit: {
     enabled: process.env.DISABLE_AUTH_RATE_LIMIT !== "true",
   },
+
+  // Bearer token auth (Fase mobile): aditif di atas cookie session — web app
+  // Next.js tetap pakai cookie; client non-browser (Flutter, dll) bisa kirim
+  // Authorization: Bearer <token> setelah sign-in/sign-up membaca header
+  // set-auth-token dari response.
+  plugins: [bearer()],
 });
 
 export type Auth = typeof auth;

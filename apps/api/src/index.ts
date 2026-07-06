@@ -57,7 +57,11 @@ app.use(
     // household.
     allowHeaders: ["Content-Type", "Authorization", "Cookie", "X-Household-Id"],
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    exposeHeaders: ["Set-Cookie"],
+    // Set-Cookie: cookie session untuk web. set-auth-token: bearer plugin
+    // Better Auth mengirim token session setelah sign-in/sign-up — dibaca
+    // client mobile (Flutter) yang tidak punya cookie jar, lalu dikirim ulang
+    // sebagai Authorization: Bearer <token> pada request berikutnya.
+    exposeHeaders: ["Set-Cookie", "set-auth-token"],
     credentials: true,
     maxAge: 86400,
   })
