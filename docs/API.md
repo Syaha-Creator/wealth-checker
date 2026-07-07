@@ -1281,6 +1281,81 @@ Update a goal. All fields optional; same validation as `POST`. Passing `accountI
 
 ---
 
+## 10.5 User Checklist (Checklist Generik)
+
+Base path: `/api/checklist` · **Auth required** · **Household-scoped**
+
+Generic checklist storage for client-defined items. The backend stores only **checked/unchecked status** per `(household, category, itemKey)` — it does **not** validate or own the list of valid `itemKey` values. Labels (e.g. "Buat surat wasiat") are hardcoded in the client (Flutter).
+
+**Current category values used by the mobile app (informal, not a server enum):**
+
+| `category` | Use case |
+|------------|----------|
+| `legacy_planning` | Checklist Warisan (wasiat, ahli waris, dll.) |
+| `budgeting_tips` | Tips budgeting yang sudah diterapkan (personal checklist) |
+
+Items that have never been toggled have no database row and are implicitly **unchecked**.
+
+### GET `/api/checklist`
+
+Returns all items **ever toggled** for the current household and the given `category`. Empty array if none.
+
+**Query params**
+
+| Param | Type | Required | Notes |
+|-------|------|----------|-------|
+| `category` | string | Yes | Free-form string owned by the client (e.g. `legacy_planning`) |
+
+**Example request**
+
+```
+GET /api/checklist?category=legacy_planning
+```
+
+**Response `200`**
+
+```json
+[
+  { "itemKey": "buat_surat_wasiat", "isChecked": true, "updatedAt": "2026-07-01T10:30:00.000Z" },
+  { "itemKey": "tentukan_ahli_waris", "isChecked": false, "updatedAt": "2026-07-02T08:00:00.000Z" }
+]
+```
+
+**Error `400`** — `category` missing or empty.
+
+---
+
+### PATCH `/api/checklist/:itemKey`
+
+Upsert checked status for one item. Creates a row on first toggle; subsequent calls update the same row (unique on `household_id + category + item_key`). Requires **owner** or **editor** role.
+
+**URL param**
+
+| Param | Description |
+|-------|-------------|
+| `itemKey` | Client-defined identifier (e.g. `buat_surat_wasiat`) — free-form string, not validated against a server list |
+
+**Request body**
+
+```json
+{ "category": "legacy_planning", "checked": true }
+```
+
+| Field | Type | Required |
+|-------|------|----------|
+| `category` | string | Yes |
+| `checked` | boolean | Yes |
+
+**Response `200`**
+
+```json
+{ "itemKey": "buat_surat_wasiat", "isChecked": true, "updatedAt": "2026-07-01T10:30:00.000Z" }
+```
+
+**Error `400`** — invalid body or empty `itemKey`. **`403`** — viewer role cannot mutate.
+
+---
+
 ## 11. Notifications (Pengingat Harian)
 
 Base path: `/api/notifications` · **Auth required** · **Fase 4 Sprint 24** · Per-individual (not household-scoped — reminders are about the caller's own transaction logging habit, not the household's).
