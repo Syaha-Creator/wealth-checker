@@ -9,4 +9,15 @@ export const authClient = createAuthClient({
   baseURL: typeof window !== "undefined" ? window.location.origin : "",
 });
 
-export const { signIn, signUp, signOut, useSession, getSession } = authClient;
+export const {
+  signIn,
+  signUp,
+  signOut,
+  useSession,
+  getSession,
+  requestPasswordReset,
+  resetPassword,
+} = authClient;
+
+/** Alias runtime Better Auth — sama dengan `requestPasswordReset`. */
+export const forgetPassword = requestPasswordReset;

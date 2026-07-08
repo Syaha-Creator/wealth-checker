@@ -8,20 +8,7 @@ import { Input, PasswordInput } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { safeRedirectTarget } from "@/lib/safeRedirect";
-
-// Bug hunt (Issue 11): dulu kriteria ini cuma kosmetik — password 8 karakter
-// tanpa huruf besar/angka tetap lolos daftar (Better Auth server-side cuma
-// mengecek panjang lewat minPasswordLength). Sekarang dipakai juga sebagai
-// syarat submit di handleSubmit, supaya apa yang ditampilkan sesuai dengan
-// yang benar-benar diwajibkan. (Enforcement ini di sisi client saja — API
-// Better Auth sendiri tetap hanya menegakkan panjang minimum.)
-function getPasswordChecks(password: string) {
-  return [
-    { label: "Min. 8 karakter", ok: password.length >= 8 },
-    { label: "Huruf besar", ok: /[A-Z]/.test(password) },
-    { label: "Angka", ok: /[0-9]/.test(password) },
-  ];
-}
+import { getPasswordChecks, isPasswordValid, PASSWORD_REQUIREMENTS_MESSAGE } from "@/lib/passwordValidation";
 
 function PasswordStrength({ password }: { password: string }) {
   const checks = getPasswordChecks(password);
@@ -78,8 +65,8 @@ function RegisterContent() {
     setLoading(true);
     setError("");
 
-    if (getPasswordChecks(password).some((c) => !c.ok)) {
-      setError("Password harus minimal 8 karakter, mengandung huruf besar, dan angka.");
+    if (!isPasswordValid(password)) {
+      setError(PASSWORD_REQUIREMENTS_MESSAGE);
       setLoading(false);
       return;
     }

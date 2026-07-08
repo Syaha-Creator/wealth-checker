@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "@/lib/auth-client";
-import { Input, PasswordInput } from "@/components/ui/Input";
+import { Input, PasswordInput, RequiredMark } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { apiFetch } from "@/lib/apiFetch";
@@ -121,15 +121,29 @@ function LoginContent() {
               required
             />
 
-            <PasswordInput
-              id="password"
-              label="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="current-password"
-              required
-            />
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <label htmlFor="password" className="text-sm font-medium text-text-primary">
+                  Password
+                  <RequiredMark />
+                </label>
+                <Link
+                  href="/auth/forgot-password"
+                  className="text-xs text-brand hover:text-brand-hover font-medium"
+                >
+                  Lupa kata sandi?
+                </Link>
+              </div>
+              <PasswordInput
+                id="password"
+                label={undefined}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                required
+              />
+            </div>
 
             <Button type="submit" loading={loading} fullWidth className="mt-1">
               {loading ? "Masuk..." : "Masuk"}
