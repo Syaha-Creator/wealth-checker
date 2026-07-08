@@ -102,6 +102,71 @@ Returns `null` or `{ user: null, session: null }` when unauthenticated.
 
 ---
 
+### POST `/api/auth/request-password-reset`
+
+Request a password reset email. Requires `sendResetPassword` configured on the server (Resend).
+
+**Request body**
+
+```json
+{
+  "email": "user@example.com",
+  "redirectTo": "https://wealth.velrox.cloud/reset-password"
+}
+```
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `email` | string | Yes | Account email address |
+| `redirectTo` | string | No | Frontend URL where the user completes reset. Better Auth redirects here with `?token=...` on success or `?error=INVALID_TOKEN` if the link is invalid/expired |
+
+**Response `200`** (same body whether or not the email is registered — anti-enumeration)
+
+```json
+{
+  "status": true,
+  "message": "If this email exists in our system, check your email for the reset link"
+}
+```
+
+Better Auth handles this generically by default: unknown emails still return `200` with the same message (no account enumeration). An email is only sent when the address exists.
+
+**Error `400`** — reset password not enabled, invalid email format, or email provider failure (Resend error propagates from server).
+
+**Note:** Better Auth also exposes `GET /api/auth/reset-password/:token?callbackURL=...` as an intermediate redirect handler when the user clicks the link in the email — the mobile/web app typically uses `redirectTo` so the user lands on your reset form with the token query param.
+
+---
+
+### POST `/api/auth/reset-password`
+
+Complete password reset using the token from the email link (or from the `redirectTo` callback query string).
+
+**Request body**
+
+```json
+{
+  "newPassword": "newSecurePassword123",
+  "token": "token-from-email-or-redirect"
+}
+```
+
+| Field | Type | Required |
+|-------|------|----------|
+| `newPassword` | string | Yes (min 8 chars) |
+| `token` | string | Yes |
+
+**Response `200`**
+
+```json
+{ "status": true }
+```
+
+**Error `400`** — invalid/expired token, password too short, or validation error.
+
+Token expires after **1 hour** (`resetPasswordTokenExpiresIn: 3600`).
+
+---
+
 ## 2. Accounts (Rekening)
 
 Base path: `/api/accounts` · **Auth required**

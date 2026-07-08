@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { bearer } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db, authUser, authSession, authAccount, authVerification } from "@wealth/db";
+import { sendPasswordResetEmail } from "./email";
 
 const productionOrigin = "https://wealth.velrox.cloud";
 const devOrigin = "http://localhost:3010";
@@ -32,6 +33,11 @@ export const auth = betterAuth({
     enabled: true,
     autoSignIn: true,
     minPasswordLength: 8,
+    requireEmailVerification: false,
+    resetPasswordTokenExpiresIn: 3600,
+    sendResetPassword: async ({ user, url }) => {
+      await sendPasswordResetEmail({ to: user.email, resetUrl: url });
+    },
   },
 
   session: {
