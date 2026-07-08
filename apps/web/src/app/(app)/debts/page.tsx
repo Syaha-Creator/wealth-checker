@@ -13,12 +13,24 @@ import { SkeletonHero, Skeleton } from "@/components/ui/Skeleton";
 import { Tabs, tabPanelId, tabButtonId } from "@/components/ui/Tabs";
 import { formatCurrency, parseRupiahInput } from "@/lib/format";
 import { SEMUA_KARTU_KREDIT_PAYLATER } from "@/lib/institutions";
-import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { apiFetch as apiFetchRaw, notifyWealthChanged } from "@/lib/apiFetch";
 
 const DEBT_TABS_ID_PREFIX = "debts";
 const DEBT_TABS: { id: "utang" | "piutang"; label: string }[] = [
   { id: "utang", label: "Utang" },
   { id: "piutang", label: "Piutang" },
+];
+
+type AddMode = "transaksi" | "deklarasi";
+
+const DEBT_ADD_MODE_TABS: { id: AddMode; label: string }[] = [
+  { id: "transaksi", label: "Utang Baru" },
+  { id: "deklarasi", label: "Utang yang Sudah Ada" },
+];
+
+const RECEIVABLE_ADD_MODE_TABS: { id: AddMode; label: string }[] = [
+  { id: "transaksi", label: "Piutang Baru" },
+  { id: "deklarasi", label: "Piutang yang Sudah Ada" },
 ];
 
 type Account = { id: string; nama: string; saldoCache: string; isActive: boolean };
@@ -119,6 +131,7 @@ function DebtTab({
   onChanged: () => Promise<void>;
 }) {
   const [showAddForm, setShowAddForm] = useState(false);
+  const [addMode, setAddMode] = useState<AddMode>("transaksi");
   const [pemberiUtang, setPemberiUtang] = useState("");
   const [tipe, setTipe] = useState<"utang_biasa" | "kartu_kredit">("utang_biasa");
   const [nominal, setNominal] = useState("");
@@ -138,6 +151,7 @@ function DebtTab({
   const [search, setSearch] = useState("");
 
   const resetAddForm = () => {
+    setAddMode("transaksi");
     setPemberiUtang(""); setTipe("utang_biasa"); setNominal(""); setAccountId(""); setTanggal(todayStr()); setFormError("");
   };
 
@@ -145,12 +159,22 @@ function DebtTab({
     e.preventDefault();
     setSaving(true); setFormError("");
     try {
-      await apiFetch("/api/transactions", "POST", {
-        tanggal, type: "pinjaman_utang", pemberiUtang, debtTipe: tipe,
-        accountId, nominal: parseRupiahInput(nominal),
-      });
+      if (addMode === "transaksi") {
+        await apiFetch("/api/transactions", "POST", {
+          tanggal, type: "pinjaman_utang", pemberiUtang, debtTipe: tipe,
+          accountId, nominal: parseRupiahInput(nominal),
+        });
+      } else {
+        const sisa = parseRupiahInput(nominal);
+        await apiFetch("/api/debts", "POST", {
+          pemberiUtang,
+          tipe,
+          saldoAwal: sisa,
+        });
+      }
       resetAddForm();
       setShowAddForm(false);
+      notifyWealthChanged();
       await onChanged();
     } catch (err: unknown) {
       setFormError(err instanceof Error ? err.message : "Gagal menyimpan");
@@ -172,6 +196,7 @@ function DebtTab({
         accountId: payAccountId, nominal: parseRupiahInput(payNominal),
       });
       setPayingId(null);
+      notifyWealthChanged();
       await onChanged();
     } catch (err: unknown) {
       setPayError(err instanceof Error ? err.message : "Gagal mencatat pembayaran");
@@ -180,18 +205,26 @@ function DebtTab({
     }
   };
 
-  if (accountsLoaded && accounts.length === 0) {
+  const items = summary?.perPemberi ?? [];
+
+  if (accountsLoaded && accounts.length === 0 && items.length === 0 && !showAddForm) {
     return (
       <EmptyState
         icon={<DebtIcon />}
         title="Belum ada rekening aktif"
-        description="Tambahkan rekening dulu untuk mencatat utang & pembayaran cicilan"
-        action={<Button href="/accounts" size="sm">Tambah Rekening</Button>}
+        description="Tambahkan rekening untuk mencatat pinjaman baru, atau deklarasikan utang yang sudah ada tanpa dampak kas."
+        action={
+          <div className="flex flex-wrap gap-2 justify-center">
+            <Button href="/accounts" size="sm">Tambah Rekening</Button>
+            <Button size="sm" variant="outline" onClick={() => { setAddMode("deklarasi"); setShowAddForm(true); }}>
+              Utang yang Sudah Ada
+            </Button>
+          </div>
+        }
       />
     );
   }
 
-  const items = summary?.perPemberi ?? [];
   const filteredItems = search.trim()
     ? items.filter((d) => d.pemberiUtang.toLowerCase().includes(search.trim().toLowerCase()))
     : items;
@@ -216,8 +249,20 @@ function DebtTab({
 
       {showAddForm && (
         <Card as="form" onSubmit={handleAdd} padding="lg" className="mb-6">
-          <h3 className="font-semibold text-text-primary mb-4">Utang Baru</h3>
+          <h3 className="font-semibold text-text-primary mb-4">Tambah Utang</h3>
+          <Tabs
+            items={DEBT_ADD_MODE_TABS}
+            value={addMode}
+            onChange={setAddMode}
+            idPrefix="debt-add-mode"
+            aria-label="Cara menambah utang"
+            fitted
+            className="mb-4 max-w-lg"
+          />
           {formError && <p role="alert" className="text-sm text-danger-text mb-3">{formError}</p>}
+          {addMode === "transaksi" && accounts.length === 0 && (
+            <p className="text-sm text-warning-text mb-3">Belum ada rekening aktif. Tambahkan rekening dulu atau pilih &quot;Utang yang Sudah Ada&quot;.</p>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Select
               label="Tipe"
@@ -247,22 +292,39 @@ function DebtTab({
                 {SEMUA_KARTU_KREDIT_PAYLATER.map((n) => <option key={n} value={n} />)}
               </datalist>
             </div>
-            <InputRupiah id="debt-nominal" label="Nominal Pinjaman" value={nominal} onChange={setNominal} required />
-            <Select
-              id="debt-account"
-              label="Rekening Tujuan"
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
+            <InputRupiah
+              id="debt-nominal"
+              label={addMode === "deklarasi" ? "Sisa Saldo Saat Ini" : "Nominal Pinjaman"}
+              value={nominal}
+              onChange={setNominal}
               required
-            >
-              <option value="">Pilih rekening</option>
-              {accounts.map((a) => <option key={a.id} value={a.id}>{a.nama}</option>)}
-            </Select>
-            <Input id="debt-tanggal" type="date" label="Tanggal" value={tanggal} onChange={(e) => setTanggal(e.target.value)} required />
+            />
+            {addMode === "transaksi" && (
+              <>
+                <Select
+                  id="debt-account"
+                  label="Rekening Tujuan"
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                  required
+                >
+                  <option value="">Pilih rekening</option>
+                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.nama}</option>)}
+                </Select>
+                <Input id="debt-tanggal" type="date" label="Tanggal" value={tanggal} onChange={(e) => setTanggal(e.target.value)} required />
+              </>
+            )}
           </div>
           <div className="flex gap-2 mt-4 max-w-sm">
             <Button type="button" variant="secondary" fullWidth onClick={() => { setShowAddForm(false); resetAddForm(); }}>Batal</Button>
-            <Button type="submit" fullWidth loading={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>
+            <Button
+              type="submit"
+              fullWidth
+              loading={saving}
+              disabled={addMode === "transaksi" && accounts.length === 0}
+            >
+              {saving ? "Menyimpan..." : addMode === "deklarasi" ? "Simpan Deklarasi" : "Simpan"}
+            </Button>
           </div>
         </Card>
       )}
@@ -365,6 +427,7 @@ function ReceivableTab({
   onChanged: () => Promise<void>;
 }) {
   const [showAddForm, setShowAddForm] = useState(false);
+  const [addMode, setAddMode] = useState<AddMode>("transaksi");
   const [peminjam, setPeminjam] = useState("");
   const [nominal, setNominal] = useState("");
   const [accountId, setAccountId] = useState("");
@@ -381,6 +444,7 @@ function ReceivableTab({
   const [search, setSearch] = useState("");
 
   const resetAddForm = () => {
+    setAddMode("transaksi");
     setPeminjam(""); setNominal(""); setAccountId(""); setTanggal(todayStr()); setFormError("");
   };
 
@@ -388,12 +452,21 @@ function ReceivableTab({
     e.preventDefault();
     setSaving(true); setFormError("");
     try {
-      await apiFetch("/api/transactions", "POST", {
-        tanggal, type: "pemberian_piutang", peminjam,
-        accountId, nominal: parseRupiahInput(nominal),
-      });
+      if (addMode === "transaksi") {
+        await apiFetch("/api/transactions", "POST", {
+          tanggal, type: "pemberian_piutang", peminjam,
+          accountId, nominal: parseRupiahInput(nominal),
+        });
+      } else {
+        const sisa = parseRupiahInput(nominal);
+        await apiFetch("/api/debts/receivables", "POST", {
+          peminjam,
+          saldoAwal: sisa,
+        });
+      }
       resetAddForm();
       setShowAddForm(false);
+      notifyWealthChanged();
       await onChanged();
     } catch (err: unknown) {
       setFormError(err instanceof Error ? err.message : "Gagal menyimpan");
@@ -415,6 +488,7 @@ function ReceivableTab({
         accountId: recvAccountId, nominal: parseRupiahInput(recvNominal),
       });
       setReceivingId(null);
+      notifyWealthChanged();
       await onChanged();
     } catch (err: unknown) {
       setRecvError(err instanceof Error ? err.message : "Gagal mencatat penerimaan");
@@ -423,18 +497,26 @@ function ReceivableTab({
     }
   };
 
-  if (accountsLoaded && accounts.length === 0) {
+  const items = summary?.perPeminjam ?? [];
+
+  if (accountsLoaded && accounts.length === 0 && items.length === 0 && !showAddForm) {
     return (
       <EmptyState
         icon={<ReceivableIcon />}
         title="Belum ada rekening aktif"
-        description="Tambahkan rekening dulu untuk mencatat piutang & penerimaan pembayaran"
-        action={<Button href="/accounts" size="sm">Tambah Rekening</Button>}
+        description="Tambahkan rekening untuk mencatat piutang baru, atau deklarasikan piutang yang sudah ada tanpa dampak kas."
+        action={
+          <div className="flex flex-wrap gap-2 justify-center">
+            <Button href="/accounts" size="sm">Tambah Rekening</Button>
+            <Button size="sm" variant="outline" onClick={() => { setAddMode("deklarasi"); setShowAddForm(true); }}>
+              Piutang yang Sudah Ada
+            </Button>
+          </div>
+        }
       />
     );
   }
 
-  const items = summary?.perPeminjam ?? [];
   const filteredItems = search.trim()
     ? items.filter((r) => r.peminjam.toLowerCase().includes(search.trim().toLowerCase()))
     : items;
@@ -459,8 +541,20 @@ function ReceivableTab({
 
       {showAddForm && (
         <Card as="form" onSubmit={handleAdd} padding="lg" className="mb-6">
-          <h3 className="font-semibold text-text-primary mb-4">Piutang Baru</h3>
+          <h3 className="font-semibold text-text-primary mb-4">Tambah Piutang</h3>
+          <Tabs
+            items={RECEIVABLE_ADD_MODE_TABS}
+            value={addMode}
+            onChange={setAddMode}
+            idPrefix="receivable-add-mode"
+            aria-label="Cara menambah piutang"
+            fitted
+            className="mb-4 max-w-lg"
+          />
           {formError && <p role="alert" className="text-sm text-danger-text mb-3">{formError}</p>}
+          {addMode === "transaksi" && accounts.length === 0 && (
+            <p className="text-sm text-warning-text mb-3">Belum ada rekening aktif. Tambahkan rekening dulu atau pilih &quot;Piutang yang Sudah Ada&quot;.</p>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input
               id="rec-peminjam"
@@ -470,22 +564,39 @@ function ReceivableTab({
               onChange={(e) => setPeminjam(e.target.value)}
               required
             />
-            <InputRupiah id="rec-nominal" label="Nominal Dipinjamkan" value={nominal} onChange={setNominal} required />
-            <Select
-              id="rec-account"
-              label="Rekening Sumber"
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
+            <InputRupiah
+              id="rec-nominal"
+              label={addMode === "deklarasi" ? "Sisa Saldo Saat Ini" : "Nominal Dipinjamkan"}
+              value={nominal}
+              onChange={setNominal}
               required
-            >
-              <option value="">Pilih rekening</option>
-              {accounts.map((a) => <option key={a.id} value={a.id}>{a.nama}</option>)}
-            </Select>
-            <Input id="rec-tanggal" type="date" label="Tanggal" value={tanggal} onChange={(e) => setTanggal(e.target.value)} required />
+            />
+            {addMode === "transaksi" && (
+              <>
+                <Select
+                  id="rec-account"
+                  label="Rekening Sumber"
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                  required
+                >
+                  <option value="">Pilih rekening</option>
+                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.nama}</option>)}
+                </Select>
+                <Input id="rec-tanggal" type="date" label="Tanggal" value={tanggal} onChange={(e) => setTanggal(e.target.value)} required />
+              </>
+            )}
           </div>
           <div className="flex gap-2 mt-4 max-w-sm">
             <Button type="button" variant="secondary" fullWidth onClick={() => { setShowAddForm(false); resetAddForm(); }}>Batal</Button>
-            <Button type="submit" fullWidth loading={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>
+            <Button
+              type="submit"
+              fullWidth
+              loading={saving}
+              disabled={addMode === "transaksi" && accounts.length === 0}
+            >
+              {saving ? "Menyimpan..." : addMode === "deklarasi" ? "Simpan Deklarasi" : "Simpan"}
+            </Button>
           </div>
         </Card>
       )}

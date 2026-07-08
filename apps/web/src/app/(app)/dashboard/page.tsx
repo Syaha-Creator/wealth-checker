@@ -10,7 +10,7 @@ import { PageShell } from "@/components/ui/PageShell";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonCard, SkeletonHero } from "@/components/ui/Skeleton";
 import { formatCurrency, formatCurrencyShort, formatMonthLabel } from "@/lib/format";
-import { apiFetch } from "@/lib/apiFetch";
+import { apiFetch, WEALTH_CHANGED_EVENT } from "@/lib/apiFetch";
 
 
 type WealthSummary = {
@@ -129,6 +129,14 @@ export default function DashboardPage() {
       })
       .finally(() => setLoading(false));
   }, [session, retryKey]);
+
+  useEffect(() => {
+    const onWealthChanged = () => {
+      setRetryKey((k) => k + 1);
+    };
+    window.addEventListener(WEALTH_CHANGED_EVENT, onWealthChanged);
+    return () => window.removeEventListener(WEALTH_CHANGED_EVENT, onWealthChanged);
+  }, []);
 
   if (loading) {
     return <DashboardSkeleton />;

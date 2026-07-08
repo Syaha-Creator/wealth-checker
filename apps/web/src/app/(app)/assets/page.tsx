@@ -11,7 +11,7 @@ import { Input, InputRupiah, RequiredMark, Select } from "@/components/ui/Input"
 import { SkeletonHero, Skeleton } from "@/components/ui/Skeleton";
 import { Tabs, tabPanelId, tabButtonId } from "@/components/ui/Tabs";
 import { formatCurrency, parseRupiahInput } from "@/lib/format";
-import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { apiFetch as apiFetchRaw, notifyWealthChanged } from "@/lib/apiFetch";
 
 type Account = { id: string; nama: string; saldoCache: string; isActive: boolean };
 
@@ -23,11 +23,17 @@ type AssetSummaryItem = {
 type AssetSummary = { totalNilai: number; totalUntungRugi: number; items: AssetSummaryItem[] };
 
 type AssetKind = "barang" | "investasi";
+type AddMode = "transaksi" | "deklarasi";
 
 const ASSET_TABS_ID_PREFIX = "assets";
 const ASSET_TABS: { id: AssetKind; label: string }[] = [
   { id: "barang", label: "Barang" },
   { id: "investasi", label: "Investasi" },
+];
+
+const ASSET_ADD_MODE_TABS: { id: AddMode; label: string }[] = [
+  { id: "transaksi", label: "Beli Baru" },
+  { id: "deklarasi", label: "Sudah Dimiliki" },
 ];
 
 async function apiFetch(path: string, method: string, body?: unknown) {
@@ -99,6 +105,7 @@ function AssetTab({
   const Icon = kind === "barang" ? BarangIcon : InvestasiIcon;
 
   const [showAddForm, setShowAddForm] = useState(false);
+  const [addMode, setAddMode] = useState<AddMode>("transaksi");
   const [namaAset, setNamaAset] = useState("");
   const [jumlah, setJumlah] = useState("");
   const [hargaSatuan, setHargaSatuan] = useState("");
@@ -119,6 +126,7 @@ function AssetTab({
   const [search, setSearch] = useState("");
 
   const resetAddForm = () => {
+    setAddMode("transaksi");
     setNamaAset(""); setJumlah(""); setHargaSatuan(""); setAccountId(""); setTanggal(todayStr()); setFormError("");
   };
 
@@ -131,11 +139,21 @@ function AssetTab({
     e.preventDefault();
     setSaving(true); setFormError("");
     try {
-      await apiFetch("/api/transactions", "POST", {
-        tanggal, type: buyType, namaAset, jumlah: Number(jumlah), hargaSatuan: parseRupiahInput(hargaSatuan), accountId,
-      });
+      if (addMode === "transaksi") {
+        await apiFetch("/api/transactions", "POST", {
+          tanggal, type: buyType, namaAset, jumlah: Number(jumlah), hargaSatuan: parseRupiahInput(hargaSatuan), accountId,
+        });
+      } else {
+        const assetPath = kind === "barang" ? "/api/assets/fixed" : "/api/assets/liquid";
+        await apiFetch(assetPath, "POST", {
+          namaAset,
+          jumlah: Number(jumlah),
+          hargaBeliRataRata: parseRupiahInput(hargaSatuan),
+        });
+      }
       resetAddForm();
       setShowAddForm(false);
+      notifyWealthChanged();
       await onChanged();
     } catch (err: unknown) {
       setFormError(err instanceof Error ? err.message : "Gagal menyimpan");
@@ -157,6 +175,7 @@ function AssetTab({
         jumlah: Number(sellJumlah), hargaSatuan: parseRupiahInput(sellHargaSatuan), accountId: sellAccountId,
       });
       setSellingId(null);
+      notifyWealthChanged();
       await onChanged();
     } catch (err: unknown) {
       setSellError(err instanceof Error ? err.message : "Gagal mencatat penjualan");
@@ -165,19 +184,27 @@ function AssetTab({
     }
   };
 
-  if (accountsLoaded && accounts.length === 0) {
+  const items = summary?.items ?? [];
+  const untungRugi = summary?.totalUntungRugi ?? 0;
+
+  if (accountsLoaded && accounts.length === 0 && items.length === 0 && !showAddForm) {
     return (
       <EmptyState
         icon={<Icon />}
         title="Belum ada rekening aktif"
-        description={`Tambahkan rekening dulu untuk mencatat ${kind === "barang" ? "pembelian barang" : "investasi"}`}
-        action={<Button href="/accounts" size="sm">Tambah Rekening</Button>}
+        description={`Tambahkan rekening untuk mencatat pembelian ${kind === "barang" ? "barang" : "investasi"} baru, atau deklarasikan ${label.toLowerCase()} yang sudah dimiliki tanpa dampak kas.`}
+        action={
+          <div className="flex flex-wrap gap-2 justify-center">
+            <Button href="/accounts" size="sm">Tambah Rekening</Button>
+            <Button size="sm" variant="outline" onClick={() => { setAddMode("deklarasi"); setShowAddForm(true); }}>
+              Sudah Dimiliki
+            </Button>
+          </div>
+        }
       />
     );
   }
 
-  const items = summary?.items ?? [];
-  const untungRugi = summary?.totalUntungRugi ?? 0;
   const filteredItems = search.trim()
     ? items.filter((item) => item.namaAset.toLowerCase().includes(search.trim().toLowerCase()))
     : items;
@@ -203,8 +230,20 @@ function AssetTab({
 
       {showAddForm && (
         <Card as="form" onSubmit={handleAdd} padding="lg" className="mb-6">
-          <h3 className="font-semibold text-text-primary mb-4">Beli {label}</h3>
+          <h3 className="font-semibold text-text-primary mb-4">Tambah {label}</h3>
+          <Tabs
+            items={ASSET_ADD_MODE_TABS}
+            value={addMode}
+            onChange={setAddMode}
+            idPrefix={`${kind}-add-mode`}
+            aria-label="Cara menambah aset"
+            fitted
+            className="mb-4 max-w-md"
+          />
           {formError && <p role="alert" className="text-sm text-danger-text mb-3">{formError}</p>}
+          {addMode === "transaksi" && accounts.length === 0 && (
+            <p className="text-sm text-warning-text mb-3">Belum ada rekening aktif. Tambahkan rekening dulu atau pilih &quot;Sudah Dimiliki&quot;.</p>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label htmlFor="asset-nama" className="block text-sm font-medium text-text-secondary mb-1">
@@ -240,22 +279,39 @@ function AssetTab({
               onChange={(e) => setJumlah(e.target.value)}
               required
             />
-            <InputRupiah id="asset-harga" label="Harga Satuan" value={hargaSatuan} onChange={setHargaSatuan} required />
-            <Select
-              id="asset-account"
-              label="Rekening Sumber"
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
+            <InputRupiah
+              id="asset-harga"
+              label={addMode === "deklarasi" ? "Harga Beli Rata-rata" : "Harga Satuan"}
+              value={hargaSatuan}
+              onChange={setHargaSatuan}
               required
-            >
-              <option value="">Pilih rekening</option>
-              {accounts.map((a) => <option key={a.id} value={a.id}>{a.nama}</option>)}
-            </Select>
-            <Input id="asset-tanggal" type="date" label="Tanggal" value={tanggal} onChange={(e) => setTanggal(e.target.value)} required />
+            />
+            {addMode === "transaksi" && (
+              <>
+                <Select
+                  id="asset-account"
+                  label="Rekening Sumber"
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                  required
+                >
+                  <option value="">Pilih rekening</option>
+                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.nama}</option>)}
+                </Select>
+                <Input id="asset-tanggal" type="date" label="Tanggal" value={tanggal} onChange={(e) => setTanggal(e.target.value)} required />
+              </>
+            )}
           </div>
           <div className="flex gap-2 mt-4 max-w-sm">
             <Button type="button" variant="secondary" fullWidth onClick={() => { setShowAddForm(false); resetAddForm(); }}>Batal</Button>
-            <Button type="submit" fullWidth loading={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>
+            <Button
+              type="submit"
+              fullWidth
+              loading={saving}
+              disabled={addMode === "transaksi" && accounts.length === 0}
+            >
+              {saving ? "Menyimpan..." : addMode === "deklarasi" ? "Simpan Deklarasi" : "Simpan"}
+            </Button>
           </div>
         </Card>
       )}

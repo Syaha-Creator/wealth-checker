@@ -29,6 +29,14 @@ export function setActiveHouseholdId(householdId: string | null): void {
   window.dispatchEvent(new CustomEvent("wealth-checker:household-changed", { detail: householdId }));
 }
 
+/** Picu refresh ringkasan kekayaan di dashboard (dan listener lain) setelah mutasi finansial. */
+export const WEALTH_CHANGED_EVENT = "wealth-checker:wealth-changed";
+
+export function notifyWealthChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(WEALTH_CHANGED_EVENT));
+}
+
 /** Drop-in replacement untuk `fetch(`${API}${path}`, init)` — lihat catatan di atas modul ini. */
 export function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const householdId = getActiveHouseholdId();
