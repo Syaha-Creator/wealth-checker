@@ -1,0 +1,8 @@
+✓ Login sukses
+[EDIT ASET] Kekayaan Bersih SEBELUM: Rp 15.818.393
+[EDIT ASET] Total Aset SEBELUM: Rp 54.017.321
+[EDIT ASET] Kekayaan Bersih SESUDAH: Rp 33.821.948 (delta 18003555)
+[HAPUS UTANG] Kekayaan Bersih SEBELUM: Rp 32.821.949
+[HAPUS UTANG] Kekayaan Bersih SESUDAH: Rp 33.821.948 (delta +999.999, expected ~+999999)
+[EDIT UTANG] Nama diubah: Utang Edit Sementara → Bank Edit E2E 1783914706756
+[EDIT PIUTANG] Nama diubah: Piutang E2E 1783914686092 → Peminjam Edit E2E 1783914713144
