@@ -14,6 +14,11 @@ import { Tabs, tabPanelId, tabButtonId } from "@/components/ui/Tabs";
 import { formatCurrency, parseRupiahInput } from "@/lib/format";
 import { SEMUA_KARTU_KREDIT_PAYLATER } from "@/lib/institutions";
 import { apiFetch as apiFetchRaw, notifyWealthChanged } from "@/lib/apiFetch";
+import { ConfirmModal } from "@/components/ConfirmModal";
+import { IconButton } from "@/components/ui/IconButton";
+
+const DEBT_SALDO_EDIT_HINT = "Sisa saldo diperbarui lewat transaksi pembayaran, bukan dari form ini.";
+const RECEIVABLE_SALDO_EDIT_HINT = "Sisa saldo diperbarui lewat transaksi penerimaan, bukan dari form ini.";
 
 const DEBT_TABS_ID_PREFIX = "debts";
 const DEBT_TABS: { id: "utang" | "piutang"; label: string }[] = [
@@ -146,6 +151,16 @@ function DebtTab({
   const [payTanggal, setPayTanggal] = useState(todayStr());
   const [paySaving, setPaySaving] = useState(false);
   const [payError, setPayError] = useState("");
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editPemberiUtang, setEditPemberiUtang] = useState("");
+  const [editTipe, setEditTipe] = useState<"utang_biasa" | "kartu_kredit">("utang_biasa");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; id: string; nama: string }>({ open: false, id: "", nama: "" });
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   // Audit temuan 5 (skalabilitas): daftar kreditur murni scroll vertikal
   // tanpa pencarian — muncul begitu daftar cukup panjang untuk butuh itu.
   const [search, setSearch] = useState("");
@@ -184,7 +199,50 @@ function DebtTab({
   };
 
   const openPayForm = (id: string) => {
+    setEditingId(null);
     setPayingId(id); setPayNominal(""); setPayAccountId(""); setPayTanggal(todayStr()); setPayError("");
+  };
+
+  const openEditForm = (d: DebtItem) => {
+    setPayingId(null);
+    setEditingId(d.id);
+    setEditPemberiUtang(d.pemberiUtang);
+    setEditTipe(d.tipe === "kartu_kredit" ? "kartu_kredit" : "utang_biasa");
+    setEditError("");
+  };
+
+  const handleEdit = async (e: FormEvent, id: string) => {
+    e.preventDefault();
+    setEditSaving(true); setEditError("");
+    try {
+      await apiFetch(`/api/debts/${id}`, "PATCH", {
+        pemberiUtang: editPemberiUtang,
+        tipe: editTipe,
+      });
+      setEditingId(null);
+      notifyWealthChanged();
+      await onChanged();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Gagal menyimpan perubahan");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    setDeleteBusy(true); setDeleteError("");
+    try {
+      await apiFetch(`/api/debts/${deleteModal.id}`, "DELETE");
+      setDeleteModal({ open: false, id: "", nama: "" });
+      setEditingId(null);
+      setPayingId(null);
+      notifyWealthChanged();
+      await onChanged();
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Gagal menghapus utang");
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   const handlePay = async (e: FormEvent, debtId: string) => {
@@ -231,6 +289,20 @@ function DebtTab({
 
   return (
     <div>
+      <ConfirmModal
+        open={deleteModal.open}
+        title="Hapus Utang"
+        message={`Hapus utang "${deleteModal.nama}"? Hanya bisa dilakukan jika belum ada transaksi pinjaman/cicilan terkait.`}
+        confirmLabel="Hapus"
+        confirmVariant="danger"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => { if (!deleteBusy) setDeleteModal({ open: false, id: "", nama: "" }); }}
+        busy={deleteBusy}
+      />
+      {deleteError && !deleteModal.open && (
+        <p role="alert" className="text-sm text-danger-text mb-3">{deleteError}</p>
+      )}
+
       <div className="bg-brand text-white rounded-2xl p-5 sm:p-6 mb-6">
         <p className="text-white/70 text-sm">Total Sisa Utang</p>
         <p className="text-2xl sm:text-3xl font-bold mt-1">{formatCurrency(summary?.totalSisaSaldo ?? 0)}</p>
@@ -362,14 +434,72 @@ function DebtTab({
                   </div>
                   <p className="text-xs text-text-muted mt-0.5">Total pinjaman: {formatCurrency(d.totalPinjaman)}</p>
                 </div>
-                {!d.lunas && (
-                  <Button size="sm" variant="outline" onClick={() => (payingId === d.id ? setPayingId(null) : openPayForm(d.id))}>
-                    Bayar Cicilan
-                  </Button>
-                )}
+                <div className="flex items-center gap-0.5 shrink-0 -mr-1 -mt-1">
+                  {!d.lunas && (
+                    <Button size="sm" variant="outline" onClick={() => (payingId === d.id ? setPayingId(null) : openPayForm(d.id))}>
+                      Bayar Cicilan
+                    </Button>
+                  )}
+                  <IconButton
+                    onClick={() => (editingId === d.id ? setEditingId(null) : openEditForm(d))}
+                    size="sm"
+                    variant="info"
+                    aria-label={`Edit utang ${d.pemberiUtang}`}
+                    aria-pressed={editingId === d.id}
+                    title="Edit"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  </IconButton>
+                  <div className="w-px h-5 bg-border mx-1" aria-hidden="true" />
+                  <IconButton
+                    onClick={() => setDeleteModal({ open: true, id: d.id, nama: d.pemberiUtang })}
+                    size="sm"
+                    variant="danger"
+                    aria-label={`Hapus utang ${d.pemberiUtang}`}
+                    title="Hapus"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                  </IconButton>
+                </div>
               </div>
               <p className={`text-lg font-bold ${d.lunas ? "text-brand" : "text-danger-text"}`}>{formatCurrency(d.sisaSaldo)}</p>
               <div className="mt-2"><ProgressBar percent={d.progressPercent} /></div>
+
+              {editingId === d.id && (
+                <form onSubmit={(e) => handleEdit(e, d.id)} className="mt-4 pt-4 border-t border-border space-y-3">
+                  {editError && <p className="text-sm text-danger-text">{editError}</p>}
+                  <p className="text-xs text-text-muted">{DEBT_SALDO_EDIT_HINT}</p>
+                  <Select
+                    id={`edit-debt-tipe-${d.id}`}
+                    label="Tipe"
+                    value={editTipe}
+                    onChange={(e) => setEditTipe(e.target.value as "utang_biasa" | "kartu_kredit")}
+                    required
+                  >
+                    <option value="utang_biasa">Utang Biasa</option>
+                    <option value="kartu_kredit">Kartu Kredit</option>
+                  </Select>
+                  <div>
+                    <label htmlFor={`edit-debt-pemberi-${d.id}`} className="block text-sm font-medium text-text-secondary mb-1">
+                      {editTipe === "kartu_kredit" ? "Nama Kartu / Penyedia" : "Nama Pemberi Pinjaman"}
+                      <RequiredMark />
+                    </label>
+                    <input
+                      id={`edit-debt-pemberi-${d.id}`}
+                      list="debt-pemberi-options"
+                      className="w-full px-3 py-2.5 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand/30"
+                      value={editPemberiUtang}
+                      onChange={(e) => setEditPemberiUtang(e.target.value)}
+                      autoComplete="off"
+                      required
+                    />
+                  </div>
+                  <div className="flex gap-2 max-w-sm">
+                    <Button type="button" variant="secondary" fullWidth onClick={() => setEditingId(null)}>Batal</Button>
+                    <Button type="submit" fullWidth loading={editSaving}>{editSaving ? "Menyimpan..." : "Simpan"}</Button>
+                  </div>
+                </form>
+              )}
 
               {payingId === d.id && (() => {
                 // Medium #11 (bug hunt): client-side cap vs sisaSaldo — server
@@ -443,6 +573,15 @@ function ReceivableTab({
   const [recvError, setRecvError] = useState("");
   const [search, setSearch] = useState("");
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editPeminjam, setEditPeminjam] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; id: string; nama: string }>({ open: false, id: "", nama: "" });
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   const resetAddForm = () => {
     setAddMode("transaksi");
     setPeminjam(""); setNominal(""); setAccountId(""); setTanggal(todayStr()); setFormError("");
@@ -476,7 +615,46 @@ function ReceivableTab({
   };
 
   const openReceiveForm = (id: string) => {
+    setEditingId(null);
     setReceivingId(id); setRecvNominal(""); setRecvAccountId(""); setRecvTanggal(todayStr()); setRecvError("");
+  };
+
+  const openEditForm = (r: ReceivableItem) => {
+    setReceivingId(null);
+    setEditingId(r.id);
+    setEditPeminjam(r.peminjam);
+    setEditError("");
+  };
+
+  const handleEdit = async (e: FormEvent, id: string) => {
+    e.preventDefault();
+    setEditSaving(true); setEditError("");
+    try {
+      await apiFetch(`/api/debts/receivables/${id}`, "PATCH", { peminjam: editPeminjam });
+      setEditingId(null);
+      notifyWealthChanged();
+      await onChanged();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Gagal menyimpan perubahan");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    setDeleteBusy(true); setDeleteError("");
+    try {
+      await apiFetch(`/api/debts/receivables/${deleteModal.id}`, "DELETE");
+      setDeleteModal({ open: false, id: "", nama: "" });
+      setEditingId(null);
+      setReceivingId(null);
+      notifyWealthChanged();
+      await onChanged();
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Gagal menghapus piutang");
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   const handleReceive = async (e: FormEvent, receivableId: string) => {
@@ -523,6 +701,20 @@ function ReceivableTab({
 
   return (
     <div>
+      <ConfirmModal
+        open={deleteModal.open}
+        title="Hapus Piutang"
+        message={`Hapus piutang "${deleteModal.nama}"? Hanya bisa dilakukan jika belum ada transaksi pemberian/penerimaan terkait.`}
+        confirmLabel="Hapus"
+        confirmVariant="danger"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => { if (!deleteBusy) setDeleteModal({ open: false, id: "", nama: "" }); }}
+        busy={deleteBusy}
+      />
+      {deleteError && !deleteModal.open && (
+        <p role="alert" className="text-sm text-danger-text mb-3">{deleteError}</p>
+      )}
+
       <div className="bg-brand text-white rounded-2xl p-5 sm:p-6 mb-6">
         <p className="text-white/70 text-sm">Total Sisa Piutang</p>
         <p className="text-2xl sm:text-3xl font-bold mt-1">{formatCurrency(summary?.totalSisaSaldo ?? 0)}</p>
@@ -633,14 +825,54 @@ function ReceivableTab({
                   </div>
                   <p className="text-xs text-text-muted mt-0.5">Total dipinjamkan: {formatCurrency(r.totalDipinjamkan)}</p>
                 </div>
-                {!r.lunas && (
-                  <Button size="sm" variant="outline" onClick={() => (receivingId === r.id ? setReceivingId(null) : openReceiveForm(r.id))}>
-                    Terima Pembayaran
-                  </Button>
-                )}
+                <div className="flex items-center gap-0.5 shrink-0 -mr-1 -mt-1">
+                  {!r.lunas && (
+                    <Button size="sm" variant="outline" onClick={() => (receivingId === r.id ? setReceivingId(null) : openReceiveForm(r.id))}>
+                      Terima Pembayaran
+                    </Button>
+                  )}
+                  <IconButton
+                    onClick={() => (editingId === r.id ? setEditingId(null) : openEditForm(r))}
+                    size="sm"
+                    variant="info"
+                    aria-label={`Edit piutang ${r.peminjam}`}
+                    aria-pressed={editingId === r.id}
+                    title="Edit"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  </IconButton>
+                  <div className="w-px h-5 bg-border mx-1" aria-hidden="true" />
+                  <IconButton
+                    onClick={() => setDeleteModal({ open: true, id: r.id, nama: r.peminjam })}
+                    size="sm"
+                    variant="danger"
+                    aria-label={`Hapus piutang ${r.peminjam}`}
+                    title="Hapus"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                  </IconButton>
+                </div>
               </div>
               <p className={`text-lg font-bold ${r.lunas ? "text-brand" : "text-warning-text"}`}>{formatCurrency(r.sisaSaldo)}</p>
               <div className="mt-2"><ProgressBar percent={r.progressPercent} /></div>
+
+              {editingId === r.id && (
+                <form onSubmit={(e) => handleEdit(e, r.id)} className="mt-4 pt-4 border-t border-border space-y-3">
+                  {editError && <p className="text-sm text-danger-text">{editError}</p>}
+                  <p className="text-xs text-text-muted">{RECEIVABLE_SALDO_EDIT_HINT}</p>
+                  <Input
+                    id={`edit-rec-peminjam-${r.id}`}
+                    label="Nama Peminjam"
+                    value={editPeminjam}
+                    onChange={(e) => setEditPeminjam(e.target.value)}
+                    required
+                  />
+                  <div className="flex gap-2 max-w-sm">
+                    <Button type="button" variant="secondary" fullWidth onClick={() => setEditingId(null)}>Batal</Button>
+                    <Button type="submit" fullWidth loading={editSaving}>{editSaving ? "Menyimpan..." : "Simpan"}</Button>
+                  </div>
+                </form>
+              )}
 
               {receivingId === r.id && (() => {
                 // Medium #11 (bug hunt): sama seperti DebtTab di atas.

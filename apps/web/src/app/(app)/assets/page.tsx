@@ -10,8 +10,10 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Input, InputRupiah, RequiredMark, Select } from "@/components/ui/Input";
 import { SkeletonHero, Skeleton } from "@/components/ui/Skeleton";
 import { Tabs, tabPanelId, tabButtonId } from "@/components/ui/Tabs";
-import { formatCurrency, parseRupiahInput } from "@/lib/format";
+import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/format";
 import { apiFetch as apiFetchRaw, notifyWealthChanged } from "@/lib/apiFetch";
+import { ConfirmModal } from "@/components/ConfirmModal";
+import { IconButton } from "@/components/ui/IconButton";
 
 type Account = { id: string; nama: string; saldoCache: string; isActive: boolean };
 
@@ -121,6 +123,17 @@ function AssetTab({
   const [sellTanggal, setSellTanggal] = useState(todayStr());
   const [sellSaving, setSellSaving] = useState(false);
   const [sellError, setSellError] = useState("");
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editNamaAset, setEditNamaAset] = useState("");
+  const [editJumlah, setEditJumlah] = useState("");
+  const [editHargaSatuan, setEditHargaSatuan] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; id: string; nama: string }>({ open: false, id: "", nama: "" });
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   // Audit temuan 5 (skalabilitas): daftar aset murni scroll vertikal tanpa
   // pencarian — muncul begitu daftar cukup panjang untuk butuh itu.
   const [search, setSearch] = useState("");
@@ -162,8 +175,55 @@ function AssetTab({
     }
   };
 
+  const assetBasePath = kind === "barang" ? "/api/assets/fixed" : "/api/assets/liquid";
+
   const openSellForm = (id: string) => {
+    setEditingId(null);
     setSellingId(id); setSellJumlah(""); setSellHargaSatuan(""); setSellAccountId(""); setSellTanggal(todayStr()); setSellError("");
+  };
+
+  const openEditForm = (item: AssetSummaryItem) => {
+    setSellingId(null);
+    setEditingId(item.id);
+    setEditNamaAset(item.namaAset);
+    setEditJumlah(String(item.jumlah));
+    setEditHargaSatuan(formatRupiahInput(String(item.hargaBeliRataRata)));
+    setEditError("");
+  };
+
+  const handleEdit = async (e: FormEvent, id: string) => {
+    e.preventDefault();
+    setEditSaving(true); setEditError("");
+    try {
+      await apiFetch(`${assetBasePath}/${id}`, "PATCH", {
+        namaAset: editNamaAset,
+        jumlah: Number(editJumlah),
+        hargaBeliRataRata: parseRupiahInput(editHargaSatuan),
+      });
+      setEditingId(null);
+      notifyWealthChanged();
+      await onChanged();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Gagal menyimpan perubahan");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    setDeleteBusy(true); setDeleteError("");
+    try {
+      await apiFetch(`${assetBasePath}/${deleteModal.id}`, "DELETE");
+      setDeleteModal({ open: false, id: "", nama: "" });
+      setEditingId(null);
+      setSellingId(null);
+      notifyWealthChanged();
+      await onChanged();
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Gagal menghapus aset");
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   const handleSell = async (e: FormEvent, item: AssetSummaryItem) => {
@@ -211,6 +271,20 @@ function AssetTab({
 
   return (
     <div>
+      <ConfirmModal
+        open={deleteModal.open}
+        title={`Hapus ${label}`}
+        message={`Hapus "${deleteModal.nama}"? Hanya bisa dilakukan jika belum ada transaksi beli/jual terkait.`}
+        confirmLabel="Hapus"
+        confirmVariant="danger"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => { if (!deleteBusy) setDeleteModal({ open: false, id: "", nama: "" }); }}
+        busy={deleteBusy}
+      />
+      {deleteError && !deleteModal.open && (
+        <p role="alert" className="text-sm text-danger-text mb-3">{deleteError}</p>
+      )}
+
       <div className="bg-brand text-white rounded-2xl p-5 sm:p-6 mb-6">
         <p className="text-white/70 text-sm">Total Nilai {label}</p>
         <p className="text-2xl sm:text-3xl font-bold mt-1">{formatCurrency(summary?.totalNilai ?? 0)}</p>
@@ -353,11 +427,67 @@ function AssetTab({
                       {item.jumlah.toLocaleString("id-ID")} unit · avg {formatCurrency(item.hargaBeliRataRata)}
                     </p>
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => (sellingId === item.id ? setSellingId(null) : openSellForm(item.id))}>
-                    Jual
-                  </Button>
+                  <div className="flex items-center gap-0.5 shrink-0 -mr-1 -mt-1">
+                    <Button size="sm" variant="outline" onClick={() => (sellingId === item.id ? setSellingId(null) : openSellForm(item.id))}>
+                      Jual
+                    </Button>
+                    <IconButton
+                      onClick={() => (editingId === item.id ? setEditingId(null) : openEditForm(item))}
+                      size="sm"
+                      variant="info"
+                      aria-label={`Edit ${label.toLowerCase()} ${item.namaAset}`}
+                      aria-pressed={editingId === item.id}
+                      title="Edit"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    </IconButton>
+                    <div className="w-px h-5 bg-border mx-1" aria-hidden="true" />
+                    <IconButton
+                      onClick={() => setDeleteModal({ open: true, id: item.id, nama: item.namaAset })}
+                      size="sm"
+                      variant="danger"
+                      aria-label={`Hapus ${label.toLowerCase()} ${item.namaAset}`}
+                      title="Hapus"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                    </IconButton>
+                  </div>
                 </div>
                 <p className="text-lg font-bold text-text-primary">{formatCurrency(item.nilaiSaatIni)}</p>
+
+                {editingId === item.id && (
+                  <form onSubmit={(e) => handleEdit(e, item.id)} className="mt-4 pt-4 border-t border-border space-y-3">
+                    {editError && <p className="text-sm text-danger-text">{editError}</p>}
+                    <Input
+                      id={`edit-nama-${item.id}`}
+                      label={`Nama ${label}`}
+                      value={editNamaAset}
+                      onChange={(e) => setEditNamaAset(e.target.value)}
+                      required
+                    />
+                    <Input
+                      id={`edit-jumlah-${item.id}`}
+                      type="number"
+                      step="any"
+                      min="0.01"
+                      label="Jumlah/Unit"
+                      value={editJumlah}
+                      onChange={(e) => setEditJumlah(e.target.value)}
+                      required
+                    />
+                    <InputRupiah
+                      id={`edit-harga-${item.id}`}
+                      label="Harga Beli Rata-rata"
+                      value={editHargaSatuan}
+                      onChange={setEditHargaSatuan}
+                      required
+                    />
+                    <div className="flex gap-2 max-w-sm">
+                      <Button type="button" variant="secondary" fullWidth onClick={() => setEditingId(null)}>Batal</Button>
+                      <Button type="submit" fullWidth loading={editSaving}>{editSaving ? "Menyimpan..." : "Simpan"}</Button>
+                    </div>
+                  </form>
+                )}
 
                 {sellingId === item.id && (
                   <form onSubmit={(e) => handleSell(e, item)} className="mt-4 pt-4 border-t border-border space-y-3">
