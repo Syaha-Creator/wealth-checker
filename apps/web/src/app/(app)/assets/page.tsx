@@ -14,6 +14,7 @@ import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/forma
 import { apiFetch as apiFetchRaw, notifyWealthChanged } from "@/lib/apiFetch";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { IconButton } from "@/components/ui/IconButton";
+import { useToast } from "@/components/ui/Toast";
 
 type Account = { id: string; nama: string; saldoCache: string; isActive: boolean };
 
@@ -101,6 +102,7 @@ function AssetTab({
   accountsLoaded: boolean;
   onChanged: () => Promise<void>;
 }) {
+  const { showToast } = useToast();
   const buyType = kind === "barang" ? "beli_barang" : "beli_investasi";
   const sellType = kind === "barang" ? "jual_barang" : "jual_investasi";
   const label = kind === "barang" ? "Barang" : "Investasi";
@@ -167,9 +169,17 @@ function AssetTab({
       resetAddForm();
       setShowAddForm(false);
       notifyWealthChanged();
+      showToast({
+        type: "success",
+        message: addMode === "transaksi"
+          ? `Pembelian ${label.toLowerCase()} berhasil dicatat`
+          : `${label} berhasil ditambahkan`,
+      });
       await onChanged();
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : "Gagal menyimpan");
+      const msg = err instanceof Error ? err.message : "Gagal menyimpan";
+      setFormError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setSaving(false);
     }
@@ -202,9 +212,12 @@ function AssetTab({
       });
       setEditingId(null);
       notifyWealthChanged();
+      showToast({ type: "success", message: "Aset berhasil diperbarui" });
       await onChanged();
     } catch (err: unknown) {
-      setEditError(err instanceof Error ? err.message : "Gagal menyimpan perubahan");
+      const msg = err instanceof Error ? err.message : "Gagal menyimpan perubahan";
+      setEditError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setEditSaving(false);
     }
@@ -218,9 +231,12 @@ function AssetTab({
       setEditingId(null);
       setSellingId(null);
       notifyWealthChanged();
+      showToast({ type: "success", message: `${label} berhasil dihapus` });
       await onChanged();
     } catch (err: unknown) {
-      setDeleteError(err instanceof Error ? err.message : "Gagal menghapus aset");
+      const msg = err instanceof Error ? err.message : "Gagal menghapus aset";
+      setDeleteError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setDeleteBusy(false);
     }
@@ -236,9 +252,12 @@ function AssetTab({
       });
       setSellingId(null);
       notifyWealthChanged();
+      showToast({ type: "success", message: `Penjualan ${label.toLowerCase()} berhasil dicatat` });
       await onChanged();
     } catch (err: unknown) {
-      setSellError(err instanceof Error ? err.message : "Gagal mencatat penjualan");
+      const msg = err instanceof Error ? err.message : "Gagal mencatat penjualan";
+      setSellError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setSellSaving(false);
     }

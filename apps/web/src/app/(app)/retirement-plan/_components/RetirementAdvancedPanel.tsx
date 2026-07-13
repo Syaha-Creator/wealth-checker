@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { formatCurrency, formatCurrencyShort } from "@/lib/format";
 import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { useToast } from "@/components/ui/Toast";
 
 interface RetirementAssumptionsData {
   inflasiPersen: number | string;
@@ -48,6 +49,7 @@ interface RetirementAdvancedPanelProps {
  * RetirementPlanPage supaya halaman utama tidak terpengaruh kalau bagian ini gagal.
  */
 export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: RetirementAdvancedPanelProps) {
+  const { showToast } = useToast();
   const [inflasiPersen, setInflasiPersen] = useState(5);
   const [returnInvestasiPersen, setReturnInvestasiPersen] = useState(8);
   const [advancedPlan, setAdvancedPlan] = useState<AdvancedPlanResponse["plan"] | null>(null);
@@ -55,7 +57,7 @@ export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: Retir
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const loadAdvancedPlan = async (inflasi: number, returnInvestasi: number) => {
+  const loadAdvancedPlan = async (inflasi: number, returnInvestasi: number, silent = false) => {
     setLoading(true);
     setError("");
     try {
@@ -66,8 +68,11 @@ export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: Retir
       });
       const plan: AdvancedPlanResponse = await apiFetch("/api/wealth/retirement-plan?mode=advanced");
       setAdvancedPlan(plan.plan);
+      if (!silent) showToast({ type: "success", message: "Asumsi pensiun berhasil diterapkan" });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Gagal memuat proyeksi mode lanjutan");
+      const msg = err instanceof Error ? err.message : "Gagal memuat proyeksi mode lanjutan";
+      setError(msg);
+      if (!silent) showToast({ type: "error", message: msg });
     } finally {
       setLoading(false);
     }
@@ -80,7 +85,7 @@ export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: Retir
         const returnInvestasi = Number(data.returnInvestasiPersen);
         setInflasiPersen(inflasi);
         setReturnInvestasiPersen(returnInvestasi);
-        return loadAdvancedPlan(inflasi, returnInvestasi);
+        return loadAdvancedPlan(inflasi, returnInvestasi, true);
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "Gagal memuat asumsi");

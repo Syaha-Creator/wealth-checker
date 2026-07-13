@@ -13,6 +13,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { formatCurrency, parseRupiahInput } from "@/lib/format";
 import { NotificationSettings } from "./_components/NotificationSettings";
 import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { useToast } from "@/components/ui/Toast";
 import { HouseholdSettings } from "./_components/HouseholdSettings";
 
 type Profile = {
@@ -51,6 +52,7 @@ async function apiFetch(path: string, method = "GET", body?: unknown) {
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { showToast } = useToast();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -106,9 +108,12 @@ export default function ProfilePage() {
         pengeluaranBulananRataRata: parseRupiahInput(pengeluaranRencana) || null,
       });
       setSaved(true);
+      showToast({ type: "success", message: "Profil berhasil diperbarui" });
       setTimeout(() => setSaved(false), 3000);
     } catch (err: unknown) {
-      setSaveError(err instanceof Error ? err.message : "Gagal menyimpan perubahan");
+      const msg = err instanceof Error ? err.message : "Gagal menyimpan perubahan";
+      setSaveError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setSaving(false);
     }

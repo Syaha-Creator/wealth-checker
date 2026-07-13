@@ -10,6 +10,7 @@ import { RequiredMark } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatRupiahInput, parseRupiahInput } from "@/lib/format";
 import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { useToast } from "@/components/ui/Toast";
 
 type Account = { id: string; nama: string; saldoCache: string; isActive: boolean };
 type Categories = { pendapatan: string[]; pengeluaran: string[] };
@@ -66,6 +67,7 @@ const ChevronDown = () => (
 export default function EditTransactionPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
+  const { showToast } = useToast();
   const id = params.id;
 
   const [loading, setLoading] = useState(true);
@@ -162,9 +164,12 @@ export default function EditTransactionPage() {
         toAccountId: isTransfer ? toAccountId : undefined,
         nominal: nominalParsed,
       });
+      showToast({ type: "success", message: "Transaksi berhasil diperbarui" });
       router.push("/transactions");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Gagal menyimpan perubahan");
+      const msg = err instanceof Error ? err.message : "Gagal menyimpan perubahan";
+      setError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setSaving(false);
     }

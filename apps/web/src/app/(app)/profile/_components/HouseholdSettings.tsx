@@ -8,6 +8,7 @@ import { Input, Select } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { apiFetch as apiFetchRaw, getActiveHouseholdId, setActiveHouseholdId } from "@/lib/apiFetch";
+import { useToast } from "@/components/ui/Toast";
 import { useSession } from "@/lib/auth-client";
 
 async function apiFetch(path: string, method = "GET", body?: unknown) {
@@ -59,6 +60,7 @@ interface MembersResponse {
 const ROLE_LABEL: Record<Role, string> = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
 
 export function HouseholdSettings() {
+  const { showToast } = useToast();
   const { data: session } = useSession();
   const [households, setHouseholds] = useState<HouseholdListItem[] | null>(null);
   const [membersData, setMembersData] = useState<MembersResponse | null>(null);
@@ -118,7 +120,9 @@ export function HouseholdSettings() {
       setActiveHouseholdId(householdId);
       window.location.reload();
     } catch (err: unknown) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Gagal beralih household" });
+      const msg = err instanceof Error ? err.message : "Gagal beralih household";
+      setMessage({ type: "error", text: msg });
+      showToast({ type: "error", message: msg });
       setSwitching(false);
     }
   };
@@ -133,10 +137,13 @@ export function HouseholdSettings() {
         type: "success",
         text: `Undangan dibuat. Bagikan link ini ke ${inviteEmail.trim()}: ${invite.inviteUrl}`,
       });
+      showToast({ type: "success", message: "Undangan anggota berhasil dikirim" });
       setInviteEmail("");
       await reload();
     } catch (err: unknown) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Gagal mengundang anggota" });
+      const msg = err instanceof Error ? err.message : "Gagal mengundang anggota";
+      setMessage({ type: "error", text: msg });
+      showToast({ type: "error", message: msg });
     } finally {
       setInviting(false);
     }
@@ -147,9 +154,12 @@ export function HouseholdSettings() {
     setMessage(null);
     try {
       await apiFetch(`/api/households/invites/${inviteId}`, "DELETE");
+      showToast({ type: "success", message: "Undangan berhasil dibatalkan" });
       await reload();
     } catch (err: unknown) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Gagal membatalkan undangan" });
+      const msg = err instanceof Error ? err.message : "Gagal membatalkan undangan";
+      setMessage({ type: "error", text: msg });
+      showToast({ type: "error", message: msg });
     } finally {
       setBusyUserId(null);
     }
@@ -160,9 +170,12 @@ export function HouseholdSettings() {
     setMessage(null);
     try {
       await apiFetch(`/api/households/members/${userId}`, "PATCH", { role });
+      showToast({ type: "success", message: "Peran anggota berhasil diperbarui" });
       await reload();
     } catch (err: unknown) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Gagal mengubah peran anggota" });
+      const msg = err instanceof Error ? err.message : "Gagal mengubah peran anggota";
+      setMessage({ type: "error", text: msg });
+      showToast({ type: "error", message: msg });
     } finally {
       setBusyUserId(null);
     }
@@ -175,9 +188,12 @@ export function HouseholdSettings() {
     try {
       await apiFetch(`/api/households/members/${removeTarget.userId}`, "DELETE");
       setRemoveTarget(null);
+      showToast({ type: "success", message: "Anggota berhasil dikeluarkan" });
       await reload();
     } catch (err: unknown) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Gagal mengeluarkan anggota" });
+      const msg = err instanceof Error ? err.message : "Gagal mengeluarkan anggota";
+      setMessage({ type: "error", text: msg });
+      showToast({ type: "error", message: msg });
     } finally {
       setBusyUserId(null);
     }
@@ -196,7 +212,9 @@ export function HouseholdSettings() {
       if (getActiveHouseholdId() === membersData.householdId) setActiveHouseholdId(null);
       window.location.reload();
     } catch (err: unknown) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Gagal keluar dari household" });
+      const msg = err instanceof Error ? err.message : "Gagal keluar dari household";
+      setMessage({ type: "error", text: msg });
+      showToast({ type: "error", message: msg });
       setBusyUserId(null);
       setLeaveTarget(null);
     }

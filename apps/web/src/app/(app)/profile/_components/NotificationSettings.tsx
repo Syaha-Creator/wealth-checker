@@ -7,6 +7,7 @@ import { Toggle } from "@/components/ui/Toggle";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { isPushSupported, subscribeToPush, unsubscribeFromPush, getCurrentSubscriptionEndpoint } from "@/lib/pushClient";
 import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { useToast } from "@/components/ui/Toast";
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
@@ -36,6 +37,7 @@ function toTimeInputValue(t: string): string {
 }
 
 export function NotificationSettings() {
+  const { showToast } = useToast();
   const [prefs, setPrefs] = useState<Preferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -63,8 +65,11 @@ export function NotificationSettings() {
     try {
       const updated = await apiFetch("/api/notifications/preferences", "PATCH", next);
       setPrefs(updated);
+      showToast({ type: "success", message: "Preferensi notifikasi berhasil disimpan" });
     } catch (err: unknown) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Gagal menyimpan preferensi" });
+      const msg = err instanceof Error ? err.message : "Gagal menyimpan preferensi";
+      setMessage({ type: "error", text: msg });
+      showToast({ type: "error", message: msg });
     } finally {
       setSaving(false);
     }
@@ -78,8 +83,11 @@ export function NotificationSettings() {
       await apiFetch("/api/notifications/subscribe", "POST", sub);
       setIsSubscribedHere(true);
       setMessage({ type: "success", text: "Notifikasi berhasil diaktifkan di perangkat ini" });
+      showToast({ type: "success", message: "Notifikasi push berhasil diaktifkan" });
     } catch (err: unknown) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Gagal mengaktifkan notifikasi" });
+      const msg = err instanceof Error ? err.message : "Gagal mengaktifkan notifikasi";
+      setMessage({ type: "error", text: msg });
+      showToast({ type: "error", message: msg });
     } finally {
       setSubscribing(false);
     }
@@ -93,8 +101,11 @@ export function NotificationSettings() {
       await unsubscribeFromPush();
       if (endpoint) await apiFetch("/api/notifications/subscribe", "DELETE", { endpoint });
       setIsSubscribedHere(false);
+      showToast({ type: "success", message: "Notifikasi push berhasil dinonaktifkan" });
     } catch (err: unknown) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Gagal menonaktifkan notifikasi" });
+      const msg = err instanceof Error ? err.message : "Gagal menonaktifkan notifikasi";
+      setMessage({ type: "error", text: msg });
+      showToast({ type: "error", message: msg });
     } finally {
       setSubscribing(false);
     }
@@ -106,8 +117,11 @@ export function NotificationSettings() {
     try {
       await apiFetch("/api/notifications/test", "POST");
       setMessage({ type: "success", text: "Notifikasi uji terkirim — cek notifikasi di perangkatmu" });
+      showToast({ type: "info", message: "Notifikasi uji terkirim" });
     } catch (err: unknown) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Gagal mengirim notifikasi uji" });
+      const msg = err instanceof Error ? err.message : "Gagal mengirim notifikasi uji";
+      setMessage({ type: "error", text: msg });
+      showToast({ type: "error", message: msg });
     } finally {
       setTesting(false);
     }

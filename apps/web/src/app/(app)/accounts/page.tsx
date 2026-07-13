@@ -14,6 +14,7 @@ import { Skeleton, SkeletonHero } from "@/components/ui/Skeleton";
 import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/format";
 import { SEMUA_REKENING } from "@/lib/institutions";
 import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { useToast } from "@/components/ui/Toast";
 
 type Account = {
   id: string;
@@ -57,6 +58,7 @@ function AccountIcon() {
 }
 
 export default function AccountsPage() {
+  const { showToast } = useToast();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState("");
@@ -114,9 +116,12 @@ export default function AccountsPage() {
     try {
       await apiFetch("/api/accounts", "POST", { nama, saldoAwal: parseRupiahInput(saldo) });
       setNama(""); setSaldo(""); setShowForm(false);
+      showToast({ type: "success", message: "Rekening berhasil ditambahkan" });
       await refetch();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Gagal menyimpan");
+      const msg = err instanceof Error ? err.message : "Gagal menyimpan";
+      setError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setSaving(false);
     }
@@ -142,9 +147,12 @@ export default function AccountsPage() {
         setModalBusy(true);
         try {
           await apiFetch(`/api/accounts/${id}`, "PATCH", { isActive: false });
+          showToast({ type: "success", message: "Rekening berhasil dinonaktifkan" });
           await refetch();
         } catch (err: unknown) {
-          setFetchError(err instanceof Error ? err.message : "Gagal menonaktifkan rekening");
+          const msg = err instanceof Error ? err.message : "Gagal menonaktifkan rekening";
+          setFetchError(msg);
+          showToast({ type: "error", message: msg });
         } finally {
           closeModal();
         }
@@ -179,9 +187,12 @@ export default function AccountsPage() {
         try {
           await apiFetch(`/api/accounts/${acc.id}`, "PATCH", { saldo: nilaiBaru });
           closeKoreksi();
+          showToast({ type: "success", message: "Saldo rekening berhasil dikoreksi" });
           await refetch();
         } catch (err: unknown) {
-          setKoreksiError(err instanceof Error ? err.message : "Gagal mengoreksi saldo");
+          const msg = err instanceof Error ? err.message : "Gagal mengoreksi saldo";
+          setKoreksiError(msg);
+          showToast({ type: "error", message: msg });
         } finally {
           setKoreksiSaving(false);
           closeModal();
@@ -201,9 +212,12 @@ export default function AccountsPage() {
         setModalBusy(true);
         try {
           await apiFetch(`/api/accounts/${id}`, "DELETE");
+          showToast({ type: "success", message: "Rekening berhasil dihapus" });
           await refetch();
         } catch (err: unknown) {
-          setFetchError(err instanceof Error ? err.message : "Gagal menghapus — pastikan tidak ada transaksi terkait.");
+          const msg = err instanceof Error ? err.message : "Gagal menghapus — pastikan tidak ada transaksi terkait.";
+          setFetchError(msg);
+          showToast({ type: "error", message: msg });
         } finally {
           closeModal();
         }

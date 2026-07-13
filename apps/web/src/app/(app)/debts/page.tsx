@@ -16,6 +16,7 @@ import { SEMUA_KARTU_KREDIT_PAYLATER } from "@/lib/institutions";
 import { apiFetch as apiFetchRaw, notifyWealthChanged } from "@/lib/apiFetch";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { IconButton } from "@/components/ui/IconButton";
+import { useToast } from "@/components/ui/Toast";
 
 const DEBT_SALDO_EDIT_HINT = "Sisa saldo diperbarui lewat transaksi pembayaran, bukan dari form ini.";
 const RECEIVABLE_SALDO_EDIT_HINT = "Sisa saldo diperbarui lewat transaksi penerimaan, bukan dari form ini.";
@@ -135,6 +136,7 @@ function DebtTab({
   accountsLoaded: boolean;
   onChanged: () => Promise<void>;
 }) {
+  const { showToast } = useToast();
   const [showAddForm, setShowAddForm] = useState(false);
   const [addMode, setAddMode] = useState<AddMode>("transaksi");
   const [pemberiUtang, setPemberiUtang] = useState("");
@@ -190,9 +192,15 @@ function DebtTab({
       resetAddForm();
       setShowAddForm(false);
       notifyWealthChanged();
+      showToast({
+        type: "success",
+        message: addMode === "transaksi" ? "Utang baru berhasil dicatat" : "Utang berhasil ditambahkan",
+      });
       await onChanged();
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : "Gagal menyimpan");
+      const msg = err instanceof Error ? err.message : "Gagal menyimpan";
+      setFormError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setSaving(false);
     }
@@ -221,9 +229,12 @@ function DebtTab({
       });
       setEditingId(null);
       notifyWealthChanged();
+      showToast({ type: "success", message: "Utang berhasil diperbarui" });
       await onChanged();
     } catch (err: unknown) {
-      setEditError(err instanceof Error ? err.message : "Gagal menyimpan perubahan");
+      const msg = err instanceof Error ? err.message : "Gagal menyimpan perubahan";
+      setEditError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setEditSaving(false);
     }
@@ -237,9 +248,12 @@ function DebtTab({
       setEditingId(null);
       setPayingId(null);
       notifyWealthChanged();
+      showToast({ type: "success", message: "Utang berhasil dihapus" });
       await onChanged();
     } catch (err: unknown) {
-      setDeleteError(err instanceof Error ? err.message : "Gagal menghapus utang");
+      const msg = err instanceof Error ? err.message : "Gagal menghapus utang";
+      setDeleteError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setDeleteBusy(false);
     }
@@ -255,9 +269,12 @@ function DebtTab({
       });
       setPayingId(null);
       notifyWealthChanged();
+      showToast({ type: "success", message: "Pembayaran utang berhasil dicatat" });
       await onChanged();
     } catch (err: unknown) {
-      setPayError(err instanceof Error ? err.message : "Gagal mencatat pembayaran");
+      const msg = err instanceof Error ? err.message : "Gagal mencatat pembayaran";
+      setPayError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setPaySaving(false);
     }
@@ -556,6 +573,7 @@ function ReceivableTab({
   accountsLoaded: boolean;
   onChanged: () => Promise<void>;
 }) {
+  const { showToast } = useToast();
   const [showAddForm, setShowAddForm] = useState(false);
   const [addMode, setAddMode] = useState<AddMode>("transaksi");
   const [peminjam, setPeminjam] = useState("");
@@ -606,9 +624,15 @@ function ReceivableTab({
       resetAddForm();
       setShowAddForm(false);
       notifyWealthChanged();
+      showToast({
+        type: "success",
+        message: addMode === "transaksi" ? "Piutang baru berhasil dicatat" : "Piutang berhasil ditambahkan",
+      });
       await onChanged();
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : "Gagal menyimpan");
+      const msg = err instanceof Error ? err.message : "Gagal menyimpan";
+      setFormError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setSaving(false);
     }
@@ -633,9 +657,12 @@ function ReceivableTab({
       await apiFetch(`/api/debts/receivables/${id}`, "PATCH", { peminjam: editPeminjam });
       setEditingId(null);
       notifyWealthChanged();
+      showToast({ type: "success", message: "Piutang berhasil diperbarui" });
       await onChanged();
     } catch (err: unknown) {
-      setEditError(err instanceof Error ? err.message : "Gagal menyimpan perubahan");
+      const msg = err instanceof Error ? err.message : "Gagal menyimpan perubahan";
+      setEditError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setEditSaving(false);
     }
@@ -649,9 +676,12 @@ function ReceivableTab({
       setEditingId(null);
       setReceivingId(null);
       notifyWealthChanged();
+      showToast({ type: "success", message: "Piutang berhasil dihapus" });
       await onChanged();
     } catch (err: unknown) {
-      setDeleteError(err instanceof Error ? err.message : "Gagal menghapus piutang");
+      const msg = err instanceof Error ? err.message : "Gagal menghapus piutang";
+      setDeleteError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setDeleteBusy(false);
     }
@@ -667,9 +697,12 @@ function ReceivableTab({
       });
       setReceivingId(null);
       notifyWealthChanged();
+      showToast({ type: "success", message: "Penerimaan piutang berhasil dicatat" });
       await onChanged();
     } catch (err: unknown) {
-      setRecvError(err instanceof Error ? err.message : "Gagal mencatat penerimaan");
+      const msg = err instanceof Error ? err.message : "Gagal mencatat penerimaan";
+      setRecvError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setRecvSaving(false);
     }

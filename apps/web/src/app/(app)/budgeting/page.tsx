@@ -11,6 +11,7 @@ import { InputRupiah } from "@/components/ui/Input";
 import { Skeleton, SkeletonHero } from "@/components/ui/Skeleton";
 import { formatCurrency, formatMonthLabel, parseRupiahInput } from "@/lib/format";
 import { apiFetch } from "@/lib/apiFetch";
+import { useToast } from "@/components/ui/Toast";
 
 
 type BudgetAllocationItem = { kategori: string; persen: number; nominal: number };
@@ -62,6 +63,7 @@ function currentYm() {
 }
 
 export default function BudgetingPage() {
+  const { showToast } = useToast();
   const [advice, setAdvice] = useState<BudgetingAdvice | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -125,9 +127,12 @@ export default function BudgetingPage() {
       }
       setPemasukan("");
       setShowForm(false);
+      showToast({ type: "success", message: "Rencana anggaran berhasil disimpan" });
       await fetchAdvice();
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : "Gagal menyimpan rencana");
+      const msg = err instanceof Error ? err.message : "Gagal menyimpan rencana";
+      setFormError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setSaving(false);
     }

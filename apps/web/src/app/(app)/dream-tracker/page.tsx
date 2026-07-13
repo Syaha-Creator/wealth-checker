@@ -14,6 +14,7 @@ import { Input, Select, InputRupiah } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/format";
 import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { useToast } from "@/components/ui/Toast";
 
 interface DreamGoal {
   id: string;
@@ -65,6 +66,7 @@ interface GoalFormState {
 const EMPTY_FORM: GoalFormState = { namaGoal: "", targetNominal: "", accountId: "", saldoManual: "" };
 
 export default function DreamTrackerPage() {
+  const { showToast } = useToast();
   const [goals, setGoals] = useState<DreamGoal[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
@@ -140,17 +142,21 @@ export default function DreamTrackerPage() {
     try {
       if (formMode === "new") {
         await apiFetch("/api/dream-goals", "POST", payload);
+        showToast({ type: "success", message: "Impian berhasil ditambahkan" });
       } else {
         // PATCH: accountId eksplisit null jika user melepas link rekening
         await apiFetch(`/api/dream-goals/${formMode}`, "PATCH", {
           ...payload,
           accountId: form.accountId || null,
         });
+        showToast({ type: "success", message: "Impian berhasil diperbarui" });
       }
       closeForm();
       await refetch();
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : "Gagal menyimpan goal");
+      const msg = err instanceof Error ? err.message : "Gagal menyimpan goal";
+      setFormError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setSaving(false);
     }
@@ -162,9 +168,12 @@ export default function DreamTrackerPage() {
     try {
       await apiFetch(`/api/dream-goals/${deleteTarget.id}`, "DELETE");
       setDeleteTarget(null);
+      showToast({ type: "success", message: "Impian berhasil dihapus" });
       await refetch();
     } catch (err: unknown) {
-      setFetchError(err instanceof Error ? err.message : "Gagal menghapus goal");
+      const msg = err instanceof Error ? err.message : "Gagal menghapus goal";
+      setFetchError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setDeleting(false);
     }

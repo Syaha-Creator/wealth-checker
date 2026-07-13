@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { RequiredMark } from "@/components/ui/Input";
 import { formatRupiahInput, parseRupiahInput, formatCurrency } from "@/lib/format";
 import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { useToast } from "@/components/ui/Toast";
 
 type Account = { id: string; nama: string; saldoCache: string };
 type Categories = { pendapatan: string[]; pengeluaran: string[] };
@@ -58,6 +59,7 @@ const AccountIcon = () => (
 function NewTransactionForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { showToast } = useToast();
 
   const initialType = (() => {
     const param = searchParams.get("type");
@@ -166,9 +168,13 @@ function NewTransactionForm() {
         toAccountId: type === "transfer" ? toAccountId : undefined,
         nominal: nominalParsed,
       });
+      const typeLabel = type === "pendapatan" ? "Pemasukan" : type === "pengeluaran" ? "Pengeluaran" : "Transfer";
+      showToast({ type: "success", message: `${typeLabel} berhasil dicatat` });
       router.push("/transactions");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Gagal menyimpan");
+      const msg = err instanceof Error ? err.message : "Gagal menyimpan";
+      setError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setLoading(false);
     }

@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { parseRupiahInput } from "@/lib/format";
 import { SEMUA_REKENING, SEMUA_KARTU_KREDIT_PAYLATER } from "@/lib/institutions";
 import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { useToast } from "@/components/ui/Toast";
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -129,9 +130,19 @@ function SuccessScreen({ onGoToDashboard }: { onGoToDashboard: () => void }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+const STEP_SUCCESS_MESSAGES: Record<Step, string> = {
+  1: "Profil berhasil disimpan",
+  2: "Rekening berhasil ditambahkan",
+  3: "Aset likuid berhasil ditambahkan",
+  4: "Aset fisik berhasil ditambahkan",
+  5: "Utang berhasil ditambahkan",
+  6: "Piutang berhasil ditambahkan",
+};
+
 export default function OnboardingPage() {
   const router = useRouter();
   const { data: session, isPending } = useSession();
+  const { showToast } = useToast();
 
   const [step, setStep] = useState<Step>(1);
   const [loading, setLoading] = useState(false);
@@ -272,12 +283,16 @@ export default function OnboardingPage() {
     try {
       await savePendingForStep(step, skip);
       if (step === 6) {
+        if (!skip) showToast({ type: "success", message: STEP_SUCCESS_MESSAGES[6] });
         setCompleted(true);
         return;
       }
+      if (!skip) showToast({ type: "success", message: STEP_SUCCESS_MESSAGES[step] });
       setStep((s) => Math.min(6, s + 1) as Step);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Terjadi kesalahan. Coba lagi.");
+      const msg = e instanceof Error ? e.message : "Terjadi kesalahan. Coba lagi.";
+      setError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setLoading(false);
     }
@@ -290,9 +305,12 @@ export default function OnboardingPage() {
     setError("");
     try {
       await savePendingForStep(step, false);
+      showToast({ type: "success", message: "Data onboarding berhasil disimpan" });
       router.push("/dashboard");
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Gagal menyimpan. Coba lagi.");
+      const msg = e instanceof Error ? e.message : "Gagal menyimpan. Coba lagi.";
+      setError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setLoading(false);
     }

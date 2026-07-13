@@ -6,12 +6,14 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { apiFetch, setActiveHouseholdId } from "@/lib/apiFetch";
+import { useToast } from "@/components/ui/Toast";
 
 type Status = "loading" | "success" | "error";
 
 function AcceptInviteContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { showToast } = useToast();
   const token = searchParams.get("token");
 
   const [status, setStatus] = useState<Status>(() => (token ? "loading" : "error"));
@@ -39,15 +41,21 @@ function AcceptInviteContent() {
             ? "Kamu sudah menjadi anggota household ini."
             : "Undangan berhasil diterima! Kamu sekarang bisa melihat dan mengelola data keuangan household ini.",
         );
+        showToast({
+          type: "success",
+          message: data.alreadyMember ? "Kamu sudah anggota household ini" : "Undangan household berhasil diterima",
+        });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
+        const msg = err instanceof Error ? err.message : "Gagal menerima undangan";
         setStatus("error");
-        setMessage(err instanceof Error ? err.message : "Gagal menerima undangan");
+        setMessage(msg);
+        showToast({ type: "error", message: msg });
       });
 
     return () => { cancelled = true; };
-  }, [token]);
+  }, [token, showToast]);
 
   const handleGoToDashboard = () => {
     if (householdId) setActiveHouseholdId(householdId);

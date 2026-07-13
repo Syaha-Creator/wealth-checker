@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonRow } from "@/components/ui/Skeleton";
 import { formatCurrency, formatDateLong, formatMonthLabel } from "@/lib/format";
 import { apiFetch } from "@/lib/apiFetch";
+import { useToast } from "@/components/ui/Toast";
 
 
 type Transaction = {
@@ -91,6 +92,7 @@ function TransactionsIcon() {
 }
 
 export default function TransactionsPage() {
+  const { showToast } = useToast();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
@@ -233,9 +235,12 @@ export default function TransactionsPage() {
         const body = await res.json().catch(() => ({ error: "Gagal menghapus transaksi" }));
         throw new Error(body.error ?? "Gagal menghapus transaksi");
       }
+      showToast({ type: "success", message: "Transaksi berhasil dihapus" });
       await refetch();
     } catch (err: unknown) {
-      setDeleteError(err instanceof Error ? err.message : "Gagal menghapus transaksi");
+      const msg = err instanceof Error ? err.message : "Gagal menghapus transaksi";
+      setDeleteError(msg);
+      showToast({ type: "error", message: msg });
     } finally {
       setDeleteBusy(false);
       setDeleteModal({ open: false, id: "" });
