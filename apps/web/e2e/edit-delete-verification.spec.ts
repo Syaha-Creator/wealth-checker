@@ -1,14 +1,14 @@
 /**
- * Manual E2E verification — Edit/Hapus Aset, Utang, Piutang.
- * Run: PLAYWRIGHT_BASE_URL=http://localhost:3010 bunx playwright test e2e/edit-delete-verification.spec.ts --reporter=list
+ * E2E verification — Edit/Hapus Aset, Utang, Piutang.
+ * Uses a fresh registered user (no hardcoded credentials) so CI is self-contained.
+ * Run: bunx playwright test e2e/edit-delete-verification.spec.ts --reporter=list
  */
 import { test, expect, type Page } from "@playwright/test";
 import path from "path";
 import fs from "fs";
+import { registerAndOnboard, seedFixedAsset } from "./helpers";
 
 const SCREENSHOT_DIR = path.join(__dirname, "../verification-screenshots");
-const EMAIL = "msyahrul090@gmail.com";
-const PASSWORD = "E2eVerifyPass1";
 const TEST_DEBT_NAME = `Utang E2E ${Date.now()}`;
 const TEST_RECEIVABLE_NAME = `Piutang E2E ${Date.now()}`;
 
@@ -33,15 +33,6 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, `${name}.png`), fullPage: true });
 }
 
-async function login(page: Page) {
-  await page.goto("/auth/login");
-  await expect(page.locator('button[type="submit"]')).toBeVisible({ timeout: 15_000 });
-  await page.fill("#email", EMAIL);
-  await page.fill("#password", PASSWORD);
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/\/(dashboard|onboarding|accounts|assets|debts)/, { timeout: 25_000 });
-}
-
 test("Manual E2E: edit/hapus aset, utang, piutang", async ({ page }) => {
   const log: string[] = [];
   const note = (s: string) => {
@@ -49,8 +40,9 @@ test("Manual E2E: edit/hapus aset, utang, piutang", async ({ page }) => {
     console.log(s);
   };
 
-  await login(page);
-  note("✓ Login sukses");
+  await registerAndOnboard(page);
+  await seedFixedAsset(page, "Barang Edit E2E");
+  note("✓ Register + seed aset sukses");
 
   // ── EDIT ASET ─────────────────────────────────────────────────────────────
   const wBeforeEdit = await wealthSummary(page);
@@ -58,7 +50,7 @@ test("Manual E2E: edit/hapus aset, utang, piutang", async ({ page }) => {
   note(`[EDIT ASET] Total Aset SEBELUM: Rp ${wBeforeEdit.totalAset.toLocaleString("id-ID")}`);
 
   await page.goto("/assets");
-  await page.waitForSelector('text=Total Nilai Barang', { timeout: 15_000 });
+  await page.waitForSelector("text=Total Nilai Barang", { timeout: 15_000 });
   await shot(page, "01-assets-before-edit");
 
   const editAssetBtn = page.getByRole("button", { name: /Edit barang/i }).first();
@@ -68,7 +60,6 @@ test("Manual E2E: edit/hapus aset, utang, piutang", async ({ page }) => {
   await shot(page, "02-assets-edit-form-open");
 
   const jumlahInput = page.locator('input[id^="edit-jumlah-"]').first();
-  const hargaInput = page.locator('input[id^="edit-harga-"]').first();
   const oldJumlah = await jumlahInput.inputValue();
   const newJumlah = String(Math.max(0.01, Number(oldJumlah) + 1));
   await jumlahInput.fill(newJumlah);
@@ -134,7 +125,6 @@ test("Manual E2E: edit/hapus aset, utang, piutang", async ({ page }) => {
   await shot(page, "11-debts-after-edit-name");
   note(`[EDIT UTANG] Nama diubah: Utang Edit Sementara → ${EDIT_DEBT_NEW}`);
 
-  // cleanup edit test debt
   await page.getByRole("button", { name: new RegExp(`Hapus utang ${EDIT_DEBT_NEW}`, "i") }).click();
   await page.getByRole("button", { name: "Hapus", exact: true }).last().click();
   await page.waitForTimeout(1500);
@@ -160,11 +150,11 @@ test("Manual E2E: edit/hapus aset, utang, piutang", async ({ page }) => {
   await shot(page, "14-receivables-after-edit-name");
   note(`[EDIT PIUTANG] Nama diubah: ${TEST_RECEIVABLE_NAME} → ${EDIT_REC_NEW}`);
 
-  // cleanup
   await page.getByRole("button", { name: new RegExp(`Hapus piutang ${EDIT_REC_NEW}`, "i") }).click();
   await page.getByRole("button", { name: "Hapus", exact: true }).last().click();
   await page.waitForTimeout(1500);
 
+  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
   fs.writeFileSync(path.join(SCREENSHOT_DIR, "verification-log.txt"), log.join("\n"), "utf8");
 
   expect(wAfterEdit.kekayaanBersih).toBeGreaterThan(wBeforeEdit.kekayaanBersih);

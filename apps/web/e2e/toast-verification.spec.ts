@@ -1,27 +1,18 @@
 /**
  * E2E verification — Toast notifications on add/edit/delete actions.
- * Run: PLAYWRIGHT_BASE_URL=http://localhost:3010 bunx playwright test e2e/toast-verification.spec.ts --reporter=list
+ * Uses a fresh registered user (no hardcoded credentials) so CI is self-contained.
+ * Run: bunx playwright test e2e/toast-verification.spec.ts --reporter=list
  */
 import { test, expect, type Page } from "@playwright/test";
 import path from "path";
 import fs from "fs";
+import { registerAndOnboard, seedFixedAsset } from "./helpers";
 
 const SCREENSHOT_DIR = path.join(__dirname, "../verification-screenshots");
-const EMAIL = "msyahrul090@gmail.com";
-const PASSWORD = "E2eVerifyPass1";
 
 async function shot(page: Page, name: string) {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, `${name}.png`), fullPage: true });
-}
-
-async function login(page: Page) {
-  await page.goto("/auth/login");
-  await expect(page.locator('button[type="submit"]')).toBeVisible({ timeout: 15_000 });
-  await page.fill("#email", EMAIL);
-  await page.fill("#password", PASSWORD);
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/\/(dashboard|onboarding|accounts|assets|debts)/, { timeout: 25_000 });
 }
 
 async function expectToast(page: Page, text: string | RegExp) {
@@ -31,7 +22,8 @@ async function expectToast(page: Page, text: string | RegExp) {
 }
 
 test("Toast muncul untuk tambah, edit, dan hapus di 3 halaman berbeda", async ({ page }) => {
-  await login(page);
+  await registerAndOnboard(page);
+  await seedFixedAsset(page, "Barang Toast E2E");
 
   // ── TAMBAH: Rekening ──────────────────────────────────────────────────────
   await page.goto("/accounts");

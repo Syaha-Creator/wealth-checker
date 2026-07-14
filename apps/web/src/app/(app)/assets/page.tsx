@@ -412,7 +412,7 @@ function AssetTab({
       {items.length === 0 ? (
         <EmptyState icon={<Icon />} title={`Belum ada ${label.toLowerCase()} tercatat`} description={`Catat pembelian ${label.toLowerCase()} untuk mulai melacak nilai & keuntungannya`} />
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 xl:gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 xl:gap-4 items-start">
           {items.length > 5 && (
             <div className="relative col-span-full">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true">

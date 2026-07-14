@@ -11,15 +11,21 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Input, InputRupiah, RequiredMark, Select } from "@/components/ui/Input";
 import { SkeletonHero, Skeleton } from "@/components/ui/Skeleton";
 import { Tabs, tabPanelId, tabButtonId } from "@/components/ui/Tabs";
-import { formatCurrency, parseRupiahInput } from "@/lib/format";
+import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/format";
 import { SEMUA_KARTU_KREDIT_PAYLATER } from "@/lib/institutions";
 import { apiFetch as apiFetchRaw, notifyWealthChanged } from "@/lib/apiFetch";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { IconButton } from "@/components/ui/IconButton";
 import { useToast } from "@/components/ui/Toast";
 
-const DEBT_SALDO_EDIT_HINT = "Sisa saldo diperbarui lewat transaksi pembayaran, bukan dari form ini.";
-const RECEIVABLE_SALDO_EDIT_HINT = "Sisa saldo diperbarui lewat transaksi penerimaan, bukan dari form ini.";
+const DEBT_SALDO_LOCKED_HINT =
+  "Utang ini sudah punya histori cicilan — sesuaikan sisa lewat transaksi Bayar Cicilan (atau edit/hapus cicilan yang salah).";
+const DEBT_SALDO_EDITABLE_HINT =
+  "Belum ada cicilan tercatat. Kamu bisa koreksi sisa utang di sini jika angka awal salah.";
+const RECEIVABLE_SALDO_LOCKED_HINT =
+  "Piutang ini sudah punya histori penerimaan — sesuaikan sisa lewat transaksi Terima (atau edit/hapus penerimaan yang salah).";
+const RECEIVABLE_SALDO_EDITABLE_HINT =
+  "Belum ada penerimaan tercatat. Kamu bisa koreksi sisa piutang di sini jika angka awal salah.";
 
 const DEBT_TABS_ID_PREFIX = "debts";
 const DEBT_TABS: { id: "utang" | "piutang"; label: string }[] = [
@@ -157,6 +163,8 @@ function DebtTab({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPemberiUtang, setEditPemberiUtang] = useState("");
   const [editTipe, setEditTipe] = useState<"utang_biasa" | "kartu_kredit">("utang_biasa");
+  const [editSisaSaldo, setEditSisaSaldo] = useState("");
+  const [editCanAdjustSaldo, setEditCanAdjustSaldo] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
 
@@ -216,6 +224,10 @@ function DebtTab({
     setEditingId(d.id);
     setEditPemberiUtang(d.pemberiUtang);
     setEditTipe(d.tipe === "kartu_kredit" ? "kartu_kredit" : "utang_biasa");
+    // API menolak koreksi saldo setelah ada bayar_utang — proxy UI: totalTerbayar === 0.
+    const canAdjust = d.totalTerbayar === 0;
+    setEditCanAdjustSaldo(canAdjust);
+    setEditSisaSaldo(canAdjust ? formatRupiahInput(String(Math.round(d.sisaSaldo))) : "");
     setEditError("");
   };
 
@@ -223,10 +235,22 @@ function DebtTab({
     e.preventDefault();
     setEditSaving(true); setEditError("");
     try {
-      await apiFetch(`/api/debts/${id}`, "PATCH", {
+      const payload: {
+        pemberiUtang: string;
+        tipe: "utang_biasa" | "kartu_kredit";
+        saldoAwal?: number;
+        sisaSaldo?: number;
+      } = {
         pemberiUtang: editPemberiUtang,
         tipe: editTipe,
-      });
+      };
+      if (editCanAdjustSaldo) {
+        const sisa = parseRupiahInput(editSisaSaldo);
+        // Belum ada cicilan → set saldoAwal = sisaSaldo agar "total pinjaman" ikut selaras.
+        payload.saldoAwal = sisa;
+        payload.sisaSaldo = sisa;
+      }
+      await apiFetch(`/api/debts/${id}`, "PATCH", payload);
       setEditingId(null);
       notifyWealthChanged();
       showToast({ type: "success", message: "Utang berhasil diperbarui" });
@@ -421,7 +445,7 @@ function DebtTab({
       {items.length === 0 ? (
         <EmptyState icon={<DebtIcon />} title="Belum ada utang tercatat" description="Catat pinjaman baru untuk mulai melacak cicilan Anda" />
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 xl:gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 xl:gap-4 items-start">
           {items.length > 5 && (
             <div className="relative col-span-full">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true">
@@ -485,7 +509,9 @@ function DebtTab({
               {editingId === d.id && (
                 <form onSubmit={(e) => handleEdit(e, d.id)} className="mt-4 pt-4 border-t border-border space-y-3">
                   {editError && <p className="text-sm text-danger-text">{editError}</p>}
-                  <p className="text-xs text-text-muted">{DEBT_SALDO_EDIT_HINT}</p>
+                  <p className="text-xs text-text-muted">
+                    {editCanAdjustSaldo ? DEBT_SALDO_EDITABLE_HINT : DEBT_SALDO_LOCKED_HINT}
+                  </p>
                   <Select
                     id={`edit-debt-tipe-${d.id}`}
                     label="Tipe"
@@ -511,6 +537,16 @@ function DebtTab({
                       required
                     />
                   </div>
+                  {editCanAdjustSaldo && (
+                    <InputRupiah
+                      id={`edit-debt-sisa-${d.id}`}
+                      label="Sisa Utang (koreksi)"
+                      value={editSisaSaldo}
+                      onChange={setEditSisaSaldo}
+                      hint="Mengubah total pinjaman dan sisa menjadi angka ini"
+                      required
+                    />
+                  )}
                   <div className="flex gap-2 max-w-sm">
                     <Button type="button" variant="secondary" fullWidth onClick={() => setEditingId(null)}>Batal</Button>
                     <Button type="submit" fullWidth loading={editSaving}>{editSaving ? "Menyimpan..." : "Simpan"}</Button>
@@ -593,6 +629,8 @@ function ReceivableTab({
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPeminjam, setEditPeminjam] = useState("");
+  const [editSisaSaldo, setEditSisaSaldo] = useState("");
+  const [editCanAdjustSaldo, setEditCanAdjustSaldo] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
 
@@ -647,6 +685,9 @@ function ReceivableTab({
     setReceivingId(null);
     setEditingId(r.id);
     setEditPeminjam(r.peminjam);
+    const canAdjust = r.totalDiterima === 0;
+    setEditCanAdjustSaldo(canAdjust);
+    setEditSisaSaldo(canAdjust ? formatRupiahInput(String(Math.round(r.sisaSaldo))) : "");
     setEditError("");
   };
 
@@ -654,7 +695,15 @@ function ReceivableTab({
     e.preventDefault();
     setEditSaving(true); setEditError("");
     try {
-      await apiFetch(`/api/debts/receivables/${id}`, "PATCH", { peminjam: editPeminjam });
+      const payload: { peminjam: string; saldoAwal?: number; sisaSaldo?: number } = {
+        peminjam: editPeminjam,
+      };
+      if (editCanAdjustSaldo) {
+        const sisa = parseRupiahInput(editSisaSaldo);
+        payload.saldoAwal = sisa;
+        payload.sisaSaldo = sisa;
+      }
+      await apiFetch(`/api/debts/receivables/${id}`, "PATCH", payload);
       setEditingId(null);
       notifyWealthChanged();
       showToast({ type: "success", message: "Piutang berhasil diperbarui" });
@@ -829,7 +878,7 @@ function ReceivableTab({
       {items.length === 0 ? (
         <EmptyState icon={<ReceivableIcon />} title="Belum ada piutang tercatat" description="Catat pemberian pinjaman baru untuk mulai melacak pembayarannya" />
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 xl:gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 xl:gap-4 items-start">
           {items.length > 5 && (
             <div className="relative col-span-full">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true">
@@ -892,7 +941,9 @@ function ReceivableTab({
               {editingId === r.id && (
                 <form onSubmit={(e) => handleEdit(e, r.id)} className="mt-4 pt-4 border-t border-border space-y-3">
                   {editError && <p className="text-sm text-danger-text">{editError}</p>}
-                  <p className="text-xs text-text-muted">{RECEIVABLE_SALDO_EDIT_HINT}</p>
+                  <p className="text-xs text-text-muted">
+                    {editCanAdjustSaldo ? RECEIVABLE_SALDO_EDITABLE_HINT : RECEIVABLE_SALDO_LOCKED_HINT}
+                  </p>
                   <Input
                     id={`edit-rec-peminjam-${r.id}`}
                     label="Nama Peminjam"
@@ -900,6 +951,16 @@ function ReceivableTab({
                     onChange={(e) => setEditPeminjam(e.target.value)}
                     required
                   />
+                  {editCanAdjustSaldo && (
+                    <InputRupiah
+                      id={`edit-rec-sisa-${r.id}`}
+                      label="Sisa Piutang (koreksi)"
+                      value={editSisaSaldo}
+                      onChange={setEditSisaSaldo}
+                      hint="Mengubah total dipinjamkan dan sisa menjadi angka ini"
+                      required
+                    />
+                  )}
                   <div className="flex gap-2 max-w-sm">
                     <Button type="button" variant="secondary" fullWidth onClick={() => setEditingId(null)}>Batal</Button>
                     <Button type="submit" fullWidth loading={editSaving}>{editSaving ? "Menyimpan..." : "Simpan"}</Button>
