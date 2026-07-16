@@ -47,6 +47,8 @@ interface RetirementAdvancedPanelProps {
  * di samping mode "Sederhana" (default, tidak diubah). Komponen ini
  * mengelola state asumsi + fetch plan mode=advanced sendiri, terpisah dari
  * RetirementPlanPage supaya halaman utama tidak terpengaruh kalau bagian ini gagal.
+ *
+ * Mount hanya membaca (GET). PATCH assumptions hanya saat user klik "Terapkan Asumsi".
  */
 export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: RetirementAdvancedPanelProps) {
   const { showToast } = useToast();
@@ -57,46 +59,64 @@ export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: Retir
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const loadAdvancedPlan = async (inflasi: number, returnInvestasi: number, silent = false) => {
-    setLoading(true);
-    setError("");
-    try {
-      await apiFetch("/api/wealth/retirement-assumptions", "PATCH", {
-        inflasiPersen: inflasi,
-        returnInvestasiPersen: returnInvestasi,
-        useAdvancedFormula: true,
-      });
-      const plan: AdvancedPlanResponse = await apiFetch("/api/wealth/retirement-plan?mode=advanced");
-      setAdvancedPlan(plan.plan);
-      if (!silent) showToast({ type: "success", message: "Asumsi pensiun berhasil diterapkan" });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Gagal memuat proyeksi mode lanjutan";
-      setError(msg);
-      if (!silent) showToast({ type: "error", message: msg });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    apiFetch("/api/wealth/retirement-assumptions")
-      .then((data: RetirementAssumptionsData) => {
+    let cancelled = false;
+
+    async function loadPreview() {
+      setLoading(true);
+      setError("");
+      try {
+        const data: RetirementAssumptionsData = await apiFetch("/api/wealth/retirement-assumptions");
+        if (cancelled) return;
         const inflasi = Number(data.inflasiPersen);
         const returnInvestasi = Number(data.returnInvestasiPersen);
         setInflasiPersen(inflasi);
         setReturnInvestasiPersen(returnInvestasi);
-        return loadAdvancedPlan(inflasi, returnInvestasi, true);
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "Gagal memuat asumsi");
-        setLoading(false);
-      });
+
+        // Read-only: pakai asumsi tersimpan di server. Jangan PATCH di mount —
+        // membuka panel tidak boleh mengubah useAdvancedFormula / rates.
+        const plan: AdvancedPlanResponse = await apiFetch("/api/wealth/retirement-plan?mode=advanced");
+        if (cancelled) return;
+        setAdvancedPlan(plan.plan);
+      } catch (err: unknown) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Gagal memuat proyeksi mode lanjutan");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadPreview();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleSave = async () => {
+    if (!Number.isFinite(inflasiPersen) || !Number.isFinite(returnInvestasiPersen)) {
+      const msg = "Isi asumsi inflasi dan return dengan angka yang valid";
+      setError(msg);
+      showToast({ type: "error", message: msg });
+      return;
+    }
     setSaving(true);
-    await loadAdvancedPlan(inflasiPersen, returnInvestasiPersen);
-    setSaving(false);
+    setError("");
+    try {
+      await apiFetch("/api/wealth/retirement-assumptions", "PATCH", {
+        inflasiPersen,
+        returnInvestasiPersen,
+        useAdvancedFormula: true,
+      });
+      const plan: AdvancedPlanResponse = await apiFetch("/api/wealth/retirement-plan?mode=advanced");
+      setAdvancedPlan(plan.plan);
+      showToast({ type: "success", message: "Asumsi pensiun berhasil diterapkan" });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Gagal menerapkan asumsi";
+      setError(msg);
+      showToast({ type: "error", message: msg });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -119,8 +139,11 @@ export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: Retir
             min={0}
             max={100}
             step={0.1}
-            value={inflasiPersen}
-            onChange={(e) => setInflasiPersen(Number(e.target.value))}
+            value={Number.isFinite(inflasiPersen) ? inflasiPersen : ""}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setInflasiPersen(raw === "" ? Number.NaN : Number(raw));
+            }}
             className="w-full px-3 py-2.5 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
@@ -132,8 +155,11 @@ export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: Retir
             min={0}
             max={100}
             step={0.1}
-            value={returnInvestasiPersen}
-            onChange={(e) => setReturnInvestasiPersen(Number(e.target.value))}
+            value={Number.isFinite(returnInvestasiPersen) ? returnInvestasiPersen : ""}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setReturnInvestasiPersen(raw === "" ? Number.NaN : Number(raw));
+            }}
             className="w-full px-3 py-2.5 bg-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>

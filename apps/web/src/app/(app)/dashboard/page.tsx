@@ -105,6 +105,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!session) return;
+    let cancelled = false;
     Promise.all([
       apiFetch(`/api/wealth/summary`, { credentials: "include" }).then((r) => {
         if (!r.ok) throw new Error("Gagal memuat ringkasan kekayaan");
@@ -120,14 +121,20 @@ export default function DashboardPage() {
       }),
     ])
       .then(([w, a, cf]) => {
+        if (cancelled) return;
         setSummary(w);
         setAccounts(Array.isArray(a) ? a.filter((acc: Account & { isActive: boolean }) => acc.isActive) : []);
         if (cf) setCashFlow(cf);
       })
       .catch((err: Error) => {
-        setError(err.message ?? "Gagal memuat data. Coba muat ulang halaman.");
+        if (!cancelled) setError(err.message ?? "Gagal memuat data. Coba muat ulang halaman.");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [session, retryKey]);
 
   useEffect(() => {
@@ -352,9 +359,8 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Insights — Sprint 13/14: health checkup & budgeting advisor */}
-          {!isNoData && (
-            <Card padding="none" className="overflow-hidden">
+          {/* Insights — selalu tampil (termasuk user baru) agar planning discoverable di desktop */}
+          <Card padding="none" className="overflow-hidden">
               <Link href="/health-checkup" className="flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-surface-hover transition-colors border-b border-border">
                 <div className="flex items-center gap-3">
                   <span className="w-9 h-9 rounded-full bg-brand-soft text-brand flex items-center justify-center shrink-0" aria-hidden="true">
@@ -383,7 +389,6 @@ export default function DashboardPage() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-text-muted shrink-0" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
               </Link>
             </Card>
-          )}
 
           {/* Quick actions */}
           <Card>

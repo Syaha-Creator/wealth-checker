@@ -63,8 +63,14 @@ export async function resolveHousehold(c: Context<AppEnv>, next: Next) {
     role = await getMembershipRole(householdId, userId);
   }
 
+  // Fail closed: jangan escalate ke "owner" jika membership hilang/inkonsisten
+  // (mis. race delete member vs request tanpa header).
+  if (!role) {
+    return c.json({ error: "Membership household tidak valid" }, 403);
+  }
+
   c.set("householdId", householdId);
-  c.set("householdRole", role ?? "owner");
+  c.set("householdRole", role);
   await next();
 }
 

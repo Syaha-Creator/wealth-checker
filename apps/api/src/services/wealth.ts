@@ -495,8 +495,11 @@ export function calculateRetirementPlan(input: RetirementPlanInput, referenceDat
   // Math.max(0, ...) — usia pensiun/warisan yang sudah lewat tidak boleh
   // menghasilkan target dana negatif; tahunMenujuPensiun/Warisan MENTAH (bisa
   // negatif) tetap dikembalikan agar UI bisa menampilkan "sudah lewat usia ini".
-  const danaDibutuhkanSebelumPensiun = Math.max(0, tahunMenujuPensiun) * 12 * input.sisaUangBulanan;
-  const danaDibutuhkanSelamaPensiun = Math.max(0, input.usiaWarisan - input.usiaPensiun) * 12 * input.sisaUangBulanan;
+  // Surplus bulanan negatif (defisit) juga di-clamp: target funding tidak boleh
+  // negatif — defisit berarti belum ada kapasitas menabung, bukan "butuh dana negatif".
+  const sisaBulanan = Math.max(0, input.sisaUangBulanan);
+  const danaDibutuhkanSebelumPensiun = Math.max(0, tahunMenujuPensiun) * 12 * sisaBulanan;
+  const danaDibutuhkanSelamaPensiun = Math.max(0, input.usiaWarisan - input.usiaPensiun) * 12 * sisaBulanan;
 
   return {
     tahunMenujuPensiun,
@@ -560,6 +563,21 @@ export function calculateRetirementPlanAdvanced(
     danaDibutuhkanSekarang: totalDanaPensiunWarisan / discountFactor,
     asumsi: assumptions,
   };
+}
+
+/**
+ * Target yang dibandingkan dengan kekayaan bersih hari ini untuk gap/progress.
+ * Mode advanced memakai PV lump sum (danaDibutuhkanSekarang), bukan FV inflated —
+ * supaya gap tidak overstated vs kekayaan saat ini.
+ */
+export function retirementFundingTarget(
+  mode: "simple" | "advanced",
+  plan: RetirementPlan | RetirementPlanAdvanced,
+): number {
+  if (mode === "advanced" && "danaDibutuhkanSekarang" in plan) {
+    return plan.danaDibutuhkanSekarang;
+  }
+  return plan.totalDanaPensiunWarisan;
 }
 
 export interface CollectedFundsBreakdown {

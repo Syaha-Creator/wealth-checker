@@ -237,6 +237,7 @@ export default function OnboardingPage() {
           namaAset: a.nama,
           jumlah: Number(a.jumlah),
           hargaBeliRataRata: parseRupiahInput(a.harga),
+          asOpeningBalance: true,
         });
         setSavedLiquid((n) => n + 1);
         setLiquidList((prev) => prev.slice(1));
@@ -248,6 +249,7 @@ export default function OnboardingPage() {
           namaAset: a.nama,
           jumlah: Number(a.jumlah),
           hargaBeliRataRata: parseRupiahInput(a.harga),
+          asOpeningBalance: true,
         });
         setSavedFixed((n) => n + 1);
         setFixedList((prev) => prev.slice(1));

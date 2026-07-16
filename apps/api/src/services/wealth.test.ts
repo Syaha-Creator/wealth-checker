@@ -6,6 +6,7 @@ import {
   computeBackfillPoints,
   calculateRetirementPlan,
   calculateRetirementPlanAdvanced,
+  retirementFundingTarget,
   calculateCollectedFundsBreakdown,
   calculateDebtPayoffEstimate,
 } from "./wealth";
@@ -372,12 +373,14 @@ describe("calculateRetirementPlan (Sprint 22 — formula PRD 3.1.8)", () => {
     expect(plan.danaDibutuhkanSebelumPensiun).toBe(0);
   });
 
-  it("sisaUangBulanan negatif (defisit) → target dana tetap dihitung (bisa negatif), tidak error", () => {
+  it("sisaUangBulanan negatif (defisit) → target dana di-clamp 0 (bukan negatif)", () => {
     const plan = calculateRetirementPlan(
       { tanggalLahir: "2000-01-01", usiaPensiun: 55, usiaWarisan: 80, sisaUangBulanan: -1_000_000 },
       referenceDate,
     );
-    expect(plan.danaDibutuhkanSelamaPensiun).toBe(25 * 12 * -1_000_000);
+    expect(plan.danaDibutuhkanSebelumPensiun).toBe(0);
+    expect(plan.danaDibutuhkanSelamaPensiun).toBe(0);
+    expect(plan.totalDanaPensiunWarisan).toBe(0);
   });
 });
 
@@ -419,6 +422,14 @@ describe("calculateRetirementPlanAdvanced (Sprint 26 — present value & inflasi
   it("asumsi yang dipakai ikut dikembalikan di hasil", () => {
     const advanced = calculateRetirementPlanAdvanced(input, { inflasiPersen: 6, returnInvestasiPersen: 9 }, referenceDate);
     expect(advanced.asumsi).toEqual({ inflasiPersen: 6, returnInvestasiPersen: 9 });
+  });
+
+  it("retirementFundingTarget: simple pakai total FV; advanced pakai danaDibutuhkanSekarang (PV)", () => {
+    const simple = calculateRetirementPlan(input, referenceDate);
+    const advanced = calculateRetirementPlanAdvanced(input, { inflasiPersen: 5, returnInvestasiPersen: 8 }, referenceDate);
+    expect(retirementFundingTarget("simple", simple)).toBe(simple.totalDanaPensiunWarisan);
+    expect(retirementFundingTarget("advanced", advanced)).toBe(advanced.danaDibutuhkanSekarang);
+    expect(retirementFundingTarget("advanced", advanced)).toBeLessThan(advanced.totalDanaPensiunWarisan);
   });
 });
 

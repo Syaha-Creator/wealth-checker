@@ -164,6 +164,9 @@ function AssetTab({
           namaAset,
           jumlah: Number(jumlah),
           hargaBeliRataRata: parseRupiahInput(hargaSatuan),
+          // Deklarasi aset yang sudah dimiliki — tidak mengurangi kas.
+          // Pembelian baru wajib lewat tab "Beli via Transaksi".
+          asOpeningBalance: true,
         });
       }
       resetAddForm();
@@ -334,6 +337,11 @@ function AssetTab({
             className="mb-4 max-w-md"
           />
           {formError && <p role="alert" className="text-sm text-danger-text mb-3">{formError}</p>}
+          {addMode === "deklarasi" && (
+            <p className="text-xs text-text-muted mb-3">
+              Deklarasi menambah nilai kekayaan tanpa mengurangi kas. Pastikan saldo rekening sudah mencerminkan kas aktual (jangan deklarasi aset yang uang belinya masih tercatat penuh di rekening — itu double-count). Untuk pembelian baru, pakai tab &quot;Beli Baru&quot;.
+            </p>
+          )}
           {addMode === "transaksi" && accounts.length === 0 && (
             <p className="text-sm text-warning-text mb-3">Belum ada rekening aktif. Tambahkan rekening dulu atau pilih &quot;Sudah Dimiliki&quot;.</p>
           )}

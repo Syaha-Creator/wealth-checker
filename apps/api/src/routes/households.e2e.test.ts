@@ -87,7 +87,7 @@ describe.skipIf(!E2E_API_URL)("Household isolation & privilege escalation (Sprin
     expect(debt.status).toBe(201);
     debtAId = (debt.body as { id: string }).id;
 
-    const asset = await api(cookieA, "/api/assets/liquid", "POST", { namaAset: `Saham A ${Date.now()}`, jumlah: 10, hargaBeliRataRata: 10_000 });
+    const asset = await api(cookieA, "/api/assets/liquid", "POST", { namaAset: `Saham A ${Date.now()}`, jumlah: 10, hargaBeliRataRata: 10_000, asOpeningBalance: true });
     expect(asset.status).toBe(201);
     liquidAssetAId = (asset.body as { id: string }).id;
 

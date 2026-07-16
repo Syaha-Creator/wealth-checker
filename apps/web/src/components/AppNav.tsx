@@ -178,6 +178,7 @@ const moreItem: NavItem = {
 const desktopGroups: { label?: string; items: NavItem[] }[] = [
   { items: [dashboardItem, catatItem, riwayatItem, analisaItem] },
   { label: "Data Keuangan", items: [accountsItem, debtsItem, assetsItem, dreamItem] },
+  { label: "Perencanaan", items: [budgetingItem, retirementItem, healthItem] },
   { items: [profileItem] },
 ];
 

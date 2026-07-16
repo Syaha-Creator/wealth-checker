@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/Badge";
 import { RequiredMark } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatRupiahInput, parseRupiahInput } from "@/lib/format";
-import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { apiFetch as apiFetchRaw, notifyWealthChanged } from "@/lib/apiFetch";
 import { useToast } from "@/components/ui/Toast";
 
 type Account = { id: string; nama: string; saldoCache: string; isActive: boolean };
@@ -165,6 +165,7 @@ export default function EditTransactionPage() {
         nominal: nominalParsed,
       });
       showToast({ type: "success", message: "Transaksi berhasil diperbarui" });
+      notifyWealthChanged();
       router.push("/transactions");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Gagal menyimpan perubahan";

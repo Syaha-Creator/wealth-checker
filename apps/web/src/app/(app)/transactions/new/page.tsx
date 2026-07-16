@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RequiredMark } from "@/components/ui/Input";
 import { formatRupiahInput, parseRupiahInput, formatCurrency } from "@/lib/format";
-import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { apiFetch as apiFetchRaw, notifyWealthChanged } from "@/lib/apiFetch";
 import { useToast } from "@/components/ui/Toast";
 
 type Account = { id: string; nama: string; saldoCache: string };
@@ -170,6 +170,7 @@ function NewTransactionForm() {
       });
       const typeLabel = type === "pendapatan" ? "Pemasukan" : type === "pengeluaran" ? "Pengeluaran" : "Transfer";
       showToast({ type: "success", message: `${typeLabel} berhasil dicatat` });
+      notifyWealthChanged();
       router.push("/transactions");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Gagal menyimpan";

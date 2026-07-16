@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonHero, SkeletonCard } from "@/components/ui/Skeleton";
 import { Toggle } from "@/components/ui/Toggle";
+import { useToast } from "@/components/ui/Toast";
 import { formatCurrency, formatCurrencyShort } from "@/lib/format";
 import { RetirementAdvancedPanel } from "./_components/RetirementAdvancedPanel";
 import { apiFetch } from "@/lib/apiFetch";
@@ -91,21 +92,29 @@ function formatBulan(n: number | null): string {
 }
 
 export default function RetirementPlanPage() {
+  const { showToast } = useToast();
   const [data, setData] = useState<RetirementPlanResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retryKey, setRetryKey] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [togglingAdvanced, setTogglingAdvanced] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch(`/api/wealth/retirement-plan`, { credentials: "include" })
-      .then((r) => {
+    Promise.all([
+      apiFetch(`/api/wealth/retirement-plan`, { credentials: "include" }).then(async (r) => {
         if (!r.ok) throw new Error("Gagal memuat rencana pensiun & warisan");
-        return r.json();
-      })
-      .then((json: RetirementPlanResponse) => {
-        if (!cancelled) setData(json);
+        return r.json() as Promise<RetirementPlanResponse>;
+      }),
+      apiFetch(`/api/wealth/retirement-assumptions`, { credentials: "include" })
+        .then(async (r) => (r.ok ? r.json() as Promise<{ useAdvancedFormula?: boolean }> : null))
+        .catch(() => null),
+    ])
+      .then(([json, assumptions]) => {
+        if (cancelled) return;
+        setData(json);
+        if (assumptions?.useAdvancedFormula) setShowAdvanced(true);
       })
       .catch((err: Error) => {
         if (!cancelled) setError(err.message);
@@ -115,6 +124,29 @@ export default function RetirementPlanPage() {
       });
     return () => { cancelled = true; };
   }, [retryKey]);
+
+  const handleAdvancedToggle = async (checked: boolean) => {
+    const previous = showAdvanced;
+    setShowAdvanced(checked);
+    setTogglingAdvanced(true);
+    try {
+      const res = await apiFetch(`/api/wealth/retirement-assumptions`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ useAdvancedFormula: checked }),
+      });
+      if (!res.ok) {
+        setShowAdvanced(previous);
+        const body = await res.json().catch(() => ({ error: "Gagal menyimpan preferensi" }));
+        showToast({ type: "error", message: body.error ?? "Gagal menyimpan preferensi mode lanjutan" });
+      }
+    } catch {
+      setShowAdvanced(previous);
+      showToast({ type: "error", message: "Gagal menyimpan preferensi mode lanjutan" });
+    } finally {
+      setTogglingAdvanced(false);
+    }
+  };
 
   const progressPct = data?.hasProfile && data.plan.totalDanaPensiunWarisan > 0
     ? Math.min(100, (data.danaTerkumpulSaatIni / data.plan.totalDanaPensiunWarisan) * 100)
@@ -240,7 +272,8 @@ export default function RetirementPlanPage() {
             <Toggle
               id="toggle-advanced-mode"
               checked={showAdvanced}
-              onChange={setShowAdvanced}
+              onChange={handleAdvancedToggle}
+              disabled={togglingAdvanced}
               label="Tampilkan Mode Lanjutan (Present Value & Inflasi)"
             />
           </Card>

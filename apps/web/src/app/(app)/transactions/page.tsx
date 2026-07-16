@@ -10,7 +10,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonRow } from "@/components/ui/Skeleton";
 import { formatCurrency, formatDateLong, formatMonthLabel } from "@/lib/format";
-import { apiFetch } from "@/lib/apiFetch";
+import { apiFetch, notifyWealthChanged } from "@/lib/apiFetch";
 import { useToast } from "@/components/ui/Toast";
 
 
@@ -236,6 +236,7 @@ export default function TransactionsPage() {
         throw new Error(body.error ?? "Gagal menghapus transaksi");
       }
       showToast({ type: "success", message: "Transaksi berhasil dihapus" });
+      notifyWealthChanged();
       await refetch();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Gagal menghapus transaksi";

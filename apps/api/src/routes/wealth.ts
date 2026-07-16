@@ -16,6 +16,7 @@ import {
   calculateCollectedFundsBreakdown,
   calculateDebtPayoffEstimate,
   calculateRealizedProfitLoss,
+  retirementFundingTarget,
   type RetirementAssumptions,
 } from "../services/wealth";
 import type { AppEnv } from "../types";
@@ -138,6 +139,7 @@ wealthRoutes.get("/retirement-plan", zValidator("query", retirementPlanQuerySche
 
   const debtPayoff = calculateDebtPayoffEstimate(summary.totalKas, summary.totalUtang, sisaUangBulanan);
   const realizedPL = await calculateRealizedProfitLoss(db, householdId);
+  const fundingTarget = retirementFundingTarget(mode, plan);
 
   return c.json({
     hasProfile: true,
@@ -145,7 +147,8 @@ wealthRoutes.get("/retirement-plan", zValidator("query", retirementPlanQuerySche
     plan,
     sisaUangBulanan,
     danaTerkumpulSaatIni: summary.kekayaanBersih,
-    selisihMenujuTarget: Math.max(0, plan.totalDanaPensiunWarisan - summary.kekayaanBersih),
+    // Advanced: bandingkan vs PV lump sum, bukan FV inflated (hindari gap overstated).
+    selisihMenujuTarget: Math.max(0, fundingTarget - summary.kekayaanBersih),
     collectedFunds,
     debtPayoff,
     realizedPL,

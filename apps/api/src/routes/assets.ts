@@ -35,6 +35,11 @@ const assetSchema = z.object({
   namaAset: z.string().min(1),
   jumlah: z.number().positive().max(MAX_MONETARY_VALUE).finite(),
   hargaBeliRataRata: z.number().min(0).max(MAX_MONETARY_VALUE).finite(),
+  // Guard double-count: POST langsung menaikkan kekayaan bersih tanpa mengurangi
+  // kas. Hanya diizinkan untuk deklarasi aset yang sudah dimiliki (saldo awal /
+  // warisan / migrasi). Pembelian baru harus lewat transaksi beli_* agar kas
+  // ikut berkurang.
+  asOpeningBalance: z.literal(true),
 });
 
 // ─── Liquid Assets (Aset Setara Kas / Investasi) ─────────────────────────────

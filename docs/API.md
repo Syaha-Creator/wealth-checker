@@ -85,9 +85,9 @@ Invalidate current session.
 
 ---
 
-### GET `/api/auth/session`
+### GET `/api/auth/get-session`
 
-Return current session and user info.
+Return current session and user info (Better Auth path — not `/api/auth/session`).
 
 **Response `200`**
 
@@ -98,7 +98,7 @@ Return current session and user info.
 }
 ```
 
-Returns `null` or `{ user: null, session: null }` when unauthenticated.
+Unauthenticated responses may be `null` or `{ user: null, session: null }` depending on Better Auth version.
 
 ---
 
@@ -173,7 +173,7 @@ Base path: `/api/accounts` · **Auth required**
 
 ### GET `/api/accounts`
 
-List all accounts for the authenticated user.
+List all accounts for the caller's **active household**.
 
 **Response `200`**
 
@@ -564,7 +564,8 @@ List liquid assets. **Fase 2 Sprint 11/12:** by default only returns assets with
 {
   "namaAset": "Reksa Dana Saham",
   "jumlah": 10,
-  "hargaBeliRataRata": 15000
+  "hargaBeliRataRata": 15000,
+  "asOpeningBalance": true
 }
 ```
 
@@ -573,6 +574,7 @@ List liquid assets. **Fase 2 Sprint 11/12:** by default only returns assets with
 | `namaAset` | string | Yes | Min length 1 |
 | `jumlah` | number | Yes | Must be > 0 |
 | `hargaBeliRataRata` | number | Yes | Must be ≥ 0 |
+| `asOpeningBalance` | `true` | Yes | Must be literally `true`. Marks this as an opening-balance / already-owned declaration (does **not** debit cash). New purchases must go through `beli_investasi` / `beli_barang` transactions so cash decreases and net worth stays consistent. Omitting this field returns `400`. |
 
 **Response `201`** — the created asset object.
 
@@ -1067,9 +1069,10 @@ The response body gains one extra top-level field versus the legacy shape:
 | Field | Description |
 |-------|-------------|
 | `plan.tahunMenujuPensiun` / `tahunMenujuWarisan` | Years from today to the planned retirement/inheritance age (`tanggalLahir + rencanaUsia*`), can be negative if that age has already passed |
-| `plan.danaDibutuhkanSebelumPensiun` | `tahunMenujuPensiun × 12 × sisaUangBulanan`, clamped to `0` if negative |
-| `plan.danaDibutuhkanSelamaPensiun` | `(rencanaUsiaWarisan − rencanaUsiaPensiun) × 12 × sisaUangBulanan` |
+| `plan.danaDibutuhkanSebelumPensiun` | `tahunMenujuPensiun × 12 × max(0, sisaUangBulanan)`, clamped to `0` if years negative |
+| `plan.danaDibutuhkanSelamaPensiun` | `(rencanaUsiaWarisan − rencanaUsiaPensiun) × 12 × max(0, sisaUangBulanan)` |
 | `sisaUangBulanan` | `pemasukanBulananRataRata − pengeluaranBulananRataRata` from `/api/profile` (planned figures, not actuals) |
+| `selisihMenujuTarget` | `max(0, fundingTarget − kekayaanBersih)`. In `mode=simple`, `fundingTarget` is `totalDanaPensiunWarisan`. In `mode=advanced`, `fundingTarget` is `plan.danaDibutuhkanSekarang` (present-value lump sum) so the gap is comparable to today's net worth — not the inflated future-value total. |
 | `collectedFunds` | Waterfall allocation of current `kekayaanBersih`: fills `danaDaruratTerkumpul` up to `danaDibutuhkanSebelumPensiun` first, then `danaPensiunTerkumpul` up to `danaDibutuhkanSelamaPensiun`, remainder becomes `danaWarisanTerkumpul` |
 | `debtPayoff.bulanLunasDenganKas` | Months to pay off all debt using current cash + monthly surplus; `null` if `sisaUangBulanan ≤ 0` and cash alone isn't enough |
 | `debtPayoff.bulanLunasDenganSisaGaji` | Months to pay off all debt using only the monthly surplus (no cash) — `⌈totalUtang / sisaUangBulanan⌉`; `null` if `sisaUangBulanan ≤ 0` |
