@@ -23,9 +23,9 @@ export function setActiveHouseholdId(householdId: string | null): void {
   } else {
     window.localStorage.removeItem(ACTIVE_HOUSEHOLD_STORAGE_KEY);
   }
-  // Household switcher (AppNav) di tab/komponen lain ikut listen event ini
-  // supaya UI selalu konsisten dengan localStorage tanpa perlu full reload —
-  // "storage" event bawaan browser TIDAK terpicu di tab yang sama yang menulisnya.
+  // Dispatched for same-tab listeners. HouseholdSwitcher currently does a full
+  // reload after switch, so nothing must listen — keep the event for future
+  // soft-refresh without inventing a second contract.
   window.dispatchEvent(new CustomEvent("wealth-checker:household-changed", { detail: householdId }));
 }
 

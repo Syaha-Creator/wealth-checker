@@ -25,6 +25,7 @@ interface DreamGoal {
   persentase: number;
   tercapai: boolean;
   sisaMenujuTarget: number;
+  accountMissing?: boolean;
 }
 
 interface Account {
@@ -306,6 +307,11 @@ export default function DreamTrackerPage() {
                 </div>
               </div>
 
+              {goal.accountMissing && (
+                <p role="alert" className="text-xs text-warning-text mb-2">
+                  Rekening tertaut sudah tidak ada — progress menampilkan Rp 0. Edit impian untuk pilih rekening lain atau pakai saldo manual.
+                </p>
+              )}
               {goal.tercapai && <Badge variant="brand" className="mb-2">Tercapai! 🎉</Badge>}
 
               <div className="flex items-baseline justify-between mb-1">

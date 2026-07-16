@@ -161,8 +161,8 @@ wealthRoutes.get("/retirement-assumptions", async (c) => {
   const [row] = await db.select().from(retirementAssumptions).where(eq(retirementAssumptions.userId, userId));
   return c.json(row ?? {
     userId,
-    inflasiPersen: DEFAULT_RETIREMENT_ASSUMPTIONS.inflasiPersen,
-    returnInvestasiPersen: DEFAULT_RETIREMENT_ASSUMPTIONS.returnInvestasiPersen,
+    inflasiPersen: String(DEFAULT_RETIREMENT_ASSUMPTIONS.inflasiPersen),
+    returnInvestasiPersen: String(DEFAULT_RETIREMENT_ASSUMPTIONS.returnInvestasiPersen),
     useAdvancedFormula: false,
   });
 });

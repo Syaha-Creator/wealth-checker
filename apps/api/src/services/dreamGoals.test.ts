@@ -57,5 +57,12 @@ describe("calculateDreamGoalProgress (Sprint 21 — Dream Tracker)", () => {
     expect(result.namaGoal).toBe("Rumah");
     expect(result.accountId).toBe("acc-1");
     expect(result.targetNominal).toBe(500_000_000);
+    expect(result.accountMissing).toBe(false);
+  });
+
+  it("accountMissing=true diteruskan ke hasil (rekening terhapus)", () => {
+    const result = calculateDreamGoalProgress(goal({ accountId: "missing-acc" }), 0, { accountMissing: true });
+    expect(result.accountMissing).toBe(true);
+    expect(result.saldoSaatIni).toBe(0);
   });
 });

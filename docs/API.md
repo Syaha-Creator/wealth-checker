@@ -1291,7 +1291,8 @@ List all goals with computed progress, sorted by `persentase` descending.
     "saldoSaatIni": 12000000,
     "persentase": 60,
     "tercapai": false,
-    "sisaMenujuTarget": 8000000
+    "sisaMenujuTarget": 8000000,
+    "accountMissing": false
   }
 ]
 ```
@@ -1301,6 +1302,7 @@ List all goals with computed progress, sorted by `persentase` descending.
 | `saldoSaatIni` | Live `accounts.saldoCache` if `accountId` is set, otherwise the goal's own `saldoManual` column |
 | `persentase` | `min(100, round(saldoSaatIni / targetNominal × 1000) / 10)` |
 | `tercapai` | `true` once `saldoSaatIni >= targetNominal` (and `targetNominal > 0`) |
+| `accountMissing` | `true` when `accountId` is set but that account no longer exists in the household (progress shows `0` with an explicit warning instead of a silent empty bar) |
 
 ---
 
@@ -1514,7 +1516,7 @@ Both endpoints aggregate data through a single shared `buildReportData()` servic
 |-------------|------|----------|-------|
 | `from` / `to` | string (`YYYY-MM-DD`) | Yes | Inclusive date range for the report |
 
-**Rate limit:** max **1 export request per minute per user** (`SET export:ratelimit:{userId} 1 EX 60 NX` in Redis) — export generation is comparatively heavy (many aggregation queries + in-memory file generation), so this caps abuse from repeated clicking/scripted retries. **Fails open**: if Redis itself is unreachable, the request is allowed through rather than breaking the export feature entirely due to unrelated infra issues.
+**Rate limit:** max **1 export request per minute per user** (`SET export:ratelimit:{userId} 1 EX 60 NX` in Redis) — export generation is comparatively heavy (many aggregation queries + in-memory file generation), so this caps abuse from repeated clicking/scripted retries. **Fails closed**: if Redis itself is unreachable, the request is rejected with `429` rather than opening the door to unbounded export cost while infra is degraded.
 
 **Response `200`** — binary file stream.
 - PDF: `Content-Type: application/pdf`, `Content-Disposition: attachment; filename="wealth-checker-{from}_{to}.pdf"`

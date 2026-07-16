@@ -10,6 +10,8 @@ export interface DreamGoalProgress {
   persentase: number;
   tercapai: boolean;
   sisaMenujuTarget: number;
+  /** true jika goal ter-link ke rekening yang sudah dihapus / tidak di household */
+  accountMissing: boolean;
 }
 
 /**
@@ -20,6 +22,7 @@ export interface DreamGoalProgress {
 export function calculateDreamGoalProgress(
   goal: { id: string; namaGoal: string; accountId: string | null; targetNominal: string | number },
   saldoSaatIni: number,
+  options: { accountMissing?: boolean } = {},
 ): DreamGoalProgress {
   const targetNominal = Number(goal.targetNominal);
   const persentase = targetNominal > 0 ? Math.min(100, Math.round((saldoSaatIni / targetNominal) * 1000) / 10) : 0;
@@ -33,5 +36,6 @@ export function calculateDreamGoalProgress(
     persentase,
     tercapai: saldoSaatIni >= targetNominal && targetNominal > 0,
     sisaMenujuTarget: Math.max(0, targetNominal - saldoSaatIni),
+    accountMissing: options.accountMissing ?? false,
   };
 }

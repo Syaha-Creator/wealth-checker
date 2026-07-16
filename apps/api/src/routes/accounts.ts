@@ -45,7 +45,7 @@ const createSchema = z.object({
   saldoAwal: z.number().min(0).max(MAX_MONETARY_VALUE).finite().default(0),
 });
 
-accountRoutes.post("/", requireRole("owner", "editor"), zValidator("json", createSchema), async (c) => {
+accountRoutes.post("/", requireRole("owner", "editor"), zValidator("json", createSchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const householdId = c.get("householdId");
   const { nama, saldoAwal } = c.req.valid("json");
@@ -69,7 +69,7 @@ accountRoutes.post("/", requireRole("owner", "editor"), zValidator("json", creat
 accountRoutes.patch(
   "/:id",
   requireRole("owner", "editor"),
-  zValidator("param", idParam),
+  zValidator("param", idParam, zodErrorHook),
   zValidator("json", z.object({
     nama: z.string().min(1).optional(),
     isActive: z.boolean().optional(),
@@ -78,7 +78,7 @@ accountRoutes.patch(
     // di API publik agar konsisten dengan `saldoAwal` di POST, walau kolom
     // di tabel accounts bernama `saldoCache`.
     saldo: z.number().min(0).max(MAX_MONETARY_VALUE).finite().optional(),
-  })),
+  }), zodErrorHook),
   async (c) => {
     const userId = c.get("userId") as string;
     const householdId = c.get("householdId");

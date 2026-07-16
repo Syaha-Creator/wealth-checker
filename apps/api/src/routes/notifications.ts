@@ -29,15 +29,29 @@ notificationRoutes.post("/subscribe", zValidator("json", subscribeSchema, zodErr
   const userId = c.get("userId") as string;
   const { platform, endpoint, p256dh, auth } = c.req.valid("json");
 
-  // Upsert by endpoint — mencegah baris dobel kalau service worker meregistrasi
-  // ulang subscription yang sama (browser refresh, retry, dst).
+  // Upsert by endpoint — tapi JANGAN reassign userId ke akun lain (hijack
+  // delivery kalau endpoint bocor / shared device). Endpoint milik user lain → 409.
+  const [existing] = await db
+    .select({ userId: notificationSubscriptions.userId })
+    .from(notificationSubscriptions)
+    .where(eq(notificationSubscriptions.endpoint, endpoint));
+
+  if (existing && existing.userId !== userId) {
+    return c.json({ error: "Endpoint push sudah terdaftar untuk akun lain" }, 409);
+  }
+
+  if (existing) {
+    const [row] = await db
+      .update(notificationSubscriptions)
+      .set({ platform, p256dh: p256dh ?? null, auth: auth ?? null, isActive: true, lastUsedAt: new Date() })
+      .where(and(eq(notificationSubscriptions.endpoint, endpoint), eq(notificationSubscriptions.userId, userId)))
+      .returning();
+    return c.json(row, 200);
+  }
+
   const [row] = await db
     .insert(notificationSubscriptions)
     .values({ userId, platform, endpoint, p256dh: p256dh ?? null, auth: auth ?? null, isActive: true })
-    .onConflictDoUpdate({
-      target: notificationSubscriptions.endpoint,
-      set: { userId, platform, p256dh: p256dh ?? null, auth: auth ?? null, isActive: true, lastUsedAt: new Date() },
-    })
     .returning();
 
   return c.json(row, 201);

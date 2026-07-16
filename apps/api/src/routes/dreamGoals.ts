@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { resolveHousehold, requireRole } from "../middleware/household";
 import { calculateDreamGoalProgress } from "../services/dreamGoals";
+import { zodErrorHook, MAX_MONETARY_VALUE } from "../lib/validation";
 import type { AppEnv } from "../types";
 
 export const dreamGoalRoutes = new Hono<AppEnv>();
@@ -18,10 +19,10 @@ const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
 
 const createSchema = z.object({
   namaGoal: z.string().min(1),
-  targetNominal: z.number().positive().finite(),
+  targetNominal: z.number().positive().max(MAX_MONETARY_VALUE).finite(),
   accountId: z.string().uuid().optional(),
   // saldoManual hanya relevan jika accountId tidak diisi — lihat superRefine.
-  saldoManual: z.number().min(0).finite().optional(),
+  saldoManual: z.number().min(0).max(MAX_MONETARY_VALUE).finite().optional(),
 }).superRefine((val, ctx) => {
   if (val.accountId && val.saldoManual !== undefined) {
     ctx.addIssue({ code: "custom", message: "saldoManual tidak dipakai jika accountId diisi (saldo diambil live dari rekening)", path: ["saldoManual"] });
@@ -42,17 +43,18 @@ dreamGoalRoutes.get("/", async (c) => {
   const saldoByAccountId = new Map(accountRows.map((a) => [a.id, Number(a.saldoCache)]));
 
   const result = goals.map((goal) => {
+    const accountMissing = Boolean(goal.accountId && !saldoByAccountId.has(goal.accountId));
     const saldoSaatIni = goal.accountId
-      ? saldoByAccountId.get(goal.accountId) ?? 0
+      ? (saldoByAccountId.get(goal.accountId) ?? 0)
       : Number(goal.saldoManual ?? 0);
-    return calculateDreamGoalProgress(goal, saldoSaatIni);
+    return calculateDreamGoalProgress(goal, saldoSaatIni, { accountMissing });
   }).sort((a, b) => b.persentase - a.persentase);
 
   return c.json(result);
 });
 
 // ─── POST / ───────────────────────────────────────────────────────────────────
-dreamGoalRoutes.post("/", requireRole("owner", "editor"), zValidator("json", createSchema), async (c) => {
+dreamGoalRoutes.post("/", requireRole("owner", "editor"), zValidator("json", createSchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const householdId = c.get("householdId");
   const { namaGoal, targetNominal, accountId, saldoManual } = c.req.valid("json");
@@ -80,12 +82,12 @@ dreamGoalRoutes.post("/", requireRole("owner", "editor"), zValidator("json", cre
 // ─── PATCH /:id ───────────────────────────────────────────────────────────────
 const patchSchema = z.object({
   namaGoal: z.string().min(1).optional(),
-  targetNominal: z.number().positive().finite().optional(),
+  targetNominal: z.number().positive().max(MAX_MONETARY_VALUE).finite().optional(),
   accountId: z.string().uuid().nullable().optional(),
-  saldoManual: z.number().min(0).finite().optional(),
+  saldoManual: z.number().min(0).max(MAX_MONETARY_VALUE).finite().optional(),
 });
 
-dreamGoalRoutes.patch("/:id", requireRole("owner", "editor"), zValidator("param", idParam), zValidator("json", patchSchema), async (c) => {
+dreamGoalRoutes.patch("/:id", requireRole("owner", "editor"), zValidator("param", idParam, zodErrorHook), zValidator("json", patchSchema, zodErrorHook), async (c) => {
   const householdId = c.get("householdId");
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
@@ -114,7 +116,7 @@ dreamGoalRoutes.patch("/:id", requireRole("owner", "editor"), zValidator("param"
 });
 
 // ─── DELETE /:id ──────────────────────────────────────────────────────────────
-dreamGoalRoutes.delete("/:id", requireRole("owner", "editor"), zValidator("param", idParam), async (c) => {
+dreamGoalRoutes.delete("/:id", requireRole("owner", "editor"), zValidator("param", idParam, zodErrorHook), async (c) => {
   const householdId = c.get("householdId");
   const { id } = c.req.valid("param");
 

@@ -5,7 +5,8 @@ import { db, authUser, authSession, authAccount, authVerification } from "@wealt
 import { sendPasswordResetEmail } from "./email";
 
 const productionOrigin = "https://wealth.velrox.cloud";
-const devOrigin = "http://localhost:3010";
+const devWebOrigin = "http://localhost:3010";
+const devApiUrl = "http://localhost:3011";
 // Custom scheme untuk Wealth Checker Mobile (Flutter) — bukan browser, tapi
 // Better Auth tetap validasi header Origin pada request state-changing (CSRF).
 const mobileOrigin = "app://wealth-checker-mobile";
@@ -33,6 +34,9 @@ export const auth = betterAuth({
     enabled: true,
     autoSignIn: true,
     minPasswordLength: 8,
+    // MVP: verification dimatikan sampai domain email production siap
+    // (lihat RESEND_FROM_EMAIL). Mengaktifkan tanpa kirim email akan mengunci
+    // signup. Tetap false sengaja — bukan oversight.
     requireEmailVerification: false,
     resetPasswordTokenExpiresIn: 3600,
     sendResetPassword: async ({ user, url }) => {
@@ -45,15 +49,17 @@ export const auth = betterAuth({
     updateAge: 60 * 60 * 24,       // refresh setiap 24 jam
     cookieCache: {
       enabled: true,
-      maxAge: 60 * 5, // cache 5 menit
+      // 60s: kurangi jendela session yang sudah di-revoke masih lolos cache.
+      maxAge: 60,
     },
   },
 
-  // URL server auth — harus match dengan domain production
-  baseURL: process.env.BETTER_AUTH_URL ?? devOrigin,
+  // URL server API (bukan web). Fallback harus ke port API agar cookie/CSRF
+  // tidak salah arah saat BETTER_AUTH_URL belum di-set di env.
+  baseURL: process.env.BETTER_AUTH_URL ?? devApiUrl,
 
-  // Origin yang diizinkan untuk cross-origin requests
-  trustedOrigins: [productionOrigin, devOrigin, mobileOrigin, ...extraOrigins],
+  // Origin yang diizinkan untuk cross-origin requests (browser web app)
+  trustedOrigins: [productionOrigin, devWebOrigin, mobileOrigin, ...extraOrigins],
 
   secret: process.env.BETTER_AUTH_SECRET!,
 

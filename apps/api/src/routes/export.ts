@@ -8,6 +8,7 @@ import { buildReportData } from "../services/reportData";
 import { generatePdfReport } from "../services/pdfReport";
 import { generateExcelReport } from "../services/excelReport";
 import { checkRateLimit } from "../lib/rateLimit";
+import { zodErrorHook } from "../lib/validation";
 import type { AppEnv } from "../types";
 
 export const exportRoutes = new Hono<AppEnv>();
@@ -28,22 +29,21 @@ const RATE_LIMIT_WINDOW_SECONDS = 60;
  * yang berat) per menit per user — proses generate laporan cukup berat
  * (banyak query + generate file) untuk disalahgunakan lewat spam klik.
  *
- * Fail-OPEN kalau Redis sedang down: mengembalikan `true` (izinkan) daripada
- * membuat fitur export mati total akibat masalah infra yang tidak
- * berhubungan — trade-off yang sama diambil di notifications.ts (reschedule
- * job non-fatal).
+ * Fail-CLOSED kalau Redis sedang down: kembalikan rate-limited (tolak)
+ * daripada membuka abuse/cost amplification saat infra Redis bermasalah.
+ * Client mendapat 429 dengan pesan yang jelas; admin bisa cek log Redis.
  */
 async function isRateLimited(userId: string): Promise<boolean> {
   try {
     const allowed = await checkRateLimit(`export:ratelimit:${userId}`, RATE_LIMIT_WINDOW_SECONDS);
     return !allowed;
   } catch (err) {
-    console.error("[export] rate limit check gagal (Redis down?), fail-open", err);
-    return false;
+    console.error("[export] rate limit check gagal (Redis down?), fail-closed", err);
+    return true;
   }
 }
 
-exportRoutes.get("/pdf", zValidator("query", dateRangeQuerySchema), async (c) => {
+exportRoutes.get("/pdf", zValidator("query", dateRangeQuerySchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const householdId = c.get("householdId");
   const { from, to } = c.req.valid("query");
@@ -64,7 +64,7 @@ exportRoutes.get("/pdf", zValidator("query", dateRangeQuerySchema), async (c) =>
   });
 });
 
-exportRoutes.get("/excel", zValidator("query", dateRangeQuerySchema), async (c) => {
+exportRoutes.get("/excel", zValidator("query", dateRangeQuerySchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const householdId = c.get("householdId");
   const { from, to } = c.req.valid("query");
