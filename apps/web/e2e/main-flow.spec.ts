@@ -215,7 +215,8 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
 
   await test.step("Financial Health Check-up (Sprint 13) menampilkan level yang benar", async () => {
     await page.goto("/health-checkup");
-    await expect(page.locator("text=Financial Health Check-up")).toBeVisible({ timeout: 10_000 });
+    // Sidebar "Perencanaan" sekarang juga menampilkan label yang sama — pakai heading.
+    await expect(page.getByRole("heading", { name: "Financial Health Check-up" })).toBeVisible({ timeout: 10_000 });
     await page.waitForTimeout(500);
     await assertNoErrorAlert(page);
     // Rekening 950.000 kas, tanpa utang, belum ada investasi (totalLiquidAssets = 0)
@@ -226,7 +227,7 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
 
   await test.step("Budgeting Advisor (Sprint 14) — atur rencana lalu lihat alokasi", async () => {
     await page.goto("/budgeting");
-    await expect(page.locator("text=Budgeting Advisor")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("heading", { name: "Budgeting Advisor" })).toBeVisible({ timeout: 10_000 });
     await page.waitForTimeout(500);
     await assertNoErrorAlert(page);
 
@@ -301,6 +302,7 @@ test("Full user flow: register → onboarding → dashboard → transaksi → ve
 
   await test.step("Rencana Pensiun & Warisan (Sprint 22) menampilkan target dana terintegrasi dengan profil", async () => {
     await page.goto("/retirement-plan");
+    await expect(page.getByRole("heading", { name: "Rencana Pensiun & Warisan" })).toBeVisible({ timeout: 10_000 });
     await expect(page.locator("text=Total Dana Pensiun & Warisan Dibutuhkan")).toBeVisible({ timeout: 10_000 });
     await page.waitForTimeout(500);
     await assertNoErrorAlert(page);
