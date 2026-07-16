@@ -29,7 +29,13 @@ Thumbs.db
 # IDE
 .idea/
 .vscode/
-.cursor/
+.cursor/*
+!.cursor/skills/
+!.cursor/skills/**
+!.cursor/rules/
+!.cursor/rules/**
+!.cursor/references/
+!.cursor/references/**
 *.swp
 *.swo
 
