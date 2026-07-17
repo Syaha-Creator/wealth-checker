@@ -8,6 +8,9 @@ import { db } from "@wealth/db";
 import { getRedis } from "./lib/redis";
 import { REMINDER_QUEUE_NAME } from "./lib/queue";
 import { reminderJobHandler, reconcileAllReminderJobs } from "./services/notificationScheduler";
+import { createLogger } from "./lib/logger";
+
+const log = createLogger({ service: "wealth-checker-worker" });
 
 const worker = new Worker(
   REMINDER_QUEUE_NAME,
@@ -19,16 +22,28 @@ const worker = new Worker(
 );
 
 worker.on("completed", (job, result) => {
-  console.log(`[worker] reminder job ${job.id} selesai:`, result);
+  log.info("reminder_job_completed", {
+    jobId: job.id,
+    userId: (job.data as { userId?: string })?.userId,
+    result,
+  });
 });
 
 worker.on("failed", (job, err) => {
-  console.error(`[worker] reminder job ${job?.id} gagal:`, err);
+  log.error(
+    "reminder_job_failed",
+    {
+      jobId: job?.id,
+      userId: (job?.data as { userId?: string } | undefined)?.userId,
+      attemptsMade: job?.attemptsMade,
+    },
+    err,
+  );
 });
 
 // Boot-time reconciliation — lihat komentar di reconcileAllReminderJobs().
 reconcileAllReminderJobs(db)
-  .then((count) => console.log(`[worker] ${count} reminder job direkonsiliasi saat startup`))
-  .catch((err) => console.error("[worker] gagal rekonsiliasi reminder job saat startup", err));
+  .then((count) => log.info("reminder_jobs_reconciled", { count }))
+  .catch((err) => log.error("reminder_jobs_reconcile_failed", {}, err));
 
-console.log("🔔 Wealth Checker notification worker berjalan");
+log.info("worker_started", {});

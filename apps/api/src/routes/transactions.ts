@@ -7,21 +7,14 @@ import { requireAuth } from "../middleware/auth";
 import { resolveHousehold, requireRole } from "../middleware/household";
 import { calculateMovingAverageCost, calculateProfitLoss, canSell, applySale } from "../services/movingAverageCost";
 import { canPayDebt, canReceiveReceivable } from "../services/debtReceivable";
-import { createWealthSnapshot } from "../services/wealth";
+import { snapshotWealthInBackground } from "../services/wealthSnapshotBackground";
 import { DEBIT_TYPES, CREDIT_TYPES } from "../lib/transactionTypes";
 import { zodErrorHook } from "../lib/validation";
 import { transactionsListQuerySchema } from "../lib/transactionsListQuerySchema";
 import type { AppEnv } from "../types";
 
-// Sprint 16 (Fase 3) — fire-and-forget: gagal membuat snapshot tidak boleh
-// menggagalkan request utama (transaksi/CRUD sudah commit). Dipanggil SETELAH
-// mutasi utama commit, tidak di dalam db.transaction, karena ia membaca ulang
-// kekayaan bersih terkini lewat calculateWealthSummary().
-function snapshotWealthInBackground(householdId: string, userId: string): void {
-  createWealthSnapshot(db, householdId, userId).catch((err) => {
-    console.error("[wealth-snapshot] gagal membuat snapshot", err);
-  });
-}
+// Sprint 16 (Fase 3) — snapshot fire-and-forget setelah mutasi transaksi commit
+// (lihat services/wealthSnapshotBackground.ts).
 
 // Transaction-scoped handle for `db.transaction(async (tx) => ...)` — inferred
 // from `db.transaction` itself so the shared effect helpers below stay in sync

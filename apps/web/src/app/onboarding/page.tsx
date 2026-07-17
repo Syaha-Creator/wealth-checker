@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { parseRupiahInput } from "@/lib/format";
 import { SEMUA_REKENING, SEMUA_KARTU_KREDIT_PAYLATER } from "@/lib/institutions";
-import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { apiJson } from "@/lib/apiFetch";
 import { useToast } from "@/components/ui/Toast";
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
@@ -34,22 +34,7 @@ const OPTIONAL_STEPS = [3, 4, 5, 6];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function apiFetch(path: string, method: string, body?: unknown) {
-  const res = await apiFetchRaw(`${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    // Bug hunt (Issue 6): dulu melempar raw response text (bisa berupa JSON
-    // error Zod yang teknis) langsung sebagai error message — samakan dengan
-    // pola apiFetch di halaman profil (parse JSON, ambil field `error`).
-    const errBody = await res.json().catch(() => null);
-    throw new Error(errBody?.error ?? "Terjadi kesalahan. Coba lagi.");
-  }
-  return res.json();
-}
+const apiFetch = apiJson;
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -261,6 +246,7 @@ export default function OnboardingPage() {
           pemberiUtang: d.pemberi,
           tipe: d.tipe,
           saldoAwal: parseRupiahInput(d.sisa),
+          asOpeningBalance: true,
         });
         setSavedUtang((n) => n + 1);
         setUtangList((prev) => prev.slice(1));
@@ -271,6 +257,7 @@ export default function OnboardingPage() {
         await apiFetch("/api/debts/receivables", "POST", {
           peminjam: p.peminjam,
           saldoAwal: parseRupiahInput(p.sisa),
+          asOpeningBalance: true,
         });
         setSavedPiutang((n) => n + 1);
         setPiutangList((prev) => prev.slice(1));

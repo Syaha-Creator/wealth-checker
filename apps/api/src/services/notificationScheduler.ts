@@ -7,6 +7,7 @@ import type { DB } from "@wealth/db";
 import { transactions, notificationSubscriptions, notificationPreferences } from "@wealth/db";
 import { getReminderQueue } from "../lib/queue";
 import { sendPush, PushSendError, type PushSubscriptionRow } from "../lib/push";
+import { logger } from "../lib/logger";
 
 // ─── Logika murni ────────────────────────────────────────────────────────────
 
@@ -145,8 +146,12 @@ async function sendReminderToSubscription(db: DB, sub: PushSubscriptionRow): Pro
     // dst) — deaktivasi supaya tidak diretry terus-menerus di run berikutnya.
     if (err instanceof PushSendError && err.permanent) {
       await db.update(notificationSubscriptions).set({ isActive: false }).where(eq(notificationSubscriptions.id, sub.id));
+      logger.warn("push_subscription_deactivated", {
+        subscriptionId: sub.id,
+        reason: err.message,
+      });
     } else {
-      console.error(`[notification-scheduler] gagal kirim push ke subscription ${sub.id}`, err);
+      logger.error("push_send_failed", { subscriptionId: sub.id }, err);
     }
   }
 }

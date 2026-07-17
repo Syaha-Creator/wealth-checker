@@ -9,7 +9,7 @@ import { calculateAccountMutations } from "../services/accountMutation";
 import { applyMutasiDateFilter } from "../lib/mutasiDateFilter";
 import { mutasiQuerySchema } from "../lib/mutasiQuerySchema";
 import { zodErrorHook } from "../lib/validation";
-import { createWealthSnapshot } from "../services/wealth";
+import { snapshotWealthInBackground } from "../services/wealthSnapshotBackground";
 import { isUniqueViolation } from "../lib/dbErrors";
 import { MAX_MONETARY_VALUE } from "../lib/validation";
 import type { AppEnv } from "../types";
@@ -21,13 +21,7 @@ accountRoutes.use("*", requireAuth);
 // bersama seluruh anggota), bukan lagi per-user — lihat middleware/household.ts.
 accountRoutes.use("*", resolveHousehold);
 
-// Sprint 16 (Fase 3) — lihat catatan di transactions.ts: fire-and-forget,
-// dipanggil setelah koreksi saldo / hapus rekening commit.
-function snapshotWealthInBackground(householdId: string, userId: string): void {
-  createWealthSnapshot(db, householdId, userId).catch((err) => {
-    console.error("[wealth-snapshot] gagal membuat snapshot", err);
-  });
-}
+// Sprint 16 (Fase 3) — snapshot fire-and-forget setelah koreksi saldo / hapus rekening.
 
 // Reusable UUID param schema
 const idParam = z.object({ id: z.string().uuid("ID tidak valid") });

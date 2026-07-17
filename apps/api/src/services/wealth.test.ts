@@ -424,6 +424,14 @@ describe("calculateRetirementPlanAdvanced (Sprint 26 — present value & inflasi
     expect(advanced.asumsi).toEqual({ inflasiPersen: 6, returnInvestasiPersen: 9 });
   });
 
+  it("bucket selama pensiun memakai horizon mid-point (lebih besar dari bucket sebelum saat inflasi > 0)", () => {
+    const simple = calculateRetirementPlan(input, referenceDate);
+    const advanced = calculateRetirementPlanAdvanced(input, { inflasiPersen: 5, returnInvestasiPersen: 8 }, referenceDate);
+    const factorBefore = advanced.danaDibutuhkanSebelumPensiun / simple.danaDibutuhkanSebelumPensiun;
+    const factorDuring = advanced.danaDibutuhkanSelamaPensiun / simple.danaDibutuhkanSelamaPensiun;
+    expect(factorDuring).toBeGreaterThan(factorBefore);
+  });
+
   it("retirementFundingTarget: simple pakai total FV; advanced pakai danaDibutuhkanSekarang (PV)", () => {
     const simple = calculateRetirementPlan(input, referenceDate);
     const advanced = calculateRetirementPlanAdvanced(input, { inflasiPersen: 5, returnInvestasiPersen: 8 }, referenceDate);

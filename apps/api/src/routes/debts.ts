@@ -6,7 +6,7 @@ import { eq, and, count } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { resolveHousehold, requireRole } from "../middleware/household";
 import { calculateDebtSummary, calculateReceivableSummary } from "../services/debtReceivable";
-import { createWealthSnapshot } from "../services/wealth";
+import { snapshotWealthInBackground } from "../services/wealthSnapshotBackground";
 import { isUniqueViolation } from "../lib/dbErrors";
 import { zodErrorHook, MAX_MONETARY_VALUE } from "../lib/validation";
 import type { AppEnv } from "../types";
@@ -17,13 +17,7 @@ debtRoutes.use("*", requireAuth);
 // Sprint 27 (Fase 4): utang/piutang di-scope per household.
 debtRoutes.use("*", resolveHousehold);
 
-// Sprint 16 (Fase 3) — lihat catatan di transactions.ts: fire-and-forget,
-// dipanggil setelah mutasi CRUD utang/piutang commit.
-function snapshotWealthInBackground(householdId: string, userId: string): void {
-  createWealthSnapshot(db, householdId, userId).catch((err) => {
-    console.error("[wealth-snapshot] gagal membuat snapshot", err);
-  });
-}
+// Sprint 16 (Fase 3) — snapshot fire-and-forget setelah mutasi CRUD utang/piutang.
 
 // Reusable UUID param schema
 const idParam = z.object({ id: z.string().uuid("ID tidak valid") });
@@ -68,6 +62,9 @@ const debtBaseSchema = z.object({
   tipe: z.enum(["utang_biasa", "kartu_kredit"]).default("utang_biasa"),
   saldoAwal: z.number().min(0).max(MAX_MONETARY_VALUE).finite(),
   sisaSaldo: z.number().min(0).max(MAX_MONETARY_VALUE).finite().optional(),
+  // Guard double-count: POST langsung menambah utang tanpa menambah kas.
+  // Hanya untuk deklarasi utang yang sudah ada. Pinjaman baru → transaksi pinjaman_utang.
+  asOpeningBalance: z.literal(true),
 });
 const debtSchema = debtBaseSchema.refine((val) => val.sisaSaldo === undefined || val.sisaSaldo <= val.saldoAwal, {
   message: "sisaSaldo tidak boleh melebihi saldoAwal",
@@ -185,6 +182,9 @@ const receivableBaseSchema = z.object({
   peminjam: z.string().min(1),
   saldoAwal: z.number().min(0).max(MAX_MONETARY_VALUE).finite(),
   sisaSaldo: z.number().min(0).max(MAX_MONETARY_VALUE).finite().optional(),
+  // Guard double-count: POST langsung menambah piutang tanpa mengurangi kas.
+  // Hanya untuk deklarasi. Pemberian baru → transaksi pemberian_piutang.
+  asOpeningBalance: z.literal(true),
 });
 const receivableSchema = receivableBaseSchema.refine((val) => val.sisaSaldo === undefined || val.sisaSaldo <= val.saldoAwal, {
   message: "sisaSaldo tidak boleh melebihi saldoAwal",

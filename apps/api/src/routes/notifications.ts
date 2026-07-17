@@ -7,6 +7,7 @@ import { requireAuth } from "../middleware/auth";
 import { zodErrorHook } from "../lib/validation";
 import { sendPush, PushSendError } from "../lib/push";
 import { upsertReminderJob, reminderCronFromTime } from "../services/notificationScheduler";
+import { logger } from "../lib/logger";
 import type { AppEnv } from "../types";
 
 export const notificationRoutes = new Hono<AppEnv>();
@@ -119,7 +120,7 @@ notificationRoutes.patch("/preferences", zValidator("json", preferencesSchema, z
       timezone: updated.timezone,
     });
   } catch (err) {
-    console.error("[notifications] gagal menjadwalkan ulang reminder job", err);
+    logger.error("reminder_job_reschedule_failed", { userId, requestId: c.get("requestId") }, err);
   }
 
   return c.json(updated);

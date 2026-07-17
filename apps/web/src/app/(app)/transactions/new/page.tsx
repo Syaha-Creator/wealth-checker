@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RequiredMark } from "@/components/ui/Input";
 import { formatRupiahInput, parseRupiahInput, formatCurrency } from "@/lib/format";
-import { apiFetch as apiFetchRaw, notifyWealthChanged } from "@/lib/apiFetch";
+import { apiJson, notifyWealthChanged } from "@/lib/apiFetch";
 import { useToast } from "@/components/ui/Toast";
 
 type Account = { id: string; nama: string; saldoCache: string };
@@ -29,19 +29,7 @@ const DEBIT_TYPES = new Set(["pengeluaran", "transfer"]);
 const KATEGORI_PENDAPATAN_FALLBACK = ["Gaji", "Proyek", "Dividen", "Bonus", "Hadiah", "Lainnya"];
 const KATEGORI_PENGELUARAN_FALLBACK = ["Makanan", "Transportasi", "Utilitas", "Belanja", "Kesehatan", "Hiburan", "Pendidikan", "Lainnya"];
 
-async function apiFetch(path: string, method: string, body?: unknown) {
-  const res = await apiFetchRaw(`${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? "Gagal");
-  }
-  return res.json();
-}
+const apiFetch = apiJson;
 
 const ChevronDown = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="text-text-muted pointer-events-none shrink-0" aria-hidden="true">

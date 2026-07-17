@@ -13,7 +13,7 @@ import { SkeletonHero, Skeleton } from "@/components/ui/Skeleton";
 import { Tabs, tabPanelId, tabButtonId } from "@/components/ui/Tabs";
 import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/format";
 import { SEMUA_KARTU_KREDIT_PAYLATER } from "@/lib/institutions";
-import { apiFetch as apiFetchRaw, notifyWealthChanged } from "@/lib/apiFetch";
+import { apiJson, notifyWealthChanged } from "@/lib/apiFetch";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { IconButton } from "@/components/ui/IconButton";
 import { useToast } from "@/components/ui/Toast";
@@ -67,20 +67,7 @@ type ReceivableSummary = {
   progressPercent: number; perPeminjam: ReceivableItem[];
 };
 
-async function apiFetch(path: string, method: string, body?: unknown) {
-  const res = await apiFetchRaw(`${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? "Gagal");
-  }
-  if (res.status === 204) return null;
-  return res.json();
-}
+const apiFetch = apiJson;
 
 function todayStr() {
   return new Date().toISOString().split("T")[0];
@@ -195,6 +182,7 @@ function DebtTab({
           pemberiUtang,
           tipe,
           saldoAwal: sisa,
+          asOpeningBalance: true,
         });
       }
       resetAddForm();
@@ -373,6 +361,11 @@ function DebtTab({
             className="mb-4 max-w-lg"
           />
           {formError && <p role="alert" className="text-sm text-danger-text mb-3">{formError}</p>}
+          {addMode === "deklarasi" && (
+            <p className="text-xs text-text-muted mb-3">
+              Deklarasi menambah utang tanpa menambah kas di rekening. Untuk pinjaman baru yang masuk ke rekening, pakai tab &quot;Utang Baru&quot;.
+            </p>
+          )}
           {addMode === "transaksi" && accounts.length === 0 && (
             <p className="text-sm text-warning-text mb-3">Belum ada rekening aktif. Tambahkan rekening dulu atau pilih &quot;Utang yang Sudah Ada&quot;.</p>
           )}
@@ -657,6 +650,7 @@ function ReceivableTab({
         await apiFetch("/api/debts/receivables", "POST", {
           peminjam,
           saldoAwal: sisa,
+          asOpeningBalance: true,
         });
       }
       resetAddForm();
@@ -826,6 +820,11 @@ function ReceivableTab({
             className="mb-4 max-w-lg"
           />
           {formError && <p role="alert" className="text-sm text-danger-text mb-3">{formError}</p>}
+          {addMode === "deklarasi" && (
+            <p className="text-xs text-text-muted mb-3">
+              Deklarasi menambah piutang tanpa mengurangi kas. Untuk pinjaman baru yang keluar dari rekening, pakai tab &quot;Piutang Baru&quot;.
+            </p>
+          )}
           {addMode === "transaksi" && accounts.length === 0 && (
             <p className="text-sm text-warning-text mb-3">Belum ada rekening aktif. Tambahkan rekening dulu atau pilih &quot;Piutang yang Sudah Ada&quot;.</p>
           )}

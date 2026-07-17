@@ -7,23 +7,11 @@ import { Badge } from "@/components/ui/Badge";
 import { Input, Select } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ConfirmModal } from "@/components/ConfirmModal";
-import { apiFetch as apiFetchRaw, getActiveHouseholdId, setActiveHouseholdId } from "@/lib/apiFetch";
+import { apiJson, getActiveHouseholdId, setActiveHouseholdId } from "@/lib/apiFetch";
 import { useToast } from "@/components/ui/Toast";
 import { useSession } from "@/lib/auth-client";
 
-async function apiFetch(path: string, method = "GET", body?: unknown) {
-  const res = await apiFetchRaw(path, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? "Gagal");
-  }
-  if (res.status === 204) return null;
-  return res.json();
-}
+const apiFetch = apiJson;
 
 type Role = "owner" | "editor" | "viewer";
 

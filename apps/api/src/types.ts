@@ -1,6 +1,8 @@
 export type HouseholdRole = "owner" | "editor" | "viewer";
 
 export type AppVariables = {
+  /** Correlation ID — set by requestIdMiddleware on every request. */
+  requestId: string;
   userId: string;
   user: { id: string; name: string; email: string };
   // Sprint 27 (Fase 4): diset oleh middleware resolveHousehold — household

@@ -11,7 +11,7 @@ import { Input, InputRupiah, RequiredMark, Select } from "@/components/ui/Input"
 import { SkeletonHero, Skeleton } from "@/components/ui/Skeleton";
 import { Tabs, tabPanelId, tabButtonId } from "@/components/ui/Tabs";
 import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/format";
-import { apiFetch as apiFetchRaw, notifyWealthChanged } from "@/lib/apiFetch";
+import { apiJson, notifyWealthChanged } from "@/lib/apiFetch";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { IconButton } from "@/components/ui/IconButton";
 import { useToast } from "@/components/ui/Toast";
@@ -39,20 +39,7 @@ const ASSET_ADD_MODE_TABS: { id: AddMode; label: string }[] = [
   { id: "deklarasi", label: "Sudah Dimiliki" },
 ];
 
-async function apiFetch(path: string, method: string, body?: unknown) {
-  const res = await apiFetchRaw(`${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? "Gagal");
-  }
-  if (res.status === 204) return null;
-  return res.json();
-}
+const apiFetch = apiJson;
 
 function todayStr() {
   return new Date().toISOString().split("T")[0];

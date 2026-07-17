@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { formatCurrency, formatCurrencyShort } from "@/lib/format";
-import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { apiJson } from "@/lib/apiFetch";
 import { useToast } from "@/components/ui/Toast";
 
 interface RetirementAssumptionsData {
@@ -22,20 +22,6 @@ interface AdvancedPlanResponse {
     danaDibutuhkanSekarang: number;
     asumsi: { inflasiPersen: number; returnInvestasiPersen: number };
   };
-}
-
-async function apiFetch(path: string, method = "GET", body?: unknown) {
-  const res = await apiFetchRaw(`${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? "Gagal");
-  }
-  return res.json();
 }
 
 interface RetirementAdvancedPanelProps {
@@ -66,7 +52,7 @@ export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: Retir
       setLoading(true);
       setError("");
       try {
-        const data: RetirementAssumptionsData = await apiFetch("/api/wealth/retirement-assumptions");
+        const data: RetirementAssumptionsData = await apiJson("/api/wealth/retirement-assumptions");
         if (cancelled) return;
         const inflasi = Number(data.inflasiPersen);
         const returnInvestasi = Number(data.returnInvestasiPersen);
@@ -75,7 +61,7 @@ export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: Retir
 
         // Read-only: pakai asumsi tersimpan di server. Jangan PATCH di mount —
         // membuka panel tidak boleh mengubah useAdvancedFormula / rates.
-        const plan: AdvancedPlanResponse = await apiFetch("/api/wealth/retirement-plan?mode=advanced");
+        const plan: AdvancedPlanResponse = await apiJson("/api/wealth/retirement-plan?mode=advanced");
         if (cancelled) return;
         setAdvancedPlan(plan.plan);
       } catch (err: unknown) {
@@ -102,12 +88,12 @@ export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: Retir
     setSaving(true);
     setError("");
     try {
-      await apiFetch("/api/wealth/retirement-assumptions", "PATCH", {
+      await apiJson("/api/wealth/retirement-assumptions", "PATCH", {
         inflasiPersen,
         returnInvestasiPersen,
         useAdvancedFormula: true,
       });
-      const plan: AdvancedPlanResponse = await apiFetch("/api/wealth/retirement-plan?mode=advanced");
+      const plan: AdvancedPlanResponse = await apiJson("/api/wealth/retirement-plan?mode=advanced");
       setAdvancedPlan(plan.plan);
       showToast({ type: "success", message: "Asumsi pensiun berhasil diterapkan" });
     } catch (err: unknown) {

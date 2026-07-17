@@ -6,25 +6,12 @@ import { Button } from "@/components/ui/Button";
 import { Toggle } from "@/components/ui/Toggle";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { isPushSupported, subscribeToPush, unsubscribeFromPush, getCurrentSubscriptionEndpoint } from "@/lib/pushClient";
-import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { apiJson } from "@/lib/apiFetch";
 import { useToast } from "@/components/ui/Toast";
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
-async function apiFetch(path: string, method = "GET", body?: unknown) {
-  const res = await apiFetchRaw(`${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? "Gagal");
-  }
-  if (res.status === 204) return null;
-  return res.json();
-}
+const apiFetch = apiJson;
 
 type Preferences = {
   reminderEnabled: boolean;

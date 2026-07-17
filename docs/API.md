@@ -31,6 +31,37 @@ Every endpoint that touches financial data (accounts, transactions, debts/receiv
 
 ---
 
+## 0. Health & Observability
+
+### GET `/health`
+
+Liveness probe — process is up. No dependency checks.
+
+**Response `200`**
+
+```json
+{ "status": "ok", "service": "wealth-checker-api", "ts": "2026-07-17T01:00:00.000Z" }
+```
+
+Every response includes `X-Request-Id` (accepted from the client or generated). Structured JSON logs include the same `requestId` for correlation.
+
+### GET `/health/ready`
+
+Readiness probe — Postgres (`select 1`) and Redis (`PING`) must succeed.
+
+**Response `200`** when both ok; **`503`** when either fails:
+
+```json
+{
+  "status": "ok",
+  "service": "wealth-checker-api",
+  "checks": { "postgres": "ok", "redis": "ok" },
+  "ts": "2026-07-17T01:00:00.000Z"
+}
+```
+
+---
+
 ## 1. Auth
 
 Auth is handled by [Better Auth](https://better-auth.com). All routes are prefixed `/api/auth/`.
@@ -653,7 +684,8 @@ List all debts.
   "pemberiUtang": "Bank BRI",
   "tipe": "utang_biasa",
   "saldoAwal": 10000000,
-  "sisaSaldo": 10000000
+  "sisaSaldo": 10000000,
+  "asOpeningBalance": true
 }
 ```
 
@@ -663,6 +695,7 @@ List all debts.
 | `tipe` | `"utang_biasa"` \| `"kartu_kredit"` | No | Defaults to `"utang_biasa"` |
 | `saldoAwal` | number | Yes | Initial debt amount, ≥ 0 |
 | `sisaSaldo` | number | No | Remaining balance; defaults to `saldoAwal` |
+| `asOpeningBalance` | `true` | Yes | Opening-balance declaration only (does **not** credit cash). New loans that increase cash must use `pinjaman_utang` transactions. |
 
 **Response `201`** — the created debt object.
 
@@ -707,7 +740,8 @@ List all receivables.
 {
   "peminjam": "Budi",
   "saldoAwal": 500000,
-  "sisaSaldo": 500000
+  "sisaSaldo": 500000,
+  "asOpeningBalance": true
 }
 ```
 
@@ -716,6 +750,7 @@ List all receivables.
 | `peminjam` | string | Yes | Borrower name |
 | `saldoAwal` | number | Yes | Original amount lent, ≥ 0 |
 | `sisaSaldo` | number | No | Remaining unpaid; defaults to `saldoAwal` |
+| `asOpeningBalance` | `true` | Yes | Opening-balance declaration only (does **not** debit cash). New lending that reduces cash must use `pemberian_piutang` transactions. |
 
 **Response `201`** — the created receivable object.
 
@@ -1516,7 +1551,7 @@ Both endpoints aggregate data through a single shared `buildReportData()` servic
 |-------------|------|----------|-------|
 | `from` / `to` | string (`YYYY-MM-DD`) | Yes | Inclusive date range for the report |
 
-**Rate limit:** max **1 export request per minute per user** (`SET export:ratelimit:{userId} 1 EX 60 NX` in Redis) — export generation is comparatively heavy (many aggregation queries + in-memory file generation), so this caps abuse from repeated clicking/scripted retries. **Fails closed**: if Redis itself is unreachable, the request is rejected with `429` rather than opening the door to unbounded export cost while infra is degraded.
+**Rate limit:** max **1 export request per minute per user** (`SET export:ratelimit:{userId} 1 EX 60 NX` in Redis). **Fails closed**: if Redis is unreachable, the request is rejected with `429` and a distinct message (`Layanan sementara tidak tersedia…`); successful cooldown still returns the usual “tunggu sebentar…” message. Failures are logged as structured event `export_rate_limit_check_failed`.
 
 **Response `200`** — binary file stream.
 - PDF: `Content-Type: application/pdf`, `Content-Disposition: attachment; filename="wealth-checker-{from}_{to}.pdf"`

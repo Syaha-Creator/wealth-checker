@@ -530,16 +530,16 @@ export interface RetirementPlanAdvanced extends RetirementPlan {
 /**
  * Formula 2 langkah sesuai plan Sprint 26:
  * 1. FV — inflasi-kan kebutuhan dana calculateRetirementPlan() (dalam rupiah
- *    HARI INI) ke nilai rupiah pada SAAT PENSIUN, `n` tahun dari sekarang:
- *    FV = PV × (1 + inflasi)^n.
- * 2. PV kembali — dari FV itu, hitung berapa lump sum yang perlu disiapkan
- *    SEKARANG dengan asumsi tumbuh di tingkat returnInvestasiPersen/tahun:
- *    PV = FV / (1 + returnInvestasi)^n.
+ *    HARI INI) ke nilai rupiah pada horizon masing-masing:
+ *    - sebelum pensiun: n = tahun menuju pensiun
+ *    - selama pensiun: nMid = n + setengah masa pensiun (mid-point approximation)
+ *      supaya bucket selama pensiun tidak memakai horizon yang sama dengan
+ *      "hari ini → pensiun" saja (penyederhanaan sebelumnya).
+ * 2. PV kembali — dari total FV, hitung lump sum hari ini dengan returnInvestasi:
+ *    PV = FV / (1 + returnInvestasi)^n  (diskon tetap ke saat pensiun / n).
  *
- * Simplifikasi sengaja (didokumentasikan, bukan bug): kebutuhan SELAMA masa
- * pensiun diasumsikan konstan dalam rupiah hari-pensiun (tidak terus naik lagi
- * akibat inflasi SEPANJANG masa pensiun) — cukup untuk kebutuhan aplikasi ini,
- * upgrade ke model anuitas bertumbuh penuh adalah pekerjaan terpisah.
+ * Simplifikasi yang tersisa: kebutuhan SELAMA masa pensiun diasumsikan konstan
+ * dalam rupiah di titik tengah masa pensiun (bukan anuitas bulanan bertumbuh penuh).
  */
 export function calculateRetirementPlanAdvanced(
   input: RetirementPlanInput,
@@ -548,11 +548,14 @@ export function calculateRetirementPlanAdvanced(
 ): RetirementPlanAdvanced {
   const basePlan = calculateRetirementPlan(input, referenceDate);
   const n = Math.max(0, basePlan.tahunMenujuPensiun);
-  const inflationFactor = Math.pow(1 + assumptions.inflasiPersen / 100, n);
+  const yearsInRetirement = Math.max(0, input.usiaWarisan - input.usiaPensiun);
+  const nMid = n + yearsInRetirement / 2;
+  const inflationFactorBefore = Math.pow(1 + assumptions.inflasiPersen / 100, n);
+  const inflationFactorDuring = Math.pow(1 + assumptions.inflasiPersen / 100, nMid);
   const discountFactor = Math.pow(1 + assumptions.returnInvestasiPersen / 100, n);
 
-  const danaDibutuhkanSebelumPensiun = basePlan.danaDibutuhkanSebelumPensiun * inflationFactor;
-  const danaDibutuhkanSelamaPensiun = basePlan.danaDibutuhkanSelamaPensiun * inflationFactor;
+  const danaDibutuhkanSebelumPensiun = basePlan.danaDibutuhkanSebelumPensiun * inflationFactorBefore;
+  const danaDibutuhkanSelamaPensiun = basePlan.danaDibutuhkanSelamaPensiun * inflationFactorDuring;
   const totalDanaPensiunWarisan = danaDibutuhkanSebelumPensiun + danaDibutuhkanSelamaPensiun;
 
   return {

@@ -45,3 +45,25 @@ export function apiFetch(path: string, init: RequestInit = {}): Promise<Response
 
   return fetch(`${API}${path}`, { ...init, credentials: "include", headers });
 }
+
+/**
+ * JSON helper di atas apiFetch — satu tempat untuk parse error `{ error }` dan 204.
+ * Prefer ini daripada wrapper lokal di tiap page.
+ */
+export async function apiJson<T = unknown>(
+  path: string,
+  method: string = "GET",
+  body?: unknown,
+): Promise<T> {
+  const res = await apiFetch(path, {
+    method,
+    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((err as { error?: string }).error ?? "Gagal");
+  }
+  if (res.status === 204) return null as T;
+  return res.json() as Promise<T>;
+}

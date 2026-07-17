@@ -83,7 +83,7 @@ describe.skipIf(!E2E_API_URL)("Household isolation & privilege escalation (Sprin
     expect(trx.status).toBe(201);
     transactionAId = (trx.body as { id: string }).id;
 
-    const debt = await api(cookieA, "/api/debts", "POST", { pemberiUtang: `Bank A ${Date.now()}`, saldoAwal: 2_000_000 });
+    const debt = await api(cookieA, "/api/debts", "POST", { pemberiUtang: `Bank A ${Date.now()}`, saldoAwal: 2_000_000, asOpeningBalance: true });
     expect(debt.status).toBe(201);
     debtAId = (debt.body as { id: string }).id;
 

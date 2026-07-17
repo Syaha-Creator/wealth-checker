@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Input, Select, InputRupiah } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/format";
-import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { apiJson } from "@/lib/apiFetch";
 import { useToast } from "@/components/ui/Toast";
 
 interface DreamGoal {
@@ -34,20 +34,7 @@ interface Account {
   isActive: boolean;
 }
 
-async function apiFetch(path: string, method: string, body?: unknown) {
-  const res = await apiFetchRaw(`${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? "Gagal");
-  }
-  if (res.status === 204) return null;
-  return res.json();
-}
+const apiFetch = apiJson;
 
 function StarIcon() {
   return (

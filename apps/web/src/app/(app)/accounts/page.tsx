@@ -13,7 +13,7 @@ import { RequiredMark } from "@/components/ui/Input";
 import { Skeleton, SkeletonHero } from "@/components/ui/Skeleton";
 import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/format";
 import { SEMUA_REKENING } from "@/lib/institutions";
-import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { apiJson } from "@/lib/apiFetch";
 import { useToast } from "@/components/ui/Toast";
 
 type Account = {
@@ -33,20 +33,7 @@ type ModalState = {
   onConfirm: () => void;
 };
 
-async function apiFetch(path: string, method: string, body?: unknown) {
-  const res = await apiFetchRaw(`${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? "Gagal");
-  }
-  if (res.status === 204) return null;
-  return res.json();
-}
+const apiFetch = apiJson;
 
 function AccountIcon() {
   return (

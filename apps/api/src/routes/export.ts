@@ -9,6 +9,7 @@ import { generatePdfReport } from "../services/pdfReport";
 import { generateExcelReport } from "../services/excelReport";
 import { checkRateLimit } from "../lib/rateLimit";
 import { zodErrorHook } from "../lib/validation";
+import { logger } from "../lib/logger";
 import type { AppEnv } from "../types";
 
 export const exportRoutes = new Hono<AppEnv>();
@@ -33,24 +34,29 @@ const RATE_LIMIT_WINDOW_SECONDS = 60;
  * daripada membuka abuse/cost amplification saat infra Redis bermasalah.
  * Client mendapat 429 dengan pesan yang jelas; admin bisa cek log Redis.
  */
-async function isRateLimited(userId: string): Promise<boolean> {
+async function isRateLimited(userId: string, requestId?: string): Promise<{ limited: boolean; reason?: "cooldown" | "redis_unavailable" }> {
   try {
     const allowed = await checkRateLimit(`export:ratelimit:${userId}`, RATE_LIMIT_WINDOW_SECONDS);
-    return !allowed;
+    return { limited: !allowed, reason: allowed ? undefined : "cooldown" };
   } catch (err) {
-    console.error("[export] rate limit check gagal (Redis down?), fail-closed", err);
-    return true;
+    logger.error("export_rate_limit_check_failed", { userId, requestId, reason: "redis_unavailable" }, err);
+    return { limited: true, reason: "redis_unavailable" };
   }
 }
 
 exportRoutes.get("/pdf", zValidator("query", dateRangeQuerySchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const householdId = c.get("householdId");
+  const requestId = c.get("requestId");
   const { from, to } = c.req.valid("query");
   if (from > to) return c.json({ error: "Tanggal 'from' tidak boleh setelah 'to'" }, 422);
 
-  if (await isRateLimited(userId)) {
-    return c.json({ error: "Tunggu sebentar sebelum export lagi (maks. 1x per menit)" }, 429);
+  const rate = await isRateLimited(userId, requestId);
+  if (rate.limited) {
+    const msg = rate.reason === "redis_unavailable"
+      ? "Layanan sementara tidak tersedia. Coba lagi sebentar."
+      : "Tunggu sebentar sebelum export lagi (maks. 1x per menit)";
+    return c.json({ error: msg }, 429);
   }
 
   const data = await buildReportData(db, householdId, userId, from, to);
@@ -67,11 +73,16 @@ exportRoutes.get("/pdf", zValidator("query", dateRangeQuerySchema, zodErrorHook)
 exportRoutes.get("/excel", zValidator("query", dateRangeQuerySchema, zodErrorHook), async (c) => {
   const userId = c.get("userId") as string;
   const householdId = c.get("householdId");
+  const requestId = c.get("requestId");
   const { from, to } = c.req.valid("query");
   if (from > to) return c.json({ error: "Tanggal 'from' tidak boleh setelah 'to'" }, 422);
 
-  if (await isRateLimited(userId)) {
-    return c.json({ error: "Tunggu sebentar sebelum export lagi (maks. 1x per menit)" }, 429);
+  const rate = await isRateLimited(userId, requestId);
+  if (rate.limited) {
+    const msg = rate.reason === "redis_unavailable"
+      ? "Layanan sementara tidak tersedia. Coba lagi sebentar."
+      : "Tunggu sebentar sebelum export lagi (maks. 1x per menit)";
+    return c.json({ error: msg }, 429);
   }
 
   const data = await buildReportData(db, householdId, userId, from, to);

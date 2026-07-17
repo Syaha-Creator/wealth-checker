@@ -4,9 +4,10 @@
 // (yang membuat koneksi DB/instance better-auth saat di-import) sempat jalan.
 import "./lib/env";
 import { Hono } from "hono";
+import { sql } from "drizzle-orm";
 import type { AppEnv } from "./types";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
+import { db } from "@wealth/db";
 import { authRoutes } from "./routes/auth";
 import { accountRoutes } from "./routes/accounts";
 import { transactionRoutes } from "./routes/transactions";
@@ -21,6 +22,9 @@ import { checklistRoutes } from "./routes/checklist";
 import { notificationRoutes } from "./routes/notifications";
 import { exportRoutes } from "./routes/export";
 import { householdRoutes } from "./routes/households";
+import { requestIdMiddleware, REQUEST_ID_HEADER } from "./middleware/requestId";
+import { getRedis } from "./lib/redis";
+import { logger } from "./lib/logger";
 
 const ALLOWED_ORIGINS = [
   "https://wealth.velrox.cloud",
@@ -35,7 +39,7 @@ const ALLOWED_ORIGINS = [
 
 const app = new Hono<AppEnv>();
 
-app.use("*", logger());
+app.use("*", requestIdMiddleware);
 
 app.use(
   "*",
@@ -56,21 +60,58 @@ app.use(
     // kelihatan di log server sama sekali. Ini mematikan seluruh fitur
     // household switching di semua deployment nyata begitu user pernah pindah
     // household.
-    allowHeaders: ["Content-Type", "Authorization", "Cookie", "X-Household-Id"],
+    allowHeaders: ["Content-Type", "Authorization", "Cookie", "X-Household-Id", REQUEST_ID_HEADER],
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     // Set-Cookie: cookie session untuk web. set-auth-token: bearer plugin
     // Better Auth mengirim token session setelah sign-in/sign-up — dibaca
     // client mobile (Flutter) yang tidak punya cookie jar, lalu dikirim ulang
     // sebagai Authorization: Bearer <token> pada request berikutnya.
-    exposeHeaders: ["Set-Cookie", "set-auth-token"],
+    exposeHeaders: ["Set-Cookie", "set-auth-token", REQUEST_ID_HEADER],
     credentials: true,
     maxAge: 86400,
   })
 );
 
+/** Liveness — process is up (no dependency checks). */
 app.get("/health", (c) =>
   c.json({ status: "ok", service: "wealth-checker-api", ts: new Date().toISOString() })
 );
+
+/**
+ * Readiness — Postgres + Redis reachable. Returns 503 if either fails so
+ * orchestrators / load balancers can stop sending traffic.
+ */
+app.get("/health/ready", async (c) => {
+  const checks: { postgres: "ok" | "fail"; redis: "ok" | "fail" } = {
+    postgres: "fail",
+    redis: "fail",
+  };
+
+  try {
+    await db.execute(sql`select 1`);
+    checks.postgres = "ok";
+  } catch (err) {
+    logger.error("health_ready_postgres_failed", { requestId: c.get("requestId") }, err);
+  }
+
+  try {
+    const pong = await getRedis().ping();
+    checks.redis = pong === "PONG" ? "ok" : "fail";
+  } catch (err) {
+    logger.error("health_ready_redis_failed", { requestId: c.get("requestId") }, err);
+  }
+
+  const ready = checks.postgres === "ok" && checks.redis === "ok";
+  return c.json(
+    {
+      status: ready ? "ok" : "degraded",
+      service: "wealth-checker-api",
+      checks,
+      ts: new Date().toISOString(),
+    },
+    ready ? 200 : 503,
+  );
+});
 
 app.route("/api/auth", authRoutes);
 app.route("/api/accounts", accountRoutes);
@@ -95,11 +136,19 @@ app.notFound((c) => c.json({ error: "Not found" }, 404));
 // debugging; only a generic message is exposed to the client (no stack
 // traces / raw DB errors leaked).
 app.onError((err, c) => {
-  console.error(`[unhandled-error] ${c.req.method} ${c.req.path}`, err);
+  logger.error(
+    "unhandled_error",
+    {
+      requestId: c.get("requestId"),
+      method: c.req.method,
+      path: c.req.path,
+    },
+    err,
+  );
   return c.json({ error: "Terjadi kesalahan pada server. Silakan coba lagi nanti." }, 500);
 });
 
 const port = Number(process.env.PORT) || 3011;
-console.log(`🚀 Wealth Checker API running on port ${port}`);
+logger.info("api_started", { port });
 
 export default { port, fetch: app.fetch };

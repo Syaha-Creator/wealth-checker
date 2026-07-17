@@ -12,7 +12,7 @@ import { PageShell } from "@/components/ui/PageShell";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { formatCurrency, parseRupiahInput } from "@/lib/format";
 import { NotificationSettings } from "./_components/NotificationSettings";
-import { apiFetch as apiFetchRaw } from "@/lib/apiFetch";
+import { apiJson } from "@/lib/apiFetch";
 import { useToast } from "@/components/ui/Toast";
 import { HouseholdSettings } from "./_components/HouseholdSettings";
 
@@ -35,20 +35,7 @@ function formatRupiahDisplay(val: string) {
   return num ? Number(num).toLocaleString("id-ID") : "";
 }
 
-async function apiFetch(path: string, method = "GET", body?: unknown) {
-  const res = await apiFetchRaw(`${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? "Gagal");
-  }
-  if (res.status === 204) return null;
-  return res.json();
-}
+const apiFetch = apiJson;
 
 export default function ProfilePage() {
   const router = useRouter();

@@ -6,7 +6,7 @@ import { eq, and, count, sql } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { resolveHousehold, requireRole } from "../middleware/household";
 import { calculateAssetSummary } from "../services/assetSummary";
-import { createWealthSnapshot } from "../services/wealth";
+import { snapshotWealthInBackground } from "../services/wealthSnapshotBackground";
 import { isUniqueViolation } from "../lib/dbErrors";
 import { zodErrorHook, MAX_MONETARY_VALUE } from "../lib/validation";
 import type { AppEnv } from "../types";
@@ -17,13 +17,7 @@ assetRoutes.use("*", requireAuth);
 // Sprint 27 (Fase 4): aset (liquid/fixed) di-scope per household.
 assetRoutes.use("*", resolveHousehold);
 
-// Sprint 16 (Fase 3) — lihat catatan di transactions.ts: fire-and-forget,
-// dipanggil setelah mutasi CRUD aset (liquid/fixed) commit.
-function snapshotWealthInBackground(householdId: string, userId: string): void {
-  createWealthSnapshot(db, householdId, userId).catch((err) => {
-    console.error("[wealth-snapshot] gagal membuat snapshot", err);
-  });
-}
+// Sprint 16 (Fase 3) — snapshot fire-and-forget setelah mutasi CRUD aset.
 
 // Reusable UUID param schema
 const idParam = z.object({ id: z.string().uuid("ID tidak valid") });

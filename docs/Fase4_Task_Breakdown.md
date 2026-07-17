@@ -1,6 +1,8 @@
 # Technical Task Breakdown — Fase 4
 ### Wealth Checker App — Penyempurnaan & Fitur Lanjutan
 
+> **Status (Jul 2026):** Semua sprint Fase 4 di bawah **sudah diimplementasikan** di production (notifikasi + worker, export PDF/Excel, retirement advanced, households). Checklist historis dipertahankan sebagai arsip sprint. Sumber status terkini: [`ARCHITECTURE.md`](./ARCHITECTURE.md) dan [`API.md`](./API.md).
+
 Scope Fase 4 sesuai PRD: Notifikasi pengingat pencatatan harian, export laporan (PDF/Excel), multi-user/family sharing, dan validasi ulang formula dana pensiun (present value + inflasi).
 
 Fase 4 adalah fase opsional — artinya semua fitur di sini meningkatkan nilai produk secara signifikan, tapi aplikasi sudah fully functional tanpa mereka. Urutan sprint di bawah disusun berdasarkan **impact vs kompleksitas**: dimulai dari yang paling langsung dirasakan pengguna (notifikasi dan export), lalu fitur yang paling mengubah arsitektur (multi-user).
