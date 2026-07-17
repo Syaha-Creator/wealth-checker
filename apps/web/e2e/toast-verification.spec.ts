@@ -53,7 +53,7 @@ test("Toast muncul untuk tambah, edit, dan hapus di 3 halaman berbeda", async ({
   await page.waitForSelector("text=Total Sisa Utang", { timeout: 15_000 });
   await page.getByRole("button", { name: "Utang Baru" }).click();
   const debtName = `Utang Toast ${Date.now()}`;
-  await page.getByRole("tab", { name: "Utang yang Sudah Ada" }).click();
+  await page.getByRole("tab", { name: "Sudah Ada" }).click();
   await page.fill("#debt-pemberi", debtName);
   await page.fill("#debt-nominal", "50000");
   await page.getByRole("button", { name: "Simpan Deklarasi" }).click();
