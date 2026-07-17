@@ -79,7 +79,7 @@ test("Manual E2E: edit/hapus aset, utang, piutang", async ({ page }) => {
   await page.goto("/debts");
   await page.waitForSelector("text=Total Sisa Utang", { timeout: 15_000 });
   await page.getByRole("button", { name: /Utang Baru/i }).click();
-  await page.getByRole("tab", { name: "Utang yang Sudah Ada" }).click();
+  await page.getByRole("tab", { name: "Sudah Ada" }).click();
   await page.locator("#debt-pemberi").fill(TEST_DEBT_NAME);
   await page.locator("#debt-nominal").fill("999999");
   await page.getByRole("button", { name: "Simpan Deklarasi" }).click();
@@ -108,7 +108,7 @@ test("Manual E2E: edit/hapus aset, utang, piutang", async ({ page }) => {
   const EDIT_DEBT_NEW = `Bank Edit E2E ${Date.now()}`;
   await page.goto("/debts");
   await page.getByRole("button", { name: /Utang Baru/i }).click();
-  await page.getByRole("tab", { name: "Utang yang Sudah Ada" }).click();
+  await page.getByRole("tab", { name: "Sudah Ada" }).click();
   await page.locator("#debt-pemberi").fill("Utang Edit Sementara");
   await page.locator("#debt-nominal").fill("500000");
   await page.getByRole("button", { name: "Simpan Deklarasi" }).click();
@@ -133,7 +133,7 @@ test("Manual E2E: edit/hapus aset, utang, piutang", async ({ page }) => {
   const EDIT_REC_NEW = `Peminjam Edit E2E ${Date.now()}`;
   await page.getByRole("tab", { name: "Piutang" }).click();
   await page.getByRole("button", { name: /Piutang Baru/i }).click();
-  await page.getByRole("tab", { name: "Piutang yang Sudah Ada" }).click();
+  await page.getByRole("tab", { name: "Sudah Ada" }).click();
   await page.locator("#rec-peminjam").fill(TEST_RECEIVABLE_NAME);
   await page.locator("#rec-nominal").fill("250000");
   await page.getByRole("button", { name: "Simpan Deklarasi" }).click();
