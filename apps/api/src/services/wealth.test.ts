@@ -424,12 +424,23 @@ describe("calculateRetirementPlanAdvanced (Sprint 26 — present value & inflasi
     expect(advanced.asumsi).toEqual({ inflasiPersen: 6, returnInvestasiPersen: 9 });
   });
 
-  it("bucket selama pensiun memakai horizon mid-point (lebih besar dari bucket sebelum saat inflasi > 0)", () => {
+  it("bucket selama pensiun: rantai cashflow tumbuh (faktor inflasi efektif > bucket sebelum)", () => {
     const simple = calculateRetirementPlan(input, referenceDate);
     const advanced = calculateRetirementPlanAdvanced(input, { inflasiPersen: 5, returnInvestasiPersen: 8 }, referenceDate);
     const factorBefore = advanced.danaDibutuhkanSebelumPensiun / simple.danaDibutuhkanSebelumPensiun;
     const factorDuring = advanced.danaDibutuhkanSelamaPensiun / simple.danaDibutuhkanSelamaPensiun;
     expect(factorDuring).toBeGreaterThan(factorBefore);
+  });
+
+  it("PV selama pensiun lebih kecil dari nominal FV selama (uang berbunga selama masa pensiun)", () => {
+    const advanced = calculateRetirementPlanAdvanced(input, { inflasiPersen: 5, returnInvestasiPersen: 8 }, referenceDate);
+    // danaDibutuhkanSekarang < total FV; dan kontribusi selama tidak didiskon hanya dengan n
+    expect(advanced.danaDibutuhkanSekarang).toBeLessThan(advanced.totalDanaPensiunWarisan);
+    const n = advanced.tahunMenujuPensiun;
+    const naivePv = advanced.totalDanaPensiunWarisan / Math.pow(1.08, Math.max(0, n));
+    // Growing-annuity PV harus lebih kecil dari "diskon semua FV dengan n saja"
+    // karena cashflow selama pensiun terjadi SETELAH pensiun.
+    expect(advanced.danaDibutuhkanSekarang).toBeLessThan(naivePv);
   });
 
   it("retirementFundingTarget: simple pakai total FV; advanced pakai danaDibutuhkanSekarang (PV)", () => {

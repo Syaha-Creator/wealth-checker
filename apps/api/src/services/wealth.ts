@@ -528,18 +528,13 @@ export interface RetirementPlanAdvanced extends RetirementPlan {
 }
 
 /**
- * Formula 2 langkah sesuai plan Sprint 26:
- * 1. FV — inflasi-kan kebutuhan dana calculateRetirementPlan() (dalam rupiah
- *    HARI INI) ke nilai rupiah pada horizon masing-masing:
- *    - sebelum pensiun: n = tahun menuju pensiun
- *    - selama pensiun: nMid = n + setengah masa pensiun (mid-point approximation)
- *      supaya bucket selama pensiun tidak memakai horizon yang sama dengan
- *      "hari ini → pensiun" saja (penyederhanaan sebelumnya).
- * 2. PV kembali — dari total FV, hitung lump sum hari ini dengan returnInvestasi:
- *    PV = FV / (1 + returnInvestasi)^n  (diskon tetap ke saat pensiun / n).
+ * Formula advanced (Sprint 26+):
+ * 1. Sebelum pensiun — inflate total linear ke nilai saat pensiun, lalu PV ke hari ini.
+ * 2. Selama pensiun — rantai cashflow tahunan yang tumbuh dengan inflasi dari tahun
+ *    pensiun sampai warisan; jumlah nominal = field display; PV = diskon tiap tahun
+ *    dengan returnInvestasi (bukan mid-point tunggal).
  *
- * Simplifikasi yang tersisa: kebutuhan SELAMA masa pensiun diasumsikan konstan
- * dalam rupiah di titik tengah masa pensiun (bukan anuitas bulanan bertumbuh penuh).
+ * Saat inflasi 0%, field display selama/sebelum sama dengan mode simple.
  */
 export function calculateRetirementPlanAdvanced(
   input: RetirementPlanInput,
@@ -549,13 +544,24 @@ export function calculateRetirementPlanAdvanced(
   const basePlan = calculateRetirementPlan(input, referenceDate);
   const n = Math.max(0, basePlan.tahunMenujuPensiun);
   const yearsInRetirement = Math.max(0, input.usiaWarisan - input.usiaPensiun);
-  const nMid = n + yearsInRetirement / 2;
-  const inflationFactorBefore = Math.pow(1 + assumptions.inflasiPersen / 100, n);
-  const inflationFactorDuring = Math.pow(1 + assumptions.inflasiPersen / 100, nMid);
-  const discountFactor = Math.pow(1 + assumptions.returnInvestasiPersen / 100, n);
+  const i = assumptions.inflasiPersen / 100;
+  const r = assumptions.returnInvestasiPersen / 100;
+  const discountToToday = Math.pow(1 + r, n);
 
-  const danaDibutuhkanSebelumPensiun = basePlan.danaDibutuhkanSebelumPensiun * inflationFactorBefore;
-  const danaDibutuhkanSelamaPensiun = basePlan.danaDibutuhkanSelamaPensiun * inflationFactorDuring;
+  const danaDibutuhkanSebelumPensiun = basePlan.danaDibutuhkanSebelumPensiun * Math.pow(1 + i, n);
+  const pvSebelum = discountToToday > 0 ? danaDibutuhkanSebelumPensiun / discountToToday : danaDibutuhkanSebelumPensiun;
+
+  let danaDibutuhkanSelamaPensiun = 0;
+  let pvSelama = 0;
+  if (yearsInRetirement > 0 && basePlan.danaDibutuhkanSelamaPensiun > 0) {
+    const annualToday = basePlan.danaDibutuhkanSelamaPensiun / yearsInRetirement;
+    for (let k = 0; k < yearsInRetirement; k++) {
+      const cashflow = annualToday * Math.pow(1 + i, n + k);
+      danaDibutuhkanSelamaPensiun += cashflow;
+      pvSelama += cashflow / Math.pow(1 + r, n + k);
+    }
+  }
+
   const totalDanaPensiunWarisan = danaDibutuhkanSebelumPensiun + danaDibutuhkanSelamaPensiun;
 
   return {
@@ -563,7 +569,7 @@ export function calculateRetirementPlanAdvanced(
     danaDibutuhkanSebelumPensiun,
     danaDibutuhkanSelamaPensiun,
     totalDanaPensiunWarisan,
-    danaDibutuhkanSekarang: totalDanaPensiunWarisan / discountFactor,
+    danaDibutuhkanSekarang: pvSebelum + pvSelama,
     asumsi: assumptions,
   };
 }

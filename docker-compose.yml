@@ -34,18 +34,24 @@ services:
   # ---------------------------------------------------------------------------
   # Redis — cache
   # ---------------------------------------------------------------------------
+  # Redis — BullMQ queue + export rate-limit. Policy MUST be noeviction so
+  # queue keys are never silently dropped under memory pressure.
   redis:
     image: redis:7-alpine
     container_name: wealth_redis
     restart: unless-stopped
-    command: >
-      redis-server
-      --requirepass "${REDIS_PASSWORD}"
-      --appendonly yes
-      --maxmemory 48mb
-      # BullMQ requires noeviction — allkeys-lru can silently drop queue keys
-      # under memory pressure (worker logs: "Eviction policy is allkeys-lru").
-      --maxmemory-policy noeviction
+    command:
+      [
+        "redis-server",
+        "--requirepass",
+        "${REDIS_PASSWORD}",
+        "--appendonly",
+        "yes",
+        "--maxmemory",
+        "48mb",
+        "--maxmemory-policy",
+        "noeviction",
+      ]
     volumes:
       - wealth_redis_data:/data
     ports:

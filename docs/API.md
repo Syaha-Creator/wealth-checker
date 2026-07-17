@@ -1055,7 +1055,7 @@ Compute the recommended budget allocation for a given month, based on the user's
 
 | Param | Type | Default | Notes |
 |-------|------|---------|-------|
-| `mode` | `"simple" \| "advanced"` | `"simple"` | **Fase 4 Sprint 26.** `simple` uses the original linear projection (no inflation/present-value, matching PRD 3.1.8 exactly — kept as default for backward compatibility with old clients). `advanced` uses `calculateRetirementPlanAdvanced()`: inflates each future funding target by the user's `retirementAssumptions.inflasiPersen` (compounded annually over the years-to-target), then present-values that inflated target back to today using `returnInvestasiPersen` as the discount rate — produces a **larger** `totalDanaPensiunWarisan` than `simple` given the same inputs, since it also accounts for the eroding effect of inflation on far-future goals. |
+| `mode` | `"simple" \| "advanced"` | `"simple"` | **Fase 4 Sprint 26.** `simple` = linear PRD 3.1.8 (no inflation/PV). `advanced` = inflate the pre-retirement bucket to retirement date; model the during-retirement bucket as an annual cashflow chain that grows with `inflasiPersen` each year after retirement; present-value each cashflow with `returnInvestasiPersen`. Display totals are nominal inflated sums; `danaDibutuhkanSekarang` is the true lump-sum PV (used for `selisihMenujuTarget`). |
 
 The response body gains one extra top-level field versus the legacy shape:
 

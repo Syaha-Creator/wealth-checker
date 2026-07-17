@@ -111,7 +111,7 @@ export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: Retir
         <div>
           <h2 className="text-sm font-semibold text-text-secondary">Mode Lanjutan: Present Value &amp; Inflasi</h2>
           <p className="text-xs text-text-muted mt-1">
-            Nilai uang menyusut karena inflasi. Mode ini menghitung berapa dana yang benar-benar kamu butuhkan di masa depan (nilai rupiah saat itu), lalu berapa yang perlu kamu investasikan <em>hari ini</em> supaya cukup — dengan asumsi hasil investasi tertentu per tahun.
+            Nilai uang menyusut karena inflasi. Mode ini menghitung kebutuhan sebelum pensiun (diinflasikan ke hari pensiun) dan kebutuhan selama pensiun sebagai rangkaian cashflow tahunan yang tumbuh dengan inflasi, lalu menghitung berapa lump sum yang perlu disiapkan <em>hari ini</em> dengan asumsi return investasi — termasuk diskon untuk uang yang baru dipakai setelah pensiun.
           </p>
         </div>
       </div>
