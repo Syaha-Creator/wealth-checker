@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
@@ -10,20 +10,22 @@ import { Skeleton, SkeletonHero, SkeletonCard } from "@/components/ui/Skeleton";
 import { Toggle } from "@/components/ui/Toggle";
 import { useToast } from "@/components/ui/Toast";
 import { formatCurrency, formatCurrencyShort } from "@/lib/format";
+import { retirementHeroTarget } from "@/lib/retirementHero";
 import { RetirementAdvancedPanel } from "./_components/RetirementAdvancedPanel";
 import { apiFetch } from "@/lib/apiFetch";
-
 
 type RetirementPlanResponse =
   | { hasProfile: false; error: string }
   | {
       hasProfile: true;
+      mode?: "simple" | "advanced";
       plan: {
         tahunMenujuPensiun: number;
         tahunMenujuWarisan: number;
         danaDibutuhkanSebelumPensiun: number;
         danaDibutuhkanSelamaPensiun: number;
         totalDanaPensiunWarisan: number;
+        danaDibutuhkanSekarang?: number;
       };
       sisaUangBulanan: number;
       danaTerkumpulSaatIni: number;
@@ -99,31 +101,47 @@ export default function RetirementPlanPage() {
   const [retryKey, setRetryKey] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [togglingAdvanced, setTogglingAdvanced] = useState(false);
+  const [simpleTotal, setSimpleTotal] = useState(0);
+
+  const loadPlan = useCallback(async (mode: "simple" | "advanced") => {
+    const r = await apiFetch(`/api/wealth/retirement-plan?mode=${mode}`, { credentials: "include" });
+    if (!r.ok) throw new Error("Gagal memuat rencana pensiun & warisan");
+    return r.json() as Promise<RetirementPlanResponse>;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      apiFetch(`/api/wealth/retirement-plan`, { credentials: "include" }).then(async (r) => {
-        if (!r.ok) throw new Error("Gagal memuat rencana pensiun & warisan");
-        return r.json() as Promise<RetirementPlanResponse>;
-      }),
-      apiFetch(`/api/wealth/retirement-assumptions`, { credentials: "include" })
-        .then(async (r) => (r.ok ? r.json() as Promise<{ useAdvancedFormula?: boolean }> : null))
-        .catch(() => null),
-    ])
-      .then(([json, assumptions]) => {
+    (async () => {
+      try {
+        const assumptions = await apiFetch(`/api/wealth/retirement-assumptions`, { credentials: "include" })
+          .then(async (r) => (r.ok ? (r.json() as Promise<{ useAdvancedFormula?: boolean }>) : null))
+          .catch(() => null);
+        const advanced = Boolean(assumptions?.useAdvancedFormula);
+        const simpleJson = await loadPlan("simple");
         if (cancelled) return;
-        setData(json);
-        if (assumptions?.useAdvancedFormula) setShowAdvanced(true);
-      })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
-      })
-      .finally(() => {
+        if (simpleJson.hasProfile) {
+          setSimpleTotal(simpleJson.plan.totalDanaPensiunWarisan);
+        }
+        if (advanced) {
+          const advancedJson = await loadPlan("advanced");
+          if (cancelled) return;
+          setShowAdvanced(true);
+          setData(advancedJson);
+        } else {
+          setShowAdvanced(false);
+          setData(simpleJson);
+        }
+        setError("");
+      } catch (err: unknown) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Gagal memuat");
+      } finally {
         if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [retryKey]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [retryKey, loadPlan]);
 
   const handleAdvancedToggle = async (checked: boolean) => {
     const previous = showAdvanced;
@@ -139,6 +157,16 @@ export default function RetirementPlanPage() {
         setShowAdvanced(previous);
         const body = await res.json().catch(() => ({ error: "Gagal menyimpan preferensi" }));
         showToast({ type: "error", message: body.error ?? "Gagal menyimpan preferensi mode lanjutan" });
+        return;
+      }
+      if (!checked) {
+        const json = await loadPlan("simple");
+        if (json.hasProfile) setSimpleTotal(json.plan.totalDanaPensiunWarisan);
+        setData(json);
+      } else {
+        const [simpleJson, advancedJson] = await Promise.all([loadPlan("simple"), loadPlan("advanced")]);
+        if (simpleJson.hasProfile) setSimpleTotal(simpleJson.plan.totalDanaPensiunWarisan);
+        setData(advancedJson);
       }
     } catch {
       setShowAdvanced(previous);
@@ -148,9 +176,19 @@ export default function RetirementPlanPage() {
     }
   };
 
-  const progressPct = data?.hasProfile && data.plan.totalDanaPensiunWarisan > 0
-    ? Math.min(100, (data.danaTerkumpulSaatIni / data.plan.totalDanaPensiunWarisan) * 100)
-    : 0;
+  const mode = data?.hasProfile ? (data.mode ?? (showAdvanced ? "advanced" : "simple")) : "simple";
+  const heroTarget =
+    data?.hasProfile
+      ? retirementHeroTarget({
+          mode,
+          totalDanaPensiunWarisan: data.plan.totalDanaPensiunWarisan,
+          danaDibutuhkanSekarang: data.plan.danaDibutuhkanSekarang,
+        })
+      : 0;
+  const progressPct =
+    data?.hasProfile && heroTarget > 0
+      ? Math.min(100, (data.danaTerkumpulSaatIni / heroTarget) * 100)
+      : 0;
 
   return (
     <PageShell width="narrow">
@@ -169,11 +207,19 @@ export default function RetirementPlanPage() {
         />
       ) : (
         <div className="space-y-4">
-          {/* Hero: progress menuju target total */}
           <div className="rounded-2xl p-5 sm:p-6 bg-brand">
-            <p className="text-white/70 text-sm">Total Dana Pensiun &amp; Warisan Dibutuhkan</p>
-            <p className="text-2xl sm:text-3xl font-bold mt-1 text-white">{formatCurrencyShort(data.plan.totalDanaPensiunWarisan)}</p>
-            <p className="text-sm text-white/80 mt-0.5">{formatCurrency(data.plan.totalDanaPensiunWarisan)}</p>
+            <p className="text-white/70 text-sm">
+              {mode === "advanced"
+                ? "Dana yang perlu disiapkan hari ini (PV)"
+                : "Total Dana Pensiun & Warisan Dibutuhkan"}
+            </p>
+            <p className="text-2xl sm:text-3xl font-bold mt-1 text-white">{formatCurrencyShort(heroTarget)}</p>
+            <p className="text-sm text-white/80 mt-0.5">{formatCurrency(heroTarget)}</p>
+            {mode === "advanced" && (
+              <p className="text-xs text-white/60 mt-1">
+                Target nominal masa depan (FV): {formatCurrencyShort(data.plan.totalDanaPensiunWarisan)}
+              </p>
+            )}
 
             <div
               className="mt-4 h-2 rounded-full bg-white/20 overflow-hidden"
@@ -191,13 +237,13 @@ export default function RetirementPlanPage() {
             </div>
             {data.selisihMenujuTarget > 0 && (
               <p className="text-xs text-white/70 mt-1">
-                Kurang {formatCurrencyShort(data.selisihMenujuTarget)} lagi menuju target (mode sederhana — nominal hari ini)
-                {showAdvanced ? ". Gap PV ada di panel Mode Lanjutan di bawah." : ""}
+                {mode === "advanced"
+                  ? `Kurang ${formatCurrencyShort(data.selisihMenujuTarget)} lagi menuju kebutuhan hari ini (PV)`
+                  : `Kurang ${formatCurrencyShort(data.selisihMenujuTarget)} lagi menuju target (nominal hari ini)`}
               </p>
             )}
           </div>
 
-          {/* Dua target: sebelum pensiun & selama pensiun */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Card>
               <p className="text-xs text-text-muted">Dana Dibutuhkan Sebelum Pensiun</p>
@@ -211,7 +257,6 @@ export default function RetirementPlanPage() {
             </Card>
           </div>
 
-          {/* Breakdown dana terkumpul (waterfall) */}
           <Card>
             <h2 className="text-sm font-semibold text-text-secondary mb-3">Rincian Dana Terkumpul Saat Ini</h2>
             <div className="space-y-2.5">
@@ -233,7 +278,6 @@ export default function RetirementPlanPage() {
             </p>
           </Card>
 
-          {/* Metrik tambahan: pelunasan utang & untung/rugi realized */}
           <Card>
             <h2 className="text-sm font-semibold text-text-secondary mb-3">Kapan Utang Bisa Lunas?</h2>
             {data.debtPayoff.bisaLunasSekarang ? (
@@ -270,7 +314,6 @@ export default function RetirementPlanPage() {
             </div>
           </Card>
 
-          {/* Sprint 26 (Fase 4): toggle mode Sederhana/Lanjutan */}
           <Card>
             <Toggle
               id="toggle-advanced-mode"
@@ -281,7 +324,15 @@ export default function RetirementPlanPage() {
             />
           </Card>
 
-          {showAdvanced && <RetirementAdvancedPanel totalDanaPensiunWarisanSimple={data.plan.totalDanaPensiunWarisan} />}
+          {showAdvanced && (
+            <RetirementAdvancedPanel
+              totalDanaPensiunWarisanSimple={simpleTotal}
+              onAssumptionsApplied={async () => {
+                const json = await loadPlan("advanced");
+                setData(json);
+              }}
+            />
+          )}
         </div>
       )}
     </PageShell>

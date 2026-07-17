@@ -26,6 +26,8 @@ interface AdvancedPlanResponse {
 
 interface RetirementAdvancedPanelProps {
   totalDanaPensiunWarisanSimple: number;
+  /** Called after assumptions are saved so the parent hero can refetch PV. */
+  onAssumptionsApplied?: () => void | Promise<void>;
 }
 
 /**
@@ -36,7 +38,10 @@ interface RetirementAdvancedPanelProps {
  *
  * Mount hanya membaca (GET). PATCH assumptions hanya saat user klik "Terapkan Asumsi".
  */
-export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: RetirementAdvancedPanelProps) {
+export function RetirementAdvancedPanel({
+  totalDanaPensiunWarisanSimple,
+  onAssumptionsApplied,
+}: RetirementAdvancedPanelProps) {
   const { showToast } = useToast();
   const [inflasiPersen, setInflasiPersen] = useState(5);
   const [returnInvestasiPersen, setReturnInvestasiPersen] = useState(8);
@@ -96,6 +101,7 @@ export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: Retir
       const plan: AdvancedPlanResponse = await apiJson("/api/wealth/retirement-plan?mode=advanced");
       setAdvancedPlan(plan.plan);
       showToast({ type: "success", message: "Asumsi pensiun berhasil diterapkan" });
+      await onAssumptionsApplied?.();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Gagal menerapkan asumsi";
       setError(msg);

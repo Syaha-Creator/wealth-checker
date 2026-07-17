@@ -66,7 +66,7 @@ On `503`, if `ALERT_WEBHOOK_URL` is set, the API POSTs a JSON alert payload (`ev
 
 Prometheus text exposition (process-local counters; reset on restart).
 
-Includes `http_requests_total`, `http_requests_5xx_total`, `http_request_duration_ms_sum`, `process_uptime_seconds`. Health/metrics paths are excluded from request counters. 5xx and unhandled errors also fire `ALERT_WEBHOOK_URL` when configured.
+Includes `http_requests_total`, `http_requests_5xx_total`, `http_request_duration_ms_sum`, plus per-path series (`http_requests_by_path_total`, `http_requests_5xx_by_path_total`, `http_request_duration_ms_sum_by_path`) with IDs collapsed to `:id`, and `process_uptime_seconds`. Health/metrics paths are excluded from request counters. 5xx and unhandled errors also fire `ALERT_WEBHOOK_URL` when configured.
 
 ---
 
