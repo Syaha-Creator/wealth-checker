@@ -2,7 +2,13 @@ import { betterAuth } from "better-auth";
 import { bearer } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db, authUser, authSession, authAccount, authVerification } from "@wealth/db";
-import { sendPasswordResetEmail } from "./email";
+import { sendPasswordResetEmail, sendVerificationEmail } from "./email";
+import { logger } from "./logger";
+
+// E2E / local tanpa Resend: set DISABLE_EMAIL_VERIFICATION=true agar sign-up
+// tetap mengembalikan session cookie (lihat docker-compose.e2e.yml).
+const requireEmailVerification =
+  process.env.DISABLE_EMAIL_VERIFICATION !== "true";
 
 const productionOrigin = "https://wealth.velrox.cloud";
 const devWebOrigin = "http://localhost:3010";
@@ -30,14 +36,31 @@ export const auth = betterAuth({
     },
   }),
 
+  // https://www.better-auth.com/docs/authentication/email-password#email-verification
+  emailVerification: {
+    sendOnSignUp: true,
+    sendOnSignIn: true,
+    autoSignInAfterVerification: true,
+    expiresIn: 3600,
+    sendVerificationEmail: async ({ user, url }) => {
+      // Jangan await — mitigasi timing attack (Better Auth docs).
+      void sendVerificationEmail({ to: user.email, verifyUrl: url }).catch(
+        (err) => {
+          logger.error(
+            "verification_email_send_failed",
+            { email: user.email },
+            err,
+          );
+        },
+      );
+    },
+  },
+
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
     minPasswordLength: 8,
-    // MVP: verification dimatikan sampai domain email production siap
-    // (lihat RESEND_FROM_EMAIL). Mengaktifkan tanpa kirim email akan mengunci
-    // signup. Tetap false sengaja — bukan oversight.
-    requireEmailVerification: false,
+    requireEmailVerification,
     resetPasswordTokenExpiresIn: 3600,
     sendResetPassword: async ({ user, url }) => {
       await sendPasswordResetEmail({ to: user.email, resetUrl: url });

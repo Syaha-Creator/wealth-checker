@@ -76,11 +76,18 @@ Register a new user.
 {
   "email": "user@example.com",
   "password": "minimum8chars",
-  "name": "Display Name"
+  "name": "Display Name",
+  "callbackURL": "https://wealth.velrox.cloud/auth/verified"
 }
 ```
 
-**Response `200`**
+When **email verification is required** (production default — Resend via `emailVerification.sendVerificationEmail`):
+
+- No session cookie is issued until the user clicks the verification link.
+- Response `200` may omit a live session; the same `200` shape is also returned for an already-registered email (**anti-enumeration**).
+- Set `DISABLE_EMAIL_VERIFICATION=true` only for E2E/local stacks that need an immediate session cookie after sign-up.
+
+**Response `200`** (verification disabled / already verified flows)
 
 ```json
 {
@@ -105,6 +112,14 @@ Log in with email and password.
 ```
 
 **Response `200`** — same shape as sign-up. Sets a session cookie.
+
+**Error `403`** — `EMAIL_NOT_VERIFIED`. A fresh verification email is sent when `sendOnSignIn` is enabled. Client should prompt the user to check inbox / resend via `POST /api/auth/send-verification-email`.
+
+---
+
+### POST `/api/auth/send-verification-email`
+
+Resend the email verification link (Resend). Body: `{ "email": "...", "callbackURL": "https://.../auth/verified" }`.
 
 ---
 
@@ -1593,7 +1608,7 @@ Members + pending invites of the **active** household (resolved the same way as 
 
 ### POST `/api/households/invite`
 
-**Owner-only.** Invite a new member by email. There is currently **no email provider wired up** in this codebase (`better-auth` doesn't have verification email configured either) — as an interim measure, the invite link is returned directly in the response body for the owner to share manually (WhatsApp, etc.) until an email provider (e.g. Resend/SMTP) is set up as separate work.
+**Owner-only.** Invite a new member by email. Invite email via Resend is not wired for household invites yet — the invite link is returned in the response body for the owner to share manually (WhatsApp, etc.). Account email verification (sign-up) already uses Resend; household invite email can reuse the same provider later.
 
 **Request body:** `{ "email": "friend@example.com", "role": "editor" }` — `role` is `"editor" | "viewer"` only (`owner` can't be granted via invite; use `PATCH /members/:userId` to transfer ownership instead).
 

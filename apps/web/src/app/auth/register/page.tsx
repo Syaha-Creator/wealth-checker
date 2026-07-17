@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { signUp, useSession } from "@/lib/auth-client";
+import { signUp, useSession, getSession } from "@/lib/auth-client";
 import { Input, PasswordInput } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -71,7 +71,13 @@ function RegisterContent() {
       return;
     }
 
-    const { error: err } = await signUp.email({ name, email, password });
+    const callbackURL = `${window.location.origin}/auth/verified`;
+    const { error: err } = await signUp.email({
+      name,
+      email,
+      password,
+      callbackURL,
+    });
 
     if (err) {
       // Bug hunt (Issue 13): pesan spesifik "email sudah terdaftar" ini secara
@@ -81,6 +87,9 @@ function RegisterContent() {
       // jelas lebih diprioritaskan daripada mitigasi enumeration (yang dampaknya
       // rendah di sini karena tidak ada data sensitif yang bocor, cuma status
       // "email ini terdaftar atau tidak").
+      // Catatan: saat requireEmailVerification aktif, Better Auth mengembalikan
+      // 200 generik untuk email yang sudah ada (anti-enumeration) — cabang ini
+      // terutama relevan bila verifikasi dimatikan (E2E / DISABLE_EMAIL_VERIFICATION).
       if (err.code === "USER_ALREADY_EXISTS") {
         setError("Email ini sudah terdaftar. Coba masuk.");
       } else {
@@ -90,8 +99,17 @@ function RegisterContent() {
       return;
     }
 
-    router.push(redirectTarget ?? "/onboarding");
-    router.refresh();
+    // Verifikasi wajib → tidak ada session; arahkan ke halaman cek email.
+    // E2E (DISABLE_EMAIL_VERIFICATION) → session langsung ada → onboarding.
+    const sessionResult = await getSession();
+    if (sessionResult.data?.session) {
+      router.push(redirectTarget ?? "/onboarding");
+      router.refresh();
+      return;
+    }
+
+    const params = new URLSearchParams({ email });
+    router.push(`/auth/check-email?${params.toString()}`);
   }
 
   if (isPending || session) {

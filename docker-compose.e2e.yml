@@ -54,6 +54,8 @@ services:
       # real value here (isolated, torn-down-after-run stack) and only causes
       # flaky 429s unrelated to actual bugs. See lib/auth.ts.
       DISABLE_AUTH_RATE_LIMIT: "true"
+      # Sign-up E2E butuh session cookie langsung; Resend tidak di-mock di stack E2E.
+      DISABLE_EMAIL_VERIFICATION: "true"
     ports:
       - "4001:4001"
     depends_on:

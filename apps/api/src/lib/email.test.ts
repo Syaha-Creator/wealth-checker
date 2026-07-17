@@ -66,3 +66,48 @@ describe("sendPasswordResetEmail", () => {
     ).rejects.toThrow("RESEND_API_KEY tidak diset");
   });
 });
+
+describe("sendVerificationEmail", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    process.env.RESEND_API_KEY = "re_test_key_placeholder";
+    delete process.env.RESEND_FROM_EMAIL;
+  });
+
+  it("memanggil Resend dengan parameter benar", async () => {
+    mockSend.mockResolvedValue({ data: { id: "email-id-456" }, error: null });
+
+    const { sendVerificationEmail } = await import("./email");
+    await sendVerificationEmail({
+      to: "user@example.com",
+      verifyUrl: "https://api.example.com/api/auth/verify-email?token=abc&callbackURL=/",
+    });
+
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    expect(mockSend).toHaveBeenCalledWith({
+      from: "onboarding@resend.dev",
+      to: "user@example.com",
+      subject: "Verifikasi Email Wealth Checker",
+      html: expect.stringContaining(
+        "https://api.example.com/api/auth/verify-email?token=abc&callbackURL=/",
+      ),
+    });
+  });
+
+  it("throw error jelas kalau Resend API gagal", async () => {
+    mockSend.mockResolvedValue({
+      data: null,
+      error: { message: "Invalid API key", name: "validation_error" },
+    });
+
+    const { sendVerificationEmail } = await import("./email");
+
+    await expect(
+      sendVerificationEmail({
+        to: "user@example.com",
+        verifyUrl: "https://example.com/verify",
+      }),
+    ).rejects.toThrow("Gagal mengirim email verifikasi: Invalid API key");
+  });
+});

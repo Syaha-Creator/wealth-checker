@@ -64,6 +64,14 @@ function LoginContent() {
     const { error: err } = await signIn.email({ email, password });
 
     if (err) {
+      const notVerified =
+        err.code === "EMAIL_NOT_VERIFIED" ||
+        /email not verified/i.test(err.message ?? "");
+      if (notVerified) {
+        setError("Email belum diverifikasi. Cek inbox atau kirim ulang tautan.");
+        setLoading(false);
+        return;
+      }
       setError(
         err.code === "INVALID_EMAIL_OR_PASSWORD"
           ? "Email atau password salah."
@@ -104,9 +112,19 @@ function LoginContent() {
         <div className="bg-surface border border-border rounded-2xl p-6">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {error && (
-              <div className="flex items-start gap-2 bg-danger-soft border border-danger-soft-border text-danger-text text-sm px-4 py-3 rounded-lg" role="alert">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="shrink-0 mt-0.5" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                <span>{error}</span>
+              <div className="flex flex-col gap-2 bg-danger-soft border border-danger-soft-border text-danger-text text-sm px-4 py-3 rounded-lg" role="alert">
+                <div className="flex items-start gap-2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="shrink-0 mt-0.5" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <span>{error}</span>
+                </div>
+                {(error.includes("belum diverifikasi") || error.includes("verifikasi")) && email && (
+                  <Link
+                    href={`/auth/check-email?email=${encodeURIComponent(email)}`}
+                    className="text-xs font-medium text-brand hover:text-brand-hover underline underline-offset-2"
+                  >
+                    Kirim ulang tautan verifikasi
+                  </Link>
+                )}
               </div>
             )}
 

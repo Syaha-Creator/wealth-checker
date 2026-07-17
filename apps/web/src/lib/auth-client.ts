@@ -17,6 +17,7 @@ export const {
   getSession,
   requestPasswordReset,
   resetPassword,
+  sendVerificationEmail,
 } = authClient;
 
 /** Alias runtime Better Auth — sama dengan `requestPasswordReset`. */
