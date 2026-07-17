@@ -10,6 +10,8 @@ import { eq, and, count } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { resolveHousehold, requireRole } from "../middleware/household";
 import { zodErrorHook } from "../lib/validation";
+import { sendHouseholdInviteEmail } from "../lib/email";
+import { logger } from "../lib/logger";
 import type { AppEnv } from "../types";
 
 export const householdRoutes = new Hono<AppEnv>();
@@ -79,11 +81,8 @@ householdRoutes.get("/members", resolveHousehold, async (c) => {
 });
 
 // ─── POST /invite — undang anggota baru via email (owner-only) ──────────────
-// Belum ada provider email terkonfigurasi di codebase ini (lihat lib/auth.ts —
-// better-auth pun belum mengaktifkan verifikasi email) — keputusan sementara:
-// link undangan dikembalikan langsung di response body supaya owner household
-// bisa membagikannya secara manual (WhatsApp/dsb), sampai provider email
-// (mis. Resend/SMTP) diputuskan & disiapkan sebagai pekerjaan terpisah.
+// Mengirim undangan lewat Resend; inviteUrl tetap dikembalikan di response
+// supaya owner bisa bagikan manual jika email gagal / tertunda.
 const inviteSchema = z.object({
   email: z.string().email(),
   role: z.enum(["editor", "viewer"]).default("editor"), // owner tidak bisa diundang langsung — harus transfer ownership
@@ -126,7 +125,19 @@ householdRoutes.post("/invite", resolveHousehold, requireRole("owner"), zValidat
   const webAppUrl = process.env.WEB_APP_URL ?? "http://localhost:3010";
   const inviteUrl = `${webAppUrl}/household/accept-invite?token=${invite.token}`;
 
-  return c.json({ ...invite, inviteUrl }, 201);
+  let emailSent = false;
+  try {
+    await sendHouseholdInviteEmail({ to: email, inviteUrl, role });
+    emailSent = true;
+  } catch (err) {
+    logger.error(
+      "household_invite_email_failed",
+      { householdId, invitedEmail: email, requestId: c.get("requestId") },
+      err,
+    );
+  }
+
+  return c.json({ ...invite, inviteUrl, emailSent }, 201);
 });
 
 // ─── DELETE /invites/:id — batalkan undangan pending (owner-only) ───────────

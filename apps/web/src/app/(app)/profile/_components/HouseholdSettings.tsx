@@ -120,12 +120,17 @@ export function HouseholdSettings() {
     setInviting(true);
     setMessage(null);
     try {
-      const invite = await apiFetch<{ inviteUrl: string }>("/api/households/invite", "POST", { email: inviteEmail.trim(), role: inviteRole });
+      const invite = await apiFetch<{ inviteUrl: string; emailSent?: boolean }>("/api/households/invite", "POST", { email: inviteEmail.trim(), role: inviteRole });
       setMessage({
         type: "success",
-        text: `Undangan dibuat. Bagikan link ini ke ${inviteEmail.trim()}: ${invite.inviteUrl}`,
+        text: invite.emailSent
+          ? `Undangan dikirim ke ${inviteEmail.trim()}. Link cadangan: ${invite.inviteUrl}`
+          : `Email gagal terkirim — bagikan link ini ke ${inviteEmail.trim()}: ${invite.inviteUrl}`,
       });
-      showToast({ type: "success", message: "Undangan anggota berhasil dikirim" });
+      showToast({
+        type: "success",
+        message: invite.emailSent ? "Undangan anggota berhasil dikirim" : "Undangan dibuat (bagikan link manual)",
+      });
       setInviteEmail("");
       await reload();
     } catch (err: unknown) {
@@ -385,7 +390,7 @@ export function HouseholdSettings() {
               </Button>
             </div>
             <p className="text-xs text-text-muted mt-1.5">
-              Belum ada pengiriman email otomatis — link undangan akan ditampilkan di sini untuk dibagikan manual.
+              Undangan dikirim lewat email. Link cadangan tetap ditampilkan jika perlu dibagikan manual.
             </p>
           </div>
         )}

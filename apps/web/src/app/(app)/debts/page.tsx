@@ -15,6 +15,7 @@ import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/forma
 import { SEMUA_KARTU_KREDIT_PAYLATER } from "@/lib/institutions";
 import { apiJson, notifyWealthChanged } from "@/lib/apiFetch";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { DualPathHint } from "@/components/DualPathHint";
 import { IconButton } from "@/components/ui/IconButton";
 import { useToast } from "@/components/ui/Toast";
 
@@ -36,13 +37,13 @@ const DEBT_TABS: { id: "utang" | "piutang"; label: string }[] = [
 type AddMode = "transaksi" | "deklarasi";
 
 const DEBT_ADD_MODE_TABS: { id: AddMode; label: string }[] = [
-  { id: "transaksi", label: "Utang Baru" },
-  { id: "deklarasi", label: "Utang yang Sudah Ada" },
+  { id: "transaksi", label: "Lewat Kas" },
+  { id: "deklarasi", label: "Sudah Ada" },
 ];
 
 const RECEIVABLE_ADD_MODE_TABS: { id: AddMode; label: string }[] = [
-  { id: "transaksi", label: "Piutang Baru" },
-  { id: "deklarasi", label: "Piutang yang Sudah Ada" },
+  { id: "transaksi", label: "Lewat Kas" },
+  { id: "deklarasi", label: "Sudah Ada" },
 ];
 
 type Account = { id: string; nama: string; saldoCache: string; isActive: boolean };
@@ -304,7 +305,7 @@ function DebtTab({
           <div className="flex flex-wrap gap-2 justify-center">
             <Button href="/accounts" size="sm">Tambah Rekening</Button>
             <Button size="sm" variant="outline" onClick={() => { setAddMode("deklarasi"); setShowAddForm(true); }}>
-              Utang yang Sudah Ada
+              Sudah Ada
             </Button>
           </div>
         }
@@ -360,14 +361,15 @@ function DebtTab({
             fitted
             className="mb-4 max-w-lg"
           />
+          <DualPathHint cashLabel="Lewat Kas" declareLabel="Sudah Ada" />
           {formError && <p role="alert" className="text-sm text-danger-text mb-3">{formError}</p>}
           {addMode === "deklarasi" && (
             <p className="text-xs text-text-muted mb-3">
-              Deklarasi menambah utang tanpa menambah kas di rekening. Untuk pinjaman baru yang masuk ke rekening, pakai tab &quot;Utang Baru&quot;.
+              Catat sisa utang yang sudah ada tanpa menambah kas di rekening.
             </p>
           )}
           {addMode === "transaksi" && accounts.length === 0 && (
-            <p className="text-sm text-warning-text mb-3">Belum ada rekening aktif. Tambahkan rekening dulu atau pilih &quot;Utang yang Sudah Ada&quot;.</p>
+            <p className="text-sm text-warning-text mb-3">Belum ada rekening aktif. Tambahkan rekening dulu atau pilih &quot;Sudah Ada&quot;.</p>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Select
@@ -763,7 +765,7 @@ function ReceivableTab({
           <div className="flex flex-wrap gap-2 justify-center">
             <Button href="/accounts" size="sm">Tambah Rekening</Button>
             <Button size="sm" variant="outline" onClick={() => { setAddMode("deklarasi"); setShowAddForm(true); }}>
-              Piutang yang Sudah Ada
+              Sudah Ada
             </Button>
           </div>
         }
@@ -819,14 +821,15 @@ function ReceivableTab({
             fitted
             className="mb-4 max-w-lg"
           />
+          <DualPathHint cashLabel="Lewat Kas" declareLabel="Sudah Ada" />
           {formError && <p role="alert" className="text-sm text-danger-text mb-3">{formError}</p>}
           {addMode === "deklarasi" && (
             <p className="text-xs text-text-muted mb-3">
-              Deklarasi menambah piutang tanpa mengurangi kas. Untuk pinjaman baru yang keluar dari rekening, pakai tab &quot;Piutang Baru&quot;.
+              Catat sisa piutang yang sudah ada tanpa mengurangi kas di rekening.
             </p>
           )}
           {addMode === "transaksi" && accounts.length === 0 && (
-            <p className="text-sm text-warning-text mb-3">Belum ada rekening aktif. Tambahkan rekening dulu atau pilih &quot;Piutang yang Sudah Ada&quot;.</p>
+            <p className="text-sm text-warning-text mb-3">Belum ada rekening aktif. Tambahkan rekening dulu atau pilih &quot;Sudah Ada&quot;.</p>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input

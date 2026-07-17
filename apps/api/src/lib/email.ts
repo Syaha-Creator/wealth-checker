@@ -110,3 +110,44 @@ export async function sendVerificationEmail({
     failureLabel: "email verifikasi",
   });
 }
+
+function buildHouseholdInviteHtml({
+  inviteUrl,
+  role,
+}: {
+  inviteUrl: string;
+  role: string;
+}): string {
+  return `<!DOCTYPE html>
+<html lang="id">
+  <body style="font-family: sans-serif; line-height: 1.5; color: #111;">
+    <p>Halo,</p>
+    <p>Kamu diundang bergabung ke household Wealth Checker sebagai <strong>${role}</strong>.</p>
+    <p>
+      <a href="${inviteUrl}" style="display: inline-block; padding: 10px 16px; background: #2563eb; color: #fff; text-decoration: none; border-radius: 6px;">
+        Terima Undangan
+      </a>
+    </p>
+    <p>Atau salin tautan berikut ke browser:</p>
+    <p><a href="${inviteUrl}">${inviteUrl}</a></p>
+    <p>Tautan berlaku 7 hari. Jika kamu tidak mengenal pengirim, abaikan email ini.</p>
+  </body>
+</html>`;
+}
+
+export async function sendHouseholdInviteEmail({
+  to,
+  inviteUrl,
+  role,
+}: {
+  to: string;
+  inviteUrl: string;
+  role: string;
+}): Promise<void> {
+  await sendResendEmail({
+    to,
+    subject: "Undangan Household Wealth Checker",
+    html: buildHouseholdInviteHtml({ inviteUrl, role }),
+    failureLabel: "email undangan household",
+  });
+}

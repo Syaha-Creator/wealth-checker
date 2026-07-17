@@ -60,6 +60,14 @@ Readiness probe — Postgres (`select 1`) and Redis (`PING`) must succeed.
 }
 ```
 
+On `503`, if `ALERT_WEBHOOK_URL` is set, the API POSTs a JSON alert payload (`event: health_ready_degraded`).
+
+### GET `/metrics`
+
+Prometheus text exposition (process-local counters; reset on restart).
+
+Includes `http_requests_total`, `http_requests_5xx_total`, `http_request_duration_ms_sum`, `process_uptime_seconds`. Health/metrics paths are excluded from request counters. 5xx and unhandled errors also fire `ALERT_WEBHOOK_URL` when configured.
+
 ---
 
 ## 1. Auth
@@ -1608,11 +1616,11 @@ Members + pending invites of the **active** household (resolved the same way as 
 
 ### POST `/api/households/invite`
 
-**Owner-only.** Invite a new member by email. Invite email via Resend is not wired for household invites yet — the invite link is returned in the response body for the owner to share manually (WhatsApp, etc.). Account email verification (sign-up) already uses Resend; household invite email can reuse the same provider later.
+**Owner-only.** Invite a new member by email. Sends the invite via **Resend**; also returns `inviteUrl` as a manual fallback if email delivery fails.
 
 **Request body:** `{ "email": "friend@example.com", "role": "editor" }` — `role` is `"editor" | "viewer"` only (`owner` can't be granted via invite; use `PATCH /members/:userId` to transfer ownership instead).
 
-**Response `201`** — the invite row plus `inviteUrl` (`{WEB_APP_URL}/household/accept-invite?token=...`), valid for **7 days**.
+**Response `201`** — the invite row plus `inviteUrl` (`{WEB_APP_URL}/household/accept-invite?token=...`) and `emailSent` (`true`/`false`), valid for **7 days**.
 
 **Error `409`** — a user with that email is already a member of this household.
 

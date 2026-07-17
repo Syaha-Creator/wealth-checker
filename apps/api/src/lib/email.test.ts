@@ -111,3 +111,30 @@ describe("sendVerificationEmail", () => {
     ).rejects.toThrow("Gagal mengirim email verifikasi: Invalid API key");
   });
 });
+
+describe("sendHouseholdInviteEmail", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    process.env.RESEND_API_KEY = "re_test_key_placeholder";
+    delete process.env.RESEND_FROM_EMAIL;
+  });
+
+  it("memanggil Resend dengan link undangan", async () => {
+    mockSend.mockResolvedValue({ data: { id: "email-id-789" }, error: null });
+
+    const { sendHouseholdInviteEmail } = await import("./email");
+    await sendHouseholdInviteEmail({
+      to: "member@example.com",
+      inviteUrl: "https://wealth.velrox.cloud/household/accept-invite?token=abc",
+      role: "editor",
+    });
+
+    expect(mockSend).toHaveBeenCalledWith({
+      from: "onboarding@resend.dev",
+      to: "member@example.com",
+      subject: "Undangan Household Wealth Checker",
+      html: expect.stringContaining("accept-invite?token=abc"),
+    });
+  });
+});

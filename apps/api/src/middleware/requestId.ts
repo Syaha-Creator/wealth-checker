@@ -1,5 +1,7 @@
 import type { Context, Next } from "hono";
 import { logger } from "../lib/logger";
+import { recordHttpRequest } from "../lib/metrics";
+import { notifyAlert } from "../lib/alertWebhook";
 import type { AppEnv } from "../types";
 
 export const REQUEST_ID_HEADER = "X-Request-Id";
@@ -17,11 +19,24 @@ export async function requestIdMiddleware(c: Context<AppEnv>, next: Next) {
   const started = Date.now();
   await next();
 
+  const durationMs = Date.now() - started;
+  const status = c.res.status;
+  recordHttpRequest(c.req.path, status, durationMs);
+
   logger.info("http_request", {
     requestId,
     method: c.req.method,
     path: c.req.path,
-    status: c.res.status,
-    durationMs: Date.now() - started,
+    status,
+    durationMs,
   });
+
+  if (status >= 500) {
+    notifyAlert("http_5xx", {
+      requestId,
+      method: c.req.method,
+      path: c.req.path,
+      status,
+    });
+  }
 }

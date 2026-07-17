@@ -190,7 +190,10 @@ export default function RetirementPlanPage() {
               <span>{progressPct.toFixed(0)}%</span>
             </div>
             {data.selisihMenujuTarget > 0 && (
-              <p className="text-xs text-white/70 mt-1">Kurang {formatCurrencyShort(data.selisihMenujuTarget)} lagi menuju target</p>
+              <p className="text-xs text-white/70 mt-1">
+                Kurang {formatCurrencyShort(data.selisihMenujuTarget)} lagi menuju target (mode sederhana — nominal hari ini)
+                {showAdvanced ? ". Gap PV ada di panel Mode Lanjutan di bawah." : ""}
+              </p>
             )}
           </div>
 
@@ -274,7 +277,7 @@ export default function RetirementPlanPage() {
               checked={showAdvanced}
               onChange={handleAdvancedToggle}
               disabled={togglingAdvanced}
-              label="Tampilkan Mode Lanjutan (Present Value & Inflasi)"
+              label="Mode Lanjutan: hitung kebutuhan hari ini (PV) dengan inflasi & return"
             />
           </Card>
 

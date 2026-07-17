@@ -25,6 +25,8 @@ import { householdRoutes } from "./routes/households";
 import { requestIdMiddleware, REQUEST_ID_HEADER } from "./middleware/requestId";
 import { getRedis } from "./lib/redis";
 import { logger } from "./lib/logger";
+import { renderPrometheusMetrics } from "./lib/metrics";
+import { notifyAlert } from "./lib/alertWebhook";
 
 const ALLOWED_ORIGINS = [
   "https://wealth.velrox.cloud",
@@ -102,6 +104,9 @@ app.get("/health/ready", async (c) => {
   }
 
   const ready = checks.postgres === "ok" && checks.redis === "ok";
+  if (!ready) {
+    notifyAlert("health_ready_degraded", { checks, requestId: c.get("requestId") });
+  }
   return c.json(
     {
       status: ready ? "ok" : "degraded",
@@ -112,6 +117,13 @@ app.get("/health/ready", async (c) => {
     ready ? 200 : 503,
   );
 });
+
+/** Prometheus text exposition — scrape from monitoring (Uptime Kuma / Grafana Agent / etc.). */
+app.get("/metrics", (c) =>
+  c.text(renderPrometheusMetrics(), 200, {
+    "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
+  }),
+);
 
 app.route("/api/auth", authRoutes);
 app.route("/api/accounts", accountRoutes);
@@ -145,6 +157,12 @@ app.onError((err, c) => {
     },
     err,
   );
+  notifyAlert("unhandled_error", {
+    requestId: c.get("requestId"),
+    method: c.req.method,
+    path: c.req.path,
+    errMessage: err instanceof Error ? err.message : String(err),
+  });
   return c.json({ error: "Terjadi kesalahan pada server. Silakan coba lagi nanti." }, 500);
 });
 

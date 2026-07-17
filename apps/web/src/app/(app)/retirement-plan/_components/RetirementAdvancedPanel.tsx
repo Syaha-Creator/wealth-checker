@@ -109,9 +109,11 @@ export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: Retir
     <Card className="border-brand/30">
       <div className="flex items-start justify-between gap-2 mb-3">
         <div>
-          <h2 className="text-sm font-semibold text-text-secondary">Mode Lanjutan: Present Value &amp; Inflasi</h2>
+          <h2 className="text-sm font-semibold text-text-secondary">Mode Lanjutan: Present Value (PV) &amp; Inflasi</h2>
           <p className="text-xs text-text-muted mt-1">
-            Nilai uang menyusut karena inflasi. Mode ini menghitung kebutuhan sebelum pensiun (diinflasikan ke hari pensiun) dan kebutuhan selama pensiun sebagai rangkaian cashflow tahunan yang tumbuh dengan inflasi, lalu menghitung berapa lump sum yang perlu disiapkan <em>hari ini</em> dengan asumsi return investasi — termasuk diskon untuk uang yang baru dipakai setelah pensiun.
+            <strong>Sederhana</strong> = total nominal dengan harga hari ini (tanpa inflasi).{" "}
+            <strong>Lanjutan</strong> = target masa depan diinflasikan (FV), lalu di-diskon jadi{" "}
+            <em>lump sum yang perlu disiapkan hari ini (PV)</em> — angka yang dibandingkan dengan kekayaan bersih untuk gap.
           </p>
         </div>
       </div>
@@ -166,18 +168,20 @@ export function RetirementAdvancedPanel({ totalDanaPensiunWarisanSimple }: Retir
           <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-3">Perbandingan Sederhana vs Lanjutan</h3>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <p className="text-xs text-text-muted">Sederhana (nilai hari ini)</p>
+              <p className="text-xs text-text-muted">Sederhana — nominal hari ini (bukan PV)</p>
               <p className="text-base font-bold text-text-primary mt-1">{formatCurrencyShort(totalDanaPensiunWarisanSimple)}</p>
               <p className="text-xs text-text-muted mt-0.5">{formatCurrency(totalDanaPensiunWarisanSimple)}</p>
             </div>
             <div>
-              <p className="text-xs text-text-muted">Lanjutan (nilai saat pensiun, inflasi-adjusted)</p>
+              <p className="text-xs text-text-muted">Lanjutan — total di masa depan (FV, inflasi)</p>
               <p className="text-base font-bold text-brand mt-1">{formatCurrencyShort(advancedPlan.totalDanaPensiunWarisan)}</p>
               <p className="text-xs text-text-muted mt-0.5">{formatCurrency(advancedPlan.totalDanaPensiunWarisan)}</p>
             </div>
           </div>
           <div className="mt-4 p-3 rounded-xl bg-brand-soft border border-brand-soft-border">
-            <p className="text-xs text-text-secondary">Lump sum yang perlu diinvestasikan sekarang (asumsi return {advancedPlan.asumsi.returnInvestasiPersen}%/tahun):</p>
+            <p className="text-xs text-text-secondary">
+              PV — lump sum yang perlu diinvestasikan <em>sekarang</em> (return {advancedPlan.asumsi.returnInvestasiPersen}%/tahun). Gap di atas memakai angka ini:
+            </p>
             <p className="text-lg font-bold text-brand mt-1">{formatCurrency(advancedPlan.danaDibutuhkanSekarang)}</p>
           </div>
         </div>

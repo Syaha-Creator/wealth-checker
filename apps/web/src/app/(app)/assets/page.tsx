@@ -13,6 +13,7 @@ import { Tabs, tabPanelId, tabButtonId } from "@/components/ui/Tabs";
 import { formatCurrency, formatRupiahInput, parseRupiahInput } from "@/lib/format";
 import { apiJson, notifyWealthChanged } from "@/lib/apiFetch";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { DualPathHint } from "@/components/DualPathHint";
 import { IconButton } from "@/components/ui/IconButton";
 import { useToast } from "@/components/ui/Toast";
 
@@ -35,7 +36,7 @@ const ASSET_TABS: { id: AssetKind; label: string }[] = [
 ];
 
 const ASSET_ADD_MODE_TABS: { id: AddMode; label: string }[] = [
-  { id: "transaksi", label: "Beli Baru" },
+  { id: "transaksi", label: "Lewat Kas" },
   { id: "deklarasi", label: "Sudah Dimiliki" },
 ];
 
@@ -323,10 +324,12 @@ function AssetTab({
             fitted
             className="mb-4 max-w-md"
           />
+          <DualPathHint cashLabel="Lewat Kas" declareLabel="Sudah Dimiliki" />
           {formError && <p role="alert" className="text-sm text-danger-text mb-3">{formError}</p>}
           {addMode === "deklarasi" && (
             <p className="text-xs text-text-muted mb-3">
-              Deklarasi menambah nilai kekayaan tanpa mengurangi kas. Pastikan saldo rekening sudah mencerminkan kas aktual (jangan deklarasi aset yang uang belinya masih tercatat penuh di rekening — itu double-count). Untuk pembelian baru, pakai tab &quot;Beli Baru&quot;.
+              Pastikan saldo rekening sudah mencerminkan kas aktual. Jangan deklarasi aset yang uang
+              belinya masih tercatat penuh di rekening.
             </p>
           )}
           {addMode === "transaksi" && accounts.length === 0 && (

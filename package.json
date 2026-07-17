@@ -12,7 +12,7 @@
     "build": "bun run --filter='@wealth/web' build",
     "build:api": "bun run --filter='@wealth/api' build",
     "lint": "bun run --filter='@wealth/web' lint",
-    "test": "bun run --filter='@wealth/api' test",
+    "test": "bun run --filter='@wealth/api' test && bun run --filter='@wealth/web' test",
     "typecheck": "bun run --filter='*' typecheck",
     "db:generate": "bun run --filter='@wealth/db' generate",
     "db:migrate": "bun run --filter='@wealth/db' migrate",
