@@ -120,6 +120,13 @@
       "when": 1782865200014,
       "tag": "0016_backfill_email_verified",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1782865200015,
+      "tag": "0017_insight_scenarios",
+      "breakpoints": true
     }
   ]
 }

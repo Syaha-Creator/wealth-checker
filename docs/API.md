@@ -1665,3 +1665,68 @@ Accept an invite (requires being logged in). The invite's `invitedEmail` must ma
 Validate that the caller is a member of the target household (`{ "householdId": "uuid" }`) before the frontend switches its active `X-Household-Id`. **Stateless by design** — nothing is persisted server-side; the frontend stores the active household id (`localStorage`) and sends it as the `X-Household-Id` header on subsequent requests.
 
 **Response `200`** — the household row plus the caller's `role` in it. **Error `403`** — not a member. **Error `404`** — household doesn't exist.
+
+---
+
+## 14. Insights (Scenario Planner — Sprint 29 / Fase 5A)
+
+Base path: `/api/insights` · **Auth required**, household-scoped · **read-model / simulasi** — endpoint di bawah **tidak menulis ledger** (transaksi/rekening/utang).
+
+Baseline preview diambil dari `calculateWealthSummary` + profil pensiun user (sama engine `/api/wealth/retirement-plan`). Timezone proyeksi default produk: `Asia/Jakarta`.
+
+### POST `/api/insights/scenario/preview`
+
+Simulasi what-if terhadap asumsi. Tidak menyimpan apa pun.
+
+**Body:**
+
+```json
+{
+  "pemasukanDeltaPersen": 10,
+  "pengeluaranDeltaPersen": -5,
+  "cicilanBaru": 5000000,
+  "mode": "simple"
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `pemasukanDeltaPersen` | number | −100 … 500 (% terhadap pemasukan rencana profil) |
+| `pengeluaranDeltaPersen` | number | −100 … 500 |
+| `cicilanBaru` | number? | Pokok utang baru (Rp) pada neraca simulasi; default 0 |
+| `mode` | `"simple"` \| `"advanced"` | Mode formula pensiun |
+| `inflasiPersen` / `returnInvestasiPersen` | number? | Override asumsi advanced (opsional) |
+
+**Response `200`:**
+
+```json
+{
+  "baseline": { "kekayaanBersih": 0, "wealthLevel": 4, "wealthLevelName": "...", "totalAset": 0, "totalUtang": 0, "sisaUangBulanan": 0, "fundingTarget": 0, "selisihMenujuTarget": 0 },
+  "after": { "...": "sama shape" },
+  "diff": { "kekayaanBersih": 0, "wealthLevel": 0, "sisaUangBulanan": 0, "fundingTarget": 0, "selisihMenujuTarget": 0 },
+  "assumptions": { "...": "echo body (cicilanBaru di-clamp ≥ 0)" },
+  "notice": "Simulasi — tidak mengubah catatan keuangan kamu"
+}
+```
+
+`selisihMenujuTarget` mengikuti konvensi rencana pensiun: `max(0, fundingTarget − kekayaanBersih)`.
+
+**Error `422`** — profil pensiun belum lengkap (tanggal lahir / usia pensiun / usia warisan).
+
+### GET `/api/insights/scenarios`
+
+Daftar skenario tersimpan milik user di household aktif (max **5**).
+
+**Response `200`:** `{ "scenarios": [{ "id", "nama", "assumptions", "createdAt" }], "max": 5, "remaining": 3 }`
+
+### POST `/api/insights/scenarios`
+
+**Role:** `owner` | `editor`. Simpan skenario. Body: `{ "nama": string, "assumptions": <sama preview> }`.
+
+**Response `201`** — baris tersimpan. **Error `400`** jika sudah 5 skenario.
+
+### DELETE `/api/insights/scenarios/:id`
+
+**Role:** `owner` | `editor`. Hapus skenario milik user di household aktif (IDOR-safe: filter `user_id` + `household_id`).
+
+**Response `200`:** `{ "ok": true }`. **Error `404`** jika tidak ditemukan.

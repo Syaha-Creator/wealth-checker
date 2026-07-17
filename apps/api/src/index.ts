@@ -22,6 +22,7 @@ import { checklistRoutes } from "./routes/checklist";
 import { notificationRoutes } from "./routes/notifications";
 import { exportRoutes } from "./routes/export";
 import { householdRoutes } from "./routes/households";
+import { insightRoutes } from "./routes/insights";
 import { requestIdMiddleware, REQUEST_ID_HEADER } from "./middleware/requestId";
 import { getRedis } from "./lib/redis";
 import { logger } from "./lib/logger";
@@ -139,6 +140,7 @@ app.route("/api/checklist", checklistRoutes);
 app.route("/api/notifications", notificationRoutes);
 app.route("/api/export", exportRoutes);
 app.route("/api/households", householdRoutes);
+app.route("/api/insights", insightRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 

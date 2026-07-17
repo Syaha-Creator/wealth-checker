@@ -379,12 +379,21 @@ export default function DashboardPage() {
                 </div>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-text-muted shrink-0" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
               </Link>
-              <Link href="/retirement-plan" className="flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-surface-hover transition-colors">
+              <Link href="/retirement-plan" className="flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-surface-hover transition-colors border-b border-border">
                 <div className="flex items-center gap-3">
                   <span className="w-9 h-9 rounded-full bg-brand-soft text-brand flex items-center justify-center shrink-0" aria-hidden="true">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" fill="currentColor" /></svg>
                   </span>
                   <span className="text-sm font-medium text-text-primary">Rencana Pensiun &amp; Warisan</span>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-text-muted shrink-0" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
+              </Link>
+              <Link href="/insights/scenario" className="flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-surface-hover transition-colors">
+                <div className="flex items-center gap-3">
+                  <span className="w-9 h-9 rounded-full bg-info-soft text-info-text flex items-center justify-center shrink-0" aria-hidden="true">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M4 19V5" /><path d="M4 19h16" /><path d="M8 15l3-4 3 2 4-6" /></svg>
+                  </span>
+                  <span className="text-sm font-medium text-text-primary">Scenario Planner</span>
                 </div>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-text-muted shrink-0" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
               </Link>

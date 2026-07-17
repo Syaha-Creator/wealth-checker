@@ -21,21 +21,23 @@ Stack: sama (Next.js, Hono, Drizzle, Postgres, Redis/BullMQ). Chart: Recharts (w
 
 Tujuan: user bisa mengubah asumsi dan melihat dampak ke kekayaan / level / gap pensiun **tanpa** mengubah data nyata.
 
-- [ ] Spec API: `POST /api/insights/scenario/preview` — body asumsi (delta % pemasukan, % pengeluaran, cicilan baru opsional, mode pensiun `simple|advanced`) → response: `kekayaanBersih`, `wealthLevel`, `selisihMenujuTarget`, `fundingTarget`, diff vs baseline
-- [ ] Service murni `previewScenario(baseline, assumptions)` — unit-testable; **tidak** touch DB transaksi
-- [ ] Baseline diambil dari `calculateWealthSummary` + retirement plan existing (reuse `retirementFundingTarget`)
-- [ ] Tabel opsional `insight_scenarios` — id, user_id, household_id, nama, assumptions JSON, created_at (max 5 aktif/user; hapus oldest atau tolak 400)
-- [ ] `GET/POST/DELETE /api/insights/scenarios` — CRUD skenario tersimpan (household-scoped)
-- [ ] UI `/insights/scenario` (atau tab di Analisa):
+- [x] Spec API: `POST /api/insights/scenario/preview` — body asumsi (delta % pemasukan, % pengeluaran, cicilan baru opsional, mode pensiun `simple|advanced`) → response: `kekayaanBersih`, `wealthLevel`, `selisihMenujuTarget`, `fundingTarget`, diff vs baseline
+- [x] Service murni `previewScenario(baseline, assumptions)` — unit-testable; **tidak** touch DB transaksi
+- [x] Baseline diambil dari `calculateWealthSummary` + retirement plan existing (reuse `retirementFundingTarget`)
+- [x] Tabel opsional `insight_scenarios` — id, user_id, household_id, nama, assumptions JSON, created_at (max 5 aktif/user; hapus oldest atau tolak 400)
+- [x] `GET/POST/DELETE /api/insights/scenarios` — CRUD skenario tersimpan (household-scoped)
+- [x] UI `/insights/scenario` (atau tab di Analisa):
   - Slider/input: pemasukan ±%, pengeluaran ±%
   - Toggle mode pensiun simple/advanced
   - Kartu Before / After (level, kekayaan, gap)
   - Simpan skenario (nama) + daftar tersimpan
-- [ ] Copy jelas: “Simulasi — tidak mengubah catatan keuangan kamu”
-- [ ] Unit test: preview deterministik; max 5 skenario; IDOR household
+- [x] Copy jelas: “Simulasi — tidak mengubah catatan keuangan kamu”
+- [x] Unit test: preview deterministik; max 5 skenario; IDOR household
 - [ ] E2E ringan: buka halaman, ubah slider, lihat angka after berubah
 
 **Acceptance:** Preview konsisten dengan engine wealth/retirement; tidak ada side-effect ledger.
+
+**Status implementasi:** API + service + UI + migration `0017` landed; E2E smoke menyusul setelah deploy.
 
 ---
 

@@ -9,3 +9,4 @@ export * from "./notifications";
 export * from "./retirement";
 export * from "./households";
 export * from "./checklist";
+export * from "./insights";

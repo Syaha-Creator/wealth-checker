@@ -150,6 +150,18 @@ const retirementItem: NavItem = {
   ),
 };
 
+const insightItem: NavItem = {
+  href: "/insights/scenario",
+  label: "Scenario Planner",
+  icon: (active) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 19V5" />
+      <path d="M4 19h16" />
+      <path d="M8 15l3-4 3 2 4-6" />
+    </svg>
+  ),
+};
+
 const healthItem: NavItem = {
   href: "/health-checkup",
   label: "Financial Health Check-up",
@@ -178,7 +190,7 @@ const moreItem: NavItem = {
 const desktopGroups: { label?: string; items: NavItem[] }[] = [
   { items: [dashboardItem, catatItem, riwayatItem, analisaItem] },
   { label: "Data Keuangan", items: [accountsItem, debtsItem, assetsItem, dreamItem] },
-  { label: "Perencanaan", items: [budgetingItem, retirementItem, healthItem] },
+  { label: "Perencanaan", items: [budgetingItem, retirementItem, insightItem, healthItem] },
   { items: [profileItem] },
 ];
 
@@ -191,7 +203,7 @@ const mobileNavItems: NavItem[] = [dashboardItem, riwayatItem, catatItem, analis
 // Any route not covered by a primary mobile tab rolls up into "Lainnya" for
 // active-state purposes, so the mobile nav still highlights something
 // sensible while browsing e.g. /accounts or /profile.
-const secondaryItems: NavItem[] = [accountsItem, debtsItem, assetsItem, dreamItem, profileItem, budgetingItem, retirementItem, healthItem, moreItem];
+const secondaryItems: NavItem[] = [accountsItem, debtsItem, assetsItem, dreamItem, profileItem, budgetingItem, retirementItem, insightItem, healthItem, moreItem];
 const allItemsForActiveMatch: NavItem[] = [dashboardItem, riwayatItem, catatItem, analisaItem, ...secondaryItems];
 
 // Pick the most specific (longest) matching href so nested routes like

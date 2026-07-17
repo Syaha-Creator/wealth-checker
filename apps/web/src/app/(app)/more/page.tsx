@@ -101,6 +101,14 @@ const PERENCANAAN_LINKS: MoreLink[] = [
     iconColor: "text-brand",
     icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" fill="currentColor" /></svg>,
   },
+  {
+    href: "/insights/scenario",
+    label: "Scenario Planner",
+    description: "Simulasi what-if tanpa ubah catatan",
+    iconBg: "bg-info-soft",
+    iconColor: "text-info-text",
+    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M4 19V5" /><path d="M4 19h16" /><path d="M8 15l3-4 3 2 4-6" /></svg>,
+  },
 ];
 
 const AKUN_LINKS: MoreLink[] = [
