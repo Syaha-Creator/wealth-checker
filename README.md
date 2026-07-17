@@ -22,9 +22,15 @@ wealth-checker/
 │   └── api/          # Hono.js backend
 ├── packages/
 │   └── db/           # Drizzle schema + migrations
-├── docs/             # PRD & task breakdown
+├── docs/             # PRD v1, PRD v2 Advanced, task breakdown per fase
 └── docker-compose.yml
 ```
+
+Dokumen produk utama:
+
+- [`docs/PRD_Wealth_Checker.md`](docs/PRD_Wealth_Checker.md) — PRD v1 (Fase 1–4)
+- [`docs/PRD_v2_Advanced.md`](docs/PRD_v2_Advanced.md) — visi Fase 5 (Advanced)
+- [`docs/Fase5A_Insight_Task_Breakdown.md`](docs/Fase5A_Insight_Task_Breakdown.md) — sprint Insight (5A)
 
 ## Setup Development
 

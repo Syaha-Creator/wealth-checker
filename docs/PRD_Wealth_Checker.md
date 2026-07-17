@@ -240,6 +240,8 @@ Mengacu pada preferensi teknologi yang relevan dari proyek Velrox ERP (untuk kon
 - Export laporan (PDF/Excel)
 - Multi-user/family sharing
 - Validasi ulang formula dana pensiun (present value, inflasi) jika dibutuhkan akurasi finansial lebih tinggi
+
+> **Update Jul 2026:** Fase 1–4 telah diimplementasikan di production. Visi lanjutan (Insight, otomasi, household matang, import data) ada di **[`PRD_v2_Advanced.md`](./PRD_v2_Advanced.md)**; breakdown sprint Insight pertama di **[`Fase5A_Insight_Task_Breakdown.md`](./Fase5A_Insight_Task_Breakdown.md)**.
 # 7. Risiko dan Catatan Migrasi
 - Kompleksitas formula bertingkat — beberapa formula (terutama penentuan level kekayaan dan dana pensiun/warisan) menggunakan kondisi IF nested yang kompleks di spreadsheet asli. Perlu testing menyeluruh dengan berbagai skenario data untuk memastikan replikasi logika 100% akurat sebelum dianggap selesai.
 - Kategori dinamis — di spreadsheet, kategori pemasukan/pengeluaran bisa ditambah bebas oleh pengguna. Desain database harus mendukung kategori custom per user, bukan enum yang kaku.
