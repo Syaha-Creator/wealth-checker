@@ -72,11 +72,11 @@ export default function DreamTrackerPage() {
     setFetchError("");
     try {
       const [goalsData, accountsData] = await Promise.all([
-        apiFetch("/api/dream-goals", "GET"),
-        apiFetch("/api/accounts", "GET"),
+        apiFetch<DreamGoal[]>("/api/dream-goals", "GET"),
+        apiFetch<Account[]>("/api/accounts", "GET"),
       ]);
       setGoals(goalsData);
-      setAccounts(accountsData.filter((a: Account) => a.isActive));
+      setAccounts(accountsData.filter((a) => a.isActive));
     } catch (err: unknown) {
       setFetchError(err instanceof Error ? err.message : "Gagal memuat data Dream Tracker");
     } finally {

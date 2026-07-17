@@ -120,7 +120,7 @@ export function HouseholdSettings() {
     setInviting(true);
     setMessage(null);
     try {
-      const invite = await apiFetch("/api/households/invite", "POST", { email: inviteEmail.trim(), role: inviteRole });
+      const invite = await apiFetch<{ inviteUrl: string }>("/api/households/invite", "POST", { email: inviteEmail.trim(), role: inviteRole });
       setMessage({
         type: "success",
         text: `Undangan dibuat. Bagikan link ini ke ${inviteEmail.trim()}: ${invite.inviteUrl}`,

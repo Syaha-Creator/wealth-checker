@@ -56,8 +56,8 @@ export default function ProfilePage() {
   const [pengeluaranRencana, setPengeluaranRencana] = useState("");
 
   useEffect(() => {
-    apiFetch("/api/profile")
-      .then((data: Profile) => {
+    apiFetch<Profile>("/api/profile")
+      .then((data) => {
         setProfile(data);
         if (data.profile) {
           setTanggalLahir(data.profile.tanggalLahir ?? "");

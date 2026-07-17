@@ -35,10 +35,10 @@ export function NotificationSettings() {
 
   useEffect(() => {
     Promise.all([
-      apiFetch("/api/notifications/preferences"),
+      apiFetch<Preferences>("/api/notifications/preferences"),
       getCurrentSubscriptionEndpoint(),
     ])
-      .then(([data, endpoint]: [Preferences, string | null]) => {
+      .then(([data, endpoint]) => {
         setPrefs(data);
         setIsSubscribedHere(Boolean(endpoint));
       })
@@ -50,7 +50,7 @@ export function NotificationSettings() {
     setSaving(true);
     setMessage(null);
     try {
-      const updated = await apiFetch("/api/notifications/preferences", "PATCH", next);
+      const updated = await apiFetch<Preferences>("/api/notifications/preferences", "PATCH", next);
       setPrefs(updated);
       showToast({ type: "success", message: "Preferensi notifikasi berhasil disimpan" });
     } catch (err: unknown) {

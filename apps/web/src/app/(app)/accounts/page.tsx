@@ -77,7 +77,7 @@ export default function AccountsPage() {
     setLoading(true);
     setFetchError("");
     try {
-      const data = await apiFetch("/api/accounts", "GET");
+      const data = await apiFetch<Account[]>("/api/accounts", "GET");
       setAccounts(data);
     } catch (err: unknown) {
       setFetchError(err instanceof Error ? err.message : "Gagal memuat rekening");
@@ -87,8 +87,8 @@ export default function AccountsPage() {
   }, []);
 
   useEffect(() => {
-    apiFetch("/api/accounts", "GET")
-      .then((data: Account[]) => setAccounts(data))
+    apiFetch<Account[]>("/api/accounts", "GET")
+      .then((data) => setAccounts(data))
       .catch((err: unknown) => {
         setFetchError(err instanceof Error ? err.message : "Gagal memuat rekening");
         setAccounts([]);
